@@ -18,6 +18,11 @@ export class PSXStage {
   onUpdate: ((t: number, dt: number) => void) | null = null;
   /** Dibuja los textos (títulos, HUD) a la resolución interna; null = sin capa de textos. */
   onOverlay: OverlayDraw | null = null;
+  /** Después de dibujar el frame (para capas que siguen a la cámara, como la tele de YouTube). */
+  onAfterRender: (() => void) | null = null;
+
+  /** Cambió el tamaño de la ventana (ancho y alto en píxeles CSS). */
+  onResize: ((w: number, h: number) => void) | null = null;
 
   private overlayCanvas = makeCanvas(1, 1);
   private overlayTex: THREE.CanvasTexture | null = null;
@@ -45,6 +50,7 @@ export class PSXStage {
     this.overlayTex = new THREE.CanvasTexture(this.overlayCanvas.canvas);
     this.overlayTex.magFilter = this.overlayTex.minFilter = THREE.NearestFilter;
     this.overlayTex.generateMipmaps = false;
+    this.onResize?.(w, h);
   }
 
   start() {
@@ -79,6 +85,7 @@ export class PSXStage {
       this.post.overlay = null;
     }
     this.post.render(this.scene, this.camera);
+    this.onAfterRender?.();
   }
 }
 

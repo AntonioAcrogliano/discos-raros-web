@@ -39,7 +39,7 @@ export function showStartScreen(stage: PSXStage): Promise<void> {
         if (Math.floor(e * 16) % 2 === 0) {
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          outlined(ctx, 'PRESS START', w / 2, Math.round(h * 0.7), Math.round(titleUnit(w, h) * 1.5), DR.crema, DR.rojo);
+          outlined(ctx, 'PRESS START', w / 2, Math.round(h * 0.72), Math.round(titleUnit(w, h) * 1.5), DR.crema, DR.rojo);
         }
         if (e > 0.55) {
           stage.onOverlay = null;
