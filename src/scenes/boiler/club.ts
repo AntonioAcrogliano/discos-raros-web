@@ -23,7 +23,7 @@ export const CLUB = {
   ceilY: 5.6,
   boothZ: 2.5,
   boothH: 1.0,
-  djZ: 1.62,
+  djZ: 1.86,
   tele: { x: 0, y: 4.15, z: -5.12, w: 4.8, h: 2.7 },
 };
 
@@ -174,9 +174,9 @@ export function buildClub(): Club {
   const vinyl = makePSXMaterial({ map: makeRecordTexture('#15101c', DR.rojo) });
   const discs: THREE.Mesh[] = [];
   for (const x of [-1.1, 1.1]) {
-    booth.add(box(0.78, 0.07, 0.7, deck, x, boothH + 0.035, boothZ));
+    booth.add(box(0.78, 0.07, 0.7, deck, x, boothH + 0.035, boothZ - 0.06));
     const disc = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.02, 0.58), [deck, deck, vinyl, deck, deck, deck]);
-    disc.position.set(x, boothH + 0.085, boothZ);
+    disc.position.set(x, boothH + 0.085, boothZ - 0.06);
     booth.add(disc);
     discs.push(disc);
   }

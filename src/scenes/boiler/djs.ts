@@ -20,10 +20,14 @@ export function buildPlaceholderDjs(): { discos: Rig; raros: Rig } {
 }
 
 const TAU = Math.PI * 2;
+const DJ_SCALE = 1.22;
 
 export function makeDjs(discos: Rig, raros: Rig): Djs {
-  discos.root.position.set(-0.8, 0, CLUB.djZ);
-  raros.root.position.set(0.8, 0, CLUB.djZ);
+  discos.root.position.set(-0.85, 0, CLUB.djZ);
+  raros.root.position.set(0.85, 0, CLUB.djZ);
+  // Un poco más grandes que la gente: son los protagonistas y tienen que leerse de lejos.
+  discos.root.scale.setScalar(DJ_SCALE);
+  raros.root.scale.setScalar(DJ_SCALE);
   return {
     discos,
     raros,
@@ -44,20 +48,20 @@ export function makeDjs(discos: Rig, raros: Rig): Djs {
       }
       const lerp = (a: number, b: number) => a + (b - a) * up;
 
-      // Discos: scratchea con la izquierda (su bandeja) y la derecha en el mixer.
-      discos.body.rotation.y = 0.12;
-      discos.armL.rotation.set(lerp(-0.75 + scratch, 0), 0, lerp(0.18, 2.75));
-      discos.foreL.rotation.set(lerp(-0.85, -0.1), 0, 0);
-      discos.armR.rotation.set(lerp(-0.6, 0), 0, lerp(0.35, -2.75));
-      discos.foreR.rotation.set(lerp(-1.0 - 0.1 * nod, -0.1), 0, 0);
+      // Discos: scratchea su bandeja con la derecha y tiene la izquierda en el mixer.
+      discos.body.rotation.y = -0.1;
+      discos.armR.rotation.set(lerp(-0.4 + scratch, 0), 0, lerp(-0.12, -2.75));
+      discos.foreR.rotation.set(lerp(-0.62, -0.1), 0, 0);
+      discos.armL.rotation.set(lerp(-0.42, 0), 0, lerp(0.42, 2.75));
+      discos.foreL.rotation.set(lerp(-0.6 - 0.12 * nod, -0.1), 0, 0);
 
       // Raros: se sostiene el auricular con la derecha y empuja su disco con la izquierda.
-      raros.body.rotation.y = -0.12;
+      raros.body.rotation.y = 0.1;
       raros.head.rotation.z = -0.12 * (1 - up);
-      raros.armR.rotation.set(lerp(-0.5, 0), 0, lerp(-0.75, -2.75));
-      raros.foreR.rotation.set(lerp(-2.2, -0.1), lerp(-0.5, 0), 0);
-      raros.armL.rotation.set(lerp(-0.7 - scratch * 0.6, 0), 0, lerp(-0.3, 2.75));
-      raros.foreL.rotation.set(lerp(-0.9, -0.1), 0, 0);
+      raros.armR.rotation.set(lerp(-0.45, 0), 0, lerp(-0.7, -2.75));
+      raros.foreR.rotation.set(lerp(-2.25, -0.1), lerp(-0.45, 0), 0);
+      raros.armL.rotation.set(lerp(-0.4 - scratch * 0.7, 0), 0, lerp(0.12, 2.75));
+      raros.foreL.rotation.set(lerp(-0.62, -0.1), 0, 0);
     },
   };
 }

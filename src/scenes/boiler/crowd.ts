@@ -68,7 +68,7 @@ function makeSlots(): { x: number; z: number }[] {
   const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
   const slots: { x: number; z: number; score: number }[] = [];
   for (let row = 0; row < 8; row++) {
-    const z = -0.25 - row * 0.6;
+    const z = -0.55 - row * 0.58;
     for (let x = -5.61 + (row % 2) * 0.33; x <= 5.7; x += 0.66) {
       const first = row === 0 && Math.abs(x) < 0.34;
       slots.push({ x: first ? 0 : x + (r() - 0.5) * 0.18, z: first ? z : z + (r() - 0.5) * 0.16, score: Math.abs(x) * 0.55 + row * 0.62 });

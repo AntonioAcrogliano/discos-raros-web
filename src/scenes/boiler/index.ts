@@ -5,6 +5,7 @@ import { DR, type PSXStage, outlined, psxUniforms, titleUnit } from '../../style
 import { isTouch, sinTildes } from '../../ui/dom';
 import { CLUB, buildClub } from './club';
 import { Crowd, MAX_DANCERS } from './crowd';
+import { loadGlbRig } from '../../characters/glbRig';
 import { buildPlaceholderDjs, makeDjs } from './djs';
 import { Tele } from './tele';
 
@@ -44,10 +45,19 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
 
   const club = buildClub();
   const crowd = new Crowd(touch ? 70 : MAX_DANCERS);
-  const { discos, raros } = buildPlaceholderDjs();
-  const djs = makeDjs(discos, raros);
+  // Arrancan los de cajas; cuando cargan los modelos de verdad, los reemplazan.
+  const placeholders = buildPlaceholderDjs();
+  let djs = makeDjs(placeholders.discos, placeholders.raros);
   const djGroup = new THREE.Group();
-  djGroup.add(discos.root, raros.root);
+  djGroup.add(djs.discos.root, djs.raros.root);
+  const models = import.meta.env.BASE_URL + 'models/';
+  Promise.all([loadGlbRig(models + 'discos.glb'), loadGlbRig(models + 'raros.glb')])
+    .then(([discos, raros]) => {
+      djGroup.clear();
+      djs = makeDjs(discos, raros);
+      djGroup.add(discos.root, raros.root);
+    })
+    .catch((e) => console.warn('No cargaron los modelos de los DJs, quedan los de cajas.', e));
   const tele = new Tele(stage);
   scene.add(club.group, crowd.group, djGroup, tele.object);
 
@@ -97,11 +107,11 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
 
   // --- Cámara ----------------------------------------------------------------------------
   let mode: BoilerMode = 'pista';
-  const camPos = new THREE.Vector3(0, 2.5, 8.3);
-  const camTarget = new THREE.Vector3(0, 1.9, 0);
+  const camPos = new THREE.Vector3(0, 2.2, 6.7);
+  const camTarget = new THREE.Vector3(0, 1.75, 0.4);
   const wantPos = new THREE.Vector3();
   const wantTarget = new THREE.Vector3();
-  let fov = 55;
+  let fov = 52;
   let lastShowcase = 0;
 
   stage.scene = scene;
@@ -130,18 +140,18 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       // El menú va a la izquierda (o abajo en el celular): el personaje queda del otro lado.
       if (portrait) {
         wantPos.set(0, 0.7, 4.2);
-        wantTarget.set(0, 0.15, -0.25);
+        wantTarget.set(0, 0.15, -0.55);
         wantFov = 62;
       } else {
         wantPos.set(-0.9, 1.25, 3.4);
-        wantTarget.set(-0.9, 1.05, -0.25);
+        wantTarget.set(-0.9, 1.05, -0.55);
         wantFov = 48;
       }
     } else {
       const kick = stage.post.pulse * 0.04;
-      wantPos.set(Math.sin(t * 0.13) * 1.5, (portrait ? 2.8 : 2.5) + Math.sin(t * 0.21) * 0.12, (portrait ? 10.8 : 8.3) - kick);
-      wantTarget.set(0, portrait ? 2.4 : 1.9, 0);
-      wantFov = portrait ? 66 : 55;
+      wantPos.set(Math.sin(t * 0.13) * 1.3, (portrait ? 2.7 : 2.2) + Math.sin(t * 0.21) * 0.1, (portrait ? 9.6 : 6.7) - kick);
+      wantTarget.set(0, portrait ? 2.35 : 1.75, 0.4);
+      wantFov = portrait ? 66 : 52;
     }
     const k = Math.min(1, dt * 4);
     camPos.lerp(wantPos, k);
