@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Look, Raro, SetInfo } from '../../../shared/look';
+import { type Look, type Raro, type SetInfo, validLook } from '../../../shared/look';
 import type { PistaData } from '../../api';
 import { DR, type PSXStage, outlined, psxUniforms, titleUnit } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
@@ -189,7 +189,9 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     takeover: null,
     onNowPlaying: null,
     setPista(data) {
-      pista = data;
+      // Un guardado con opciones viejas (de antes de un cambio de menú) no se dibuja.
+      const ok = (r: Raro | null): r is Raro => Boolean(r && validLook(r.look));
+      pista = { ...data, raros: data.raros.filter(ok), mine: ok(data.mine) ? data.mine : null };
       rebuild();
     },
     setDraft(d) {

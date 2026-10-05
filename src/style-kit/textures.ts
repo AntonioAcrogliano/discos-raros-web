@@ -161,20 +161,80 @@ export function makeSpeakerTexture(): THREE.CanvasTexture {
   return toPSXTexture(canvas);
 }
 
-/** Cara mínima (ojos y boca) sobre blanco: el color de piel lo pone el material o la instancia. */
-export function makeFaceTexture(): THREE.CanvasTexture {
+/**
+ * Caras de 16×16 sobre blanco (el color de piel lo pone el material o la instancia).
+ * El índice es el de LOOK.cara: contento, serio, enojado, sorprendido, dormido, bigote, barba.
+ */
+export function makeFaceTexture(kind = 1): THREE.CanvasTexture {
   const S = 16;
   const { canvas, ctx } = makeCanvas(S, S);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, S, S);
-  ctx.fillStyle = '#17131a';
-  ctx.fillRect(3, 6, 3, 3);
-  ctx.fillRect(10, 6, 3, 3);
-  ctx.fillRect(5, 12, 6, 1);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(4, 6, 1, 1);
-  ctx.fillRect(11, 6, 1, 1);
-  ctx.fillStyle = '#c9b0b0';
-  ctx.fillRect(7, 9, 2, 2);
+  const px = (color: string, ...rects: [number, number, number, number][]) => {
+    ctx.fillStyle = color;
+    for (const [x, y, w, h] of rects) ctx.fillRect(x, y, w, h);
+  };
+  const DARK = '#17131a', HAIR = '#3a2a22';
+  px('#ffffff', [0, 0, S, S]);
+  // Nariz.
+  px('#c9b0b0', [7, 9, 2, 2]);
+  // Ojos.
+  if (kind === 4) px(DARK, [3, 8, 3, 1], [10, 8, 3, 1]);
+  else if (kind === 3) {
+    px(DARK, [2, 5, 4, 4], [10, 5, 4, 4]);
+    px('#ffffff', [3, 6, 2, 2], [11, 6, 2, 2]);
+    px(DARK, [4, 7, 1, 1], [12, 7, 1, 1]);
+  } else {
+    px(DARK, [3, 6, 3, 3], [10, 6, 3, 3]);
+    px('#ffffff', [4, 6, 1, 1], [11, 6, 1, 1]);
+  }
+  // Cejas del enojado.
+  if (kind === 2) px(DARK, [2, 3, 2, 1], [4, 4, 2, 1], [12, 3, 2, 1], [10, 4, 2, 1]);
+  // Boca.
+  if (kind === 0) px(DARK, [5, 13, 6, 1], [4, 12, 1, 1], [11, 12, 1, 1]);
+  else if (kind === 2) px(DARK, [5, 12, 6, 1], [4, 13, 1, 1], [11, 13, 1, 1]);
+  else if (kind === 3) px(DARK, [7, 12, 2, 3]);
+  else if (kind === 4) px(DARK, [7, 12, 3, 1]);
+  else if (kind === 5) {
+    px(HAIR, [4, 11, 8, 2], [3, 12, 1, 2], [12, 12, 1, 2]);
+    px(DARK, [6, 14, 4, 1]);
+  } else if (kind === 6) {
+    px(HAIR, [0, 10, S, 6], [0, 7, 2, 3], [14, 7, 2, 3]);
+    px('#ffffff', [6, 9, 4, 2]);
+    px('#c9b0b0', [7, 9, 2, 2]);
+    px(DARK, [6, 12, 4, 1]);
+  } else px(DARK, [5, 12, 6, 1]);
+  // El píxel de arriba a la izquierda queda liso: lo usan las otras caras de la cabeza.
+  px(kind === 6 ? '#ffffff' : '#ffffff', [0, 0, 1, 1]);
+  return toPSXTexture(canvas);
+}
+
+/**
+ * Estampas de remera de 16×16 con fondo transparente (se usan con `decal`).
+ * El índice es el de LOOK.estampa menos uno: rayas, carita, disco, calavera.
+ */
+export function makePrintTexture(kind: number): THREE.CanvasTexture {
+  const S = 16;
+  const { canvas, ctx } = makeCanvas(S, S);
+  const px = (color: string, ...rects: [number, number, number, number][]) => {
+    ctx.fillStyle = color;
+    for (const [x, y, w, h] of rects) ctx.fillRect(x, y, w, h);
+  };
+  const disc = (cx: number, cy: number, r: number, color: string) => {
+    ctx.fillStyle = color;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) ctx.fillRect(x, y, 1, 1);
+  };
+  if (kind === 0) px(DR.crema, [0, 3, S, 2], [0, 7, S, 2], [0, 11, S, 2]);
+  else if (kind === 1) {
+    disc(8, 7, 5.2, DR.negro);
+    disc(8, 7, 4.3, DR.amarillo);
+    px(DR.negro, [6, 5, 1, 2], [9, 5, 1, 2], [5, 8, 1, 1], [10, 8, 1, 1], [6, 9, 4, 1]);
+  } else if (kind === 2) {
+    disc(8, 7, 5.2, DR.crema);
+    disc(8, 7, 4.5, DR.negro);
+    disc(8, 7, 1.9, DR.rojo);
+    px(DR.amarillo, [7, 6, 2, 2]);
+  } else {
+    px(DR.crema, [5, 3, 6, 6], [4, 4, 8, 4], [6, 9, 4, 2]);
+    px(DR.negro, [5, 5, 2, 2], [9, 5, 2, 2], [7, 8, 2, 1], [7, 10, 1, 1], [9, 10, 1, 1]);
+  }
   return toPSXTexture(canvas);
 }

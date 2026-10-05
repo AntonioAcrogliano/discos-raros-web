@@ -95,12 +95,21 @@
 .trampa { position: absolute; left: -9999px; }
 
 /* --- Creador de personaje ---------------------------------------------------------- */
-.opciones { display: grid; gap: 8px; }
-.opcion { display: grid; grid-template-columns: minmax(90px, 1fr) auto minmax(110px, 1.2fr) auto; gap: 8px; align-items: center; padding: 4px 6px; border: 2px solid transparent; }
-.opcion:focus-visible, .opcion:focus-within { outline: none; border-color: var(--dr-amarillo); background: var(--dr-verde-oscuro); }
-.opcion .valor { text-align: center; color: var(--dr-amarillo); display: flex; align-items: center; justify-content: center; gap: 6px; }
-.opcion .muestra { display: inline-block; width: 28px; height: 14px; border: 2px solid var(--dr-crema); }
+.creador { gap: 10px; }
 .creador-nombre input { text-transform: uppercase; }
+.pestanas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.pestanas .btn { text-align: center; padding: 7px 2px 6px; }
+.opciones { display: grid; gap: 4px; min-height: 196px; align-content: start; }
+.opcion { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; padding: 5px 6px; border: 2px solid transparent; }
+.opcion:focus-visible, .opcion:focus-within { outline: none; border-color: var(--dr-amarillo); background: var(--dr-verde-oscuro); }
+.opcion .etiqueta { color: var(--dr-rosa); font-size: 8px; }
+.selector { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+.selector .valor { display: flex; flex-direction: column; align-items: center; color: var(--dr-amarillo); text-align: center; line-height: 1.4; }
+.selector .valor small { font-size: 6px; color: var(--dr-rosa); }
+.muestras { display: flex; flex-wrap: wrap; gap: 5px; }
+.muestra { width: 22px; height: 22px; padding: 0; border: 2px solid var(--dr-negro); outline: 2px solid #ffffff40; border-radius: 0; cursor: pointer; }
+.muestra:hover { outline-color: var(--dr-crema); }
+.muestra.on { outline: 2px solid var(--dr-amarillo); box-shadow: 0 0 0 4px var(--dr-rojo); position: relative; z-index: 1; }
 
 @media (max-width: 560px) {
   .ui { font-size: 8px; }
@@ -110,7 +119,8 @@
   .btn { padding: 8px 8px 7px; }
   .set { grid-template-columns: 80px 1fr; }
   .set canvas { width: 80px; height: 45px; }
-  .opcion { grid-template-columns: 1fr auto 1fr auto; }
+  .opcion { grid-template-columns: 76px 1fr; }
+  .opciones { min-height: 170px; }
 }
 
 /* Ventana acoplada a un costado (creador de personaje): deja ver la pista al lado. */

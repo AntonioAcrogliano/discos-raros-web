@@ -4,7 +4,7 @@ import { type Rig, buildBoxRig } from '../characters/rig';
 import type { BoilerRoom } from '../scenes/boiler';
 import { DISCOS_COLORS, RAROS_COLORS } from '../scenes/boiler/djs';
 import { DR, DR_CYCLE, type PSXMaterial, type PSXStage, blip, box, fitSize, makePSXMaterial, makeRecordTexture, outlined, titleUnit } from '../style-kit';
-import { Cpu } from './cpu';
+import { Cpu, DIFFICULTIES } from './cpu';
 import { ARENA_HALF, ATTACKS, type Attack, Fighter, MAX_HP, NO_INTENT, SMOKE_EVERY, SMOKE_RINGS } from './fighter';
 import { PlayerInput } from './input';
 
@@ -21,7 +21,14 @@ const MIN_GAP = 0.78;
 type Phase = 'select' | 'intro' | 'fight' | 'ko' | 'end';
 
 /** Lista de movimientos de la pantalla de selección. */
-const MOVES = ['HABILIDADES', 'ATRAS, ADELANTE + PATADA: REVOLEAR UN VINILO', 'ABAJO, ADELANTE + PATADA: AROS DE HUMO', 'ABAJO, ABAJO + PATADA: BIRRA Y VOMITO'];
+const MOVES = [
+  'MOVIMIENTOS',
+  'W: SALTAR (GOLPE EN EL AIRE = VOLADORA)',
+  'I: AGARRE (LE GANA AL BLOQUEO)',
+  'ATRAS, ADELANTE + PATADA: REVOLEAR UN VINILO',
+  'ABAJO, ADELANTE + PATADA: AROS DE HUMO',
+  'ABAJO, ABAJO + PATADA: BIRRA Y VOMITO',
+];
 
 async function loadRig(file: string, fallback: Parameters<typeof buildBoxRig>[0]): Promise<Rig> {
   try {
@@ -99,6 +106,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   const input = new PlayerInput();
   const cpu = new Cpu();
   let player = 0;
+  let difficulty = 1;
   let phase: Phase = 'select';
   let phaseT = 0;
   let round = 1;
@@ -122,7 +130,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   const newMatch = () => {
     round = 1;
     fighters[0].wins = fighters[1].wins = 0;
-    cpu.level = 0;
+    cpu.difficulty = DIFFICULTIES[difficulty];
     startRound();
   };
   const startRound = () => {
@@ -134,7 +142,10 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   const endRound = (winner: Fighter | null) => {
     if (winner) {
       winner.wins++;
-      if (winner.state !== 'ko') winner.state = 'win';
+      if (winner.state !== 'ko') {
+        winner.state = 'win';
+        winner.attack = null;
+      }
     }
     setPhase('ko');
     blip(220, 0.5, 'sawtooth', 0.09);
@@ -144,11 +155,21 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
 
   /** Si el golpe de `a` conecta con `b` en este frame. */
   const resolve = (a: Fighter, b: Fighter) => {
-    if (!a.striking || b.state === 'ko') return;
+    if (!a.striking || b.untouchable) return;
     const atk = ATTACKS[a.attack!];
     if (Math.abs(b.x - a.x) > atk.range) return;
-    // El golpe alto pasa por arriba del que está agachado.
+    // El golpe alto pasa por arriba del que está agachado, y el bajo por abajo del que saltó.
     if (atk.level === 'alto' && b.low) return;
+    if (atk.level === 'bajo' && b.airborne) return;
+    if (atk.grab) {
+      // El agarre no se bloquea, pero no agarra al agachado, al que saltó ni al que viene golpeado.
+      if (b.low || b.airborne || b.state === 'hit') return;
+      a.landed = true;
+      a.throwFoe(b);
+      blip(260, 0.1, 'square', 0.08);
+      blip(520, 0.3, 'triangle', 0.07, 0.1);
+      return;
+    }
     a.landed = true;
     connect(atk, a, b, Math.sign(b.x - a.x) || a.dir);
   };
@@ -226,7 +247,8 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
       if (!live || gone.has(s)) continue;
       const foe = fighters[0] === s.owner ? fighters[1] : fighters[0];
       const atk = ATTACKS[s.kind];
-      if (foe.state !== 'ko' && Math.abs(s.x - foe.x) < 0.4 && !(atk.level === 'alto' && foe.low)) {
+      // Los aros pasan por arriba del agachado; el vinilo, por abajo del que saltó.
+      if (!foe.untouchable && Math.abs(s.x - foe.x) < 0.4 && !(atk.level === 'alto' && foe.low) && !(s.kind === 'vinilo' && foe.airborne)) {
         connect(atk, s.owner, foe, Math.sign(s.vx));
         gone.add(s);
         continue;
@@ -267,6 +289,11 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
         player = step < 0 ? 0 : 1;
         blip(1320, 0.03, 'square', 0.04);
       }
+      const stepY = input.takeStepY();
+      if (stepY) {
+        difficulty = Math.max(0, Math.min(DIFFICULTIES.length - 1, difficulty + stepY));
+        blip(1100, 0.03, 'square', 0.04);
+      }
       if (phaseT > 0.3 && input.takeConfirm()) {
         blip(880, 0.1);
         newMatch();
@@ -281,7 +308,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
       if (hitstop > 0) hitstop -= dt;
       else {
         clock -= dt;
-        me.update(dt, input.intent(me.dir, me.state === 'idle'), foe);
+        me.update(dt, input.intent(me.dir, me.state === 'idle' || (me.state === 'jump' && !me.attack)), foe);
         // A la CPU se le avisa de lo más cercano que le viene volando.
         let incoming: { dist: number; level: Attack['level'] } | null = null;
         for (const s of shots) {
@@ -293,13 +320,24 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
         fire(b);
         // No se atraviesan: si quedan encimados, se separan parejo.
         const gap = Math.abs(b.x - a.x);
-        if (gap < MIN_GAP) {
+        const grounded = !a.airborne && !b.airborne && a.state !== 'thrown' && b.state !== 'thrown';
+        if (gap < MIN_GAP && grounded) {
           const push = (MIN_GAP - gap) / 2, s = Math.sign(b.x - a.x) || 1;
           a.x = Math.max(-ARENA_HALF, a.x - s * push);
           b.x = Math.min(ARENA_HALF, b.x + s * push);
         }
         resolve(a, b);
         resolve(b, a);
+        // Cayó al piso después de que lo revolearon.
+        for (const f of fighters) {
+          if (!f.slammed) continue;
+          f.slammed = false;
+          shake = 0.22;
+          hitstop = 0.1;
+          blip(90, 0.25, 'sawtooth', 0.16);
+          blip(50, 0.3, 'square', 0.12, 0.03);
+          if (f.hp <= 0 && phase === 'fight') endRound(f === a ? b : a);
+        }
         if (phase === 'fight') updateShots(dt, true);
         if (phase === 'fight' && clock <= 0) {
           clock = 0;
@@ -319,7 +357,6 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
           else blip(98, 1, 'sawtooth', 0.08);
         } else {
           round++;
-          cpu.level = round - 1;
           startRound();
         }
       }
@@ -347,8 +384,10 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     const sy = shake > 0 ? Math.sin(t * 70) * shake * 0.4 : 0;
     const k = Math.min(1, dt * 5);
     const select = phase === 'select';
-    camPos.lerp(new THREE.Vector3(mid * 0.85 + Math.sin(t * 0.3) * 0.25, select ? 1.35 : 1.5, ARENA_Z + (select ? 3.4 : 2.9 + gap * 0.5)), k);
-    camTarget.lerp(new THREE.Vector3(mid, 1.1, ARENA_Z), k);
+    // Si alguno salta (o lo revolean), la cámara sube y se aleja para que no se vaya de cuadro.
+    const air = Math.max(a.y, b.y);
+    camPos.lerp(new THREE.Vector3(mid * 0.85 + Math.sin(t * 0.3) * 0.25, (select ? 1.35 : 1.5) + air * 0.4, ARENA_Z + (select ? 3.4 : 2.9 + gap * 0.5) + air * 0.9), k);
+    camTarget.lerp(new THREE.Vector3(mid, 1.1 + air * 0.4, ARENA_Z), k);
     stage.camera.position.set(camPos.x + sx, camPos.y + sy, camPos.z);
     stage.camera.lookAt(camTarget);
     if (stage.camera.fov !== 46) {
@@ -382,9 +421,12 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
         if (on && blink) outlined(ctx, 'V', x, h * 0.3, unit, DR.rojo);
         outlined(ctx, on ? `1P ${f.name}` : f.name, x, h * 0.86, unit, on ? DR.amarillo : DR.rosa);
       });
-      outlined(ctx, '< >  ENTER', w / 2, h * 0.94, unit, DR.crema);
-      ctx.textAlign = 'left';
-      MOVES.forEach((m, i) => outlined(ctx, m, unit, unit * (9 + i * 1.6), fitSize(m, Math.floor(unit * 0.75), w * 0.55), i ? DR.rosa : DR.amarillo));
+      const diff = `DIFICULTAD: ${DIFFICULTIES[difficulty].name}`;
+      outlined(ctx, diff, w / 2, unit * 8, unit, [DR.verdeClaro, DR.amarillo, DR.rojo][difficulty], DR.negro);
+      const help = 'IZQ/DER: PELEADOR   ARRIBA/ABAJO: DIFICULTAD   ENTER: PELEAR';
+      outlined(ctx, help, w / 2, h * 0.94, fitSize(help, Math.floor(unit * 0.75), w), DR.crema);
+      // La lista va en el medio, entre los dos peleadores.
+      MOVES.forEach((m, i) => outlined(ctx, m, w / 2, unit * (11 + i * 1.6), fitSize(m, Math.floor(unit * 0.75), w * 0.5), i ? DR.rosa : DR.amarillo));
       return;
     }
 
@@ -447,7 +489,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     }
     if (phase === 'fight' || phase === 'intro') {
       ctx.textAlign = 'center';
-      const keys = 'A/D MOVER  S AGACHAR  J ALTO  K BAJO  L PATADA  ESPACIO BLOQUEO';
+      const keys = 'A/D MOVER  W SALTAR  S AGACHAR  J ALTO  K BAJO  L PATADA  I AGARRE  ESPACIO BLOQUEO';
       const moves = 'ATRAS,ADELANTE+L VINILO  ABAJO,ADELANTE+L HUMO  ABAJO,ABAJO+L BIRRA';
       const size = Math.floor(unit * 0.75);
       outlined(ctx, keys, w / 2, h - unit * 2.5, fitSize(keys, size, w), DR.rosa);

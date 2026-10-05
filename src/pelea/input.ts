@@ -7,8 +7,8 @@ import { type AttackName, type Dir, type Intent, SPECIAL_INPUTS, type SpecialNam
  * También recuerda las últimas direcciones marcadas: dos direcciones + patada = habilidad.
  */
 
-const KEY_ATTACK: Record<string, AttackName> = { KeyJ: 'alto', KeyK: 'bajo', KeyL: 'patada' };
-const PAD_ATTACK: Record<number, AttackName> = { 2: 'alto', 0: 'bajo', 1: 'patada', 3: 'patada' };
+const KEY_ATTACK: Record<string, AttackName> = { KeyJ: 'alto', KeyK: 'bajo', KeyL: 'patada', KeyI: 'agarre' };
+const PAD_ATTACK: Record<number, AttackName> = { 2: 'alto', 0: 'bajo', 1: 'patada', 3: 'agarre' };
 const BUFFER = 0.16;
 /** Direcciones absolutas (el "adelante" se resuelve según hacia dónde mira el luchador). */
 type AbsDir = 'L' | 'R' | 'D';
@@ -24,6 +24,7 @@ export class PlayerInput {
   /** Enter / Start apretado desde la última vez que se consultó. */
   private confirmed = false;
   private stepped = 0;
+  private steppedY = 0;
   private clock = 0;
   private history: { d: AbsDir; t: number }[] = [];
   private padDirs: Record<AbsDir, boolean> = { L: false, R: false, D: false };
@@ -53,6 +54,8 @@ export class PlayerInput {
     if (e.code === 'Enter') this.confirmed = true;
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.stepped = -1;
     if (e.code === 'ArrowRight' || e.code === 'KeyD') this.stepped = 1;
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') this.steppedY = -1;
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') this.steppedY = 1;
   };
   private onUp = (e: KeyboardEvent) => this.held.delete(e.code);
   private onBlur = () => this.held.clear();
@@ -108,6 +111,8 @@ export class PlayerInput {
         if (i === 9 || i === 0) this.confirmed = true;
         if (i === 14) this.stepped = -1;
         if (i === 15) this.stepped = 1;
+        if (i === 12) this.steppedY = -1;
+        if (i === 13) this.steppedY = 1;
       } else if (!b.pressed) this.padHeld.delete(i);
     });
   }
@@ -124,6 +129,13 @@ export class PlayerInput {
   takeStep() {
     const s = this.stepped;
     this.stepped = 0;
+    return s;
+  }
+
+  /** Arriba o abajo apretado desde la última consulta (-1 = arriba, 1 = abajo), para los menús. */
+  takeStepY() {
+    const s = this.steppedY;
+    this.steppedY = 0;
     return s;
   }
 
@@ -153,6 +165,7 @@ export class PlayerInput {
     return {
       move: x * dir,
       down: this.held.has('ArrowDown') || this.held.has('KeyS') || pb(13) || ay > 0.5,
+      up: this.held.has('ArrowUp') || this.held.has('KeyW') || pb(12) || ay < -0.6,
       block: this.held.has('Space') || this.held.has('ShiftLeft') || this.held.has('ShiftRight') || pb(4) || pb(5) || pb(6) || pb(7),
       attack,
     };

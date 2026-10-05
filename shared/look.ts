@@ -7,10 +7,15 @@
 export const LOOK = {
   cuerpo: ['NORMAL', 'FLACO', 'GRANDOTE', 'PETISO', 'LUNGO'],
   piel: ['#f0d0b8', '#e8c0a0', '#c89a78', '#9c7358', '#6e4a34', '#7dff6a', '#8fa8ff'],
-  pelo: ['CORTO', 'LARGO', 'CRESTA', 'RULOS', 'PELADO'],
+  cara: ['CONTENTO', 'SERIO', 'ENOJADO', 'SORPRENDIDO', 'DORMIDO', 'BIGOTE', 'BARBA'],
+  pelo: ['CORTO', 'LARGO', 'CRESTA', 'RULOS', 'PELADO', 'FLEQUILLO', 'COLITA'],
   peloColor: ['#141210', '#3e2a1e', '#6a4a2a', '#c09050', '#d8d8d8', '#ff004a', '#3f49ad', '#028a50'],
+  arriba: ['REMERA', 'MUSCULOSA', 'BUZO'],
+  estampa: ['LISA', 'RAYAS', 'CARITA', 'DISCO', 'CALAVERA'],
   remera: ['#ff004a', '#ffe600', '#016239', '#fee0ea', '#f9f2e8', '#0f1217', '#2f6bb0', '#8a3ab0', '#ff7a3c', '#2ab0b0'],
+  abajo: ['LARGO', 'SHORT'],
   pantalon: ['#22283a', '#1a1a1a', '#5a6a8a', '#6a4a2a', '#f9f2e8', '#7a0024'],
+  zapas: ['#f9f2e8', '#0f1217', '#ff004a', '#ffe600', '#2f6bb0'],
   accesorio: ['NADA', 'GORRA', 'PILUSO', 'LENTES', 'CUERNOS', 'AUREOLA', 'CAJA EN LA CABEZA'],
   baile: ['SALTITO', 'MANOS ARRIBA', 'PUÑO', 'ROBOT', 'CABECEO'],
 } as const;
@@ -23,13 +28,26 @@ export const LOOK_KEYS = Object.keys(LOOK) as LookKey[];
 export const LOOK_LABELS: Record<LookKey, string> = {
   cuerpo: 'CUERPO',
   piel: 'PIEL',
+  cara: 'CARA',
   pelo: 'PELO',
   peloColor: 'COLOR DE PELO',
-  remera: 'REMERA',
-  pantalon: 'PANTALÓN',
+  arriba: 'ARRIBA',
+  estampa: 'ESTAMPA',
+  remera: 'COLOR',
+  abajo: 'ABAJO',
+  pantalon: 'COLOR DE ABAJO',
+  zapas: 'ZAPAS',
   accesorio: 'ACCESORIO',
   baile: 'BAILE',
 };
+
+/** Pestañas del menú de personalización. */
+export const LOOK_GROUPS: { name: string; keys: LookKey[] }[] = [
+  { name: 'CUERPO', keys: ['cuerpo', 'piel', 'cara'] },
+  { name: 'PELO', keys: ['pelo', 'peloColor', 'accesorio'] },
+  { name: 'ROPA', keys: ['arriba', 'estampa', 'remera', 'abajo', 'pantalon', 'zapas'] },
+  { name: 'BAILE', keys: ['baile'] },
+];
 
 /** Devuelve el look limpio, o null si trae algo fuera de las listas. */
 export function validLook(x: unknown): Look | null {

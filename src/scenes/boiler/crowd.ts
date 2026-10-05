@@ -1,22 +1,47 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LOOK, type Look, type Raro } from '../../../shared/look';
-import { makeFaceTexture, makePSXMaterial } from '../../style-kit';
+import { makeFaceTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
 
 /**
  * La pista: hasta MAX personajes dibujados con instancing (una malla instanciada por parte del
- * cuerpo, peinado y accesorio), así 150 bailarines son ~15 draw calls. Las poses se calculan
- * en CPU cada frame: son un par de miles de matrices, no pesa nada.
+ * cuerpo, cara, peinado, estampa y accesorio), así 150 bailarines son unos 30 draw calls.
+ * Las poses se calculan en CPU cada frame: son un par de miles de matrices, no pesa nada.
+ *
+ * Cada tipo de cuerpo cambia las medidas de las partes (ancho del torso, grosor de brazos y
+ * piernas, tamaño de la cabeza) y la altura total. Nunca se estira el personaje entero de
+ * forma despareja: eso deforma los brazos al girarlos y achata la cabeza.
  */
 
 export const MAX_DANCERS = 150;
 
 const TAU = Math.PI * 2;
-// Medidas del cuerpo base (metros). El "cuerpo" elegido lo escala a lo ancho y a lo alto.
-const LEG_H = 0.8, TORSO_H = 0.56, ARM_H = 0.6, NECK_Y = LEG_H + TORSO_H + 0.02, SHOULDER_Y = LEG_H + TORSO_H - 0.04;
-/** [ancho, alto] por cada opción de LOOK.cuerpo. */
-const BODY_SCALE: [number, number][] = [[1, 1], [0.8, 1.04], [1.35, 1.02], [1.05, 0.8], [0.9, 1.18]];
+// Medidas del cuerpo base (metros).
+const THIGH = 0.42, SHIN = 0.34, SHOE = 0.07, HIP_Y = THIGH + SHIN + SHOE;
+const TORSO = 0.54, SHOULDER_Y = HIP_Y + TORSO - 0.06, NECK_Y = HIP_Y + TORSO;
+const UPPER = 0.3, FORE = 0.26;
+
+/** Medidas por cada opción de LOOK.cuerpo. */
+interface Build {
+  /** Altura total (escala pareja de todo el personaje). */
+  h: number;
+  /** Ancho y fondo del torso. */
+  w: number;
+  d: number;
+  /** Grosor de brazos y piernas. */
+  limb: number;
+  /** Tamaño de la cabeza. */
+  head: number;
+}
+const BUILDS: Build[] = [
+  { h: 1, w: 1, d: 1, limb: 1, head: 1 },
+  { h: 1.03, w: 0.76, d: 0.8, limb: 0.74, head: 0.94 },
+  { h: 1.05, w: 1.42, d: 1.55, limb: 1.32, head: 1.04 },
+  { h: 0.8, w: 1.08, d: 1.1, limb: 1.1, head: 1.18 },
+  { h: 1.2, w: 0.88, d: 0.9, limb: 0.84, head: 0.9 },
+];
 const ACC_COLOR = ['', '#ff004a', '#0f1217', '#0f1217', '#ff004a', '#ffe600', '#b08a5a'];
+const CAJA = 6;
 
 const hang = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d).translate(0, -h / 2, 0);
 const at = (g: THREE.BufferGeometry, x: number, y: number, z: number) => g.translate(x, y, z);
@@ -31,12 +56,15 @@ function faceBox(w: number, h: number, d: number) {
 }
 
 // Peinados y accesorios, relativos a la base del cuello (la cabeza va de y=0.02 a y=0.30).
+const cap = () => at(new THREE.BoxGeometry(0.28, 0.1, 0.28), 0, 0.29, -0.01);
 const HAIR_GEOS: (THREE.BufferGeometry | null)[] = [
-  at(new THREE.BoxGeometry(0.28, 0.1, 0.28), 0, 0.29, -0.01),
+  cap(),
   merge(at(new THREE.BoxGeometry(0.29, 0.1, 0.28), 0, 0.29, -0.01), at(new THREE.BoxGeometry(0.29, 0.36, 0.07), 0, 0.14, -0.14)),
   at(new THREE.BoxGeometry(0.06, 0.16, 0.3), 0, 0.37, 0),
   at(new THREE.IcosahedronGeometry(0.21, 0), 0, 0.3, -0.02),
   null,
+  merge(cap(), at(new THREE.BoxGeometry(0.28, 0.07, 0.05), 0, 0.235, 0.125)),
+  merge(cap(), at(new THREE.BoxGeometry(0.09, 0.24, 0.09), 0, 0.2, -0.19)),
 ];
 const ACC_GEOS: (THREE.BufferGeometry | null)[] = [
   null,
@@ -47,7 +75,6 @@ const ACC_GEOS: (THREE.BufferGeometry | null)[] = [
   at(new THREE.TorusGeometry(0.12, 0.022, 4, 8).rotateX(Math.PI / 2), 0, 0.5, 0),
   at(faceBox(0.38, 0.36, 0.38), 0, 0.17, 0),
 ];
-const CAJA = 6;
 
 interface Dancer {
   x: number;
@@ -55,8 +82,8 @@ interface Dancer {
   yaw: number;
   phase: number;
   look: Look;
-  sx: number;
-  sy: number;
+  /** Variación de altura propia (para que dos iguales no queden clavados a la misma altura). */
+  vary: number;
   name: string;
   /** Altura de la cabeza en el último frame (para los cartelitos). */
   headY: number;
@@ -88,16 +115,21 @@ export class Crowd {
   private slots = makeSlots();
   private dancers: Dancer[] = [];
   private solo = false;
-  private legs: THREE.InstancedMesh;
-  private torso: THREE.InstancedMesh;
-  private arms: THREE.InstancedMesh;
-  private heads: THREE.InstancedMesh;
+  private thighs: THREE.InstancedMesh;
+  private shins: THREE.InstancedMesh;
+  private shoes: THREE.InstancedMesh;
+  private upperArms: THREE.InstancedMesh;
+  private foreArms: THREE.InstancedMesh;
+  private hands: THREE.InstancedMesh;
+  /** Una malla por estampa de remera, por cara, por peinado y por accesorio. */
+  private torsos: THREE.InstancedMesh[];
+  private heads: THREE.InstancedMesh[];
   private hair: (THREE.InstancedMesh | null)[];
   private acc: (THREE.InstancedMesh | null)[];
+  private all: THREE.InstancedMesh[] = [];
 
   constructor(readonly capacity = MAX_DANCERS) {
     const plain = makePSXMaterial();
-    const face = makePSXMaterial({ map: makeFaceTexture() });
     const mesh = (geo: THREE.BufferGeometry, n: number, mat: THREE.Material = plain) => {
       const m = new THREE.InstancedMesh(geo, mat, n);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -106,14 +138,23 @@ export class Crowd {
       // Crear ya el atributo de color: el shader se compila con color por instancia.
       m.setColorAt(0, new THREE.Color(1, 1, 1));
       this.group.add(m);
+      this.all.push(m);
       return m;
     };
-    this.legs = mesh(hang(0.14, LEG_H, 0.16), capacity * 2);
-    this.torso = mesh(at(new THREE.BoxGeometry(0.42, TORSO_H, 0.22), 0, LEG_H + TORSO_H / 2, 0), capacity);
-    this.arms = mesh(hang(0.1, ARM_H, 0.1), capacity * 2);
-    this.heads = mesh(at(faceBox(0.26, 0.28, 0.26), 0, 0.16, 0), capacity, face);
+    this.thighs = mesh(hang(0.15, THIGH, 0.17), capacity * 2);
+    this.shins = mesh(hang(0.125, SHIN, 0.14), capacity * 2);
+    // La zapatilla y la mano van pegadas a la canilla y al antebrazo: usan su misma matriz.
+    this.shoes = mesh(at(new THREE.BoxGeometry(0.14, SHOE, 0.25), 0, -SHIN - SHOE / 2, 0.045), capacity * 2);
+    this.upperArms = mesh(hang(0.11, UPPER, 0.11), capacity * 2);
+    this.foreArms = mesh(hang(0.09, FORE, 0.09), capacity * 2);
+    this.hands = mesh(at(new THREE.BoxGeometry(0.095, 0.095, 0.1), 0, -FORE - 0.045, 0), capacity * 2);
+    const torsoGeo = () => at(faceBox(0.4, TORSO, 0.22), 0, HIP_Y + TORSO / 2, 0);
+    this.torsos = LOOK.estampa.map((_, i) => mesh(torsoGeo(), capacity, i ? makePSXMaterial({ map: makePrintTexture(i - 1), decal: true }) : plain));
+    const headGeo = () => at(faceBox(0.26, 0.28, 0.26), 0, 0.16, 0);
+    const faces = LOOK.cara.map((_, i) => makePSXMaterial({ map: makeFaceTexture(i) }));
+    this.heads = faces.map((mat) => mesh(headGeo(), capacity, mat));
     this.hair = HAIR_GEOS.map((g) => (g ? mesh(g, capacity) : null));
-    this.acc = ACC_GEOS.map((g, i) => (g ? mesh(g, capacity, i === CAJA ? face : plain) : null));
+    this.acc = ACC_GEOS.map((g, i) => (g ? mesh(g, capacity, i === CAJA ? faces[3] : plain) : null));
   }
 
   get count() {
@@ -124,11 +165,16 @@ export class Crowd {
   setDancers(list: Raro[]) {
     let seed = 99;
     const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-    this.dancers = list.slice(0, Math.min(this.capacity, this.slots.length)).map((raro, i) => {
-      const [sx, sy] = BODY_SCALE[raro.look.cuerpo] ?? [1, 1];
-      const v = 0.94 + r() * 0.12;
-      return { ...this.slots[i], yaw: (r() - 0.5) * 0.5, phase: r() * 10, look: raro.look, sx: sx * v, sy: sy * v, name: raro.name, headY: 1.7 };
-    });
+    this.dancers = list.slice(0, Math.min(this.capacity, this.slots.length)).map((raro, i) => ({
+      x: this.slots[i].x,
+      z: this.slots[i].z,
+      yaw: (r() - 0.5) * 0.5,
+      phase: r() * 10,
+      look: raro.look,
+      vary: 0.96 + r() * 0.08,
+      name: raro.name,
+      headY: 1.7,
+    }));
     this.paint();
   }
 
@@ -136,9 +182,7 @@ export class Crowd {
   setLook(i: number, look: Look, name?: string) {
     const d = this.dancers[i];
     if (!d) return;
-    const v = d.sx / (BODY_SCALE[d.look.cuerpo]?.[0] ?? 1);
     d.look = look;
-    [d.sx, d.sy] = (BODY_SCALE[look.cuerpo] ?? [1, 1]).map((s) => s * v);
     if (name !== undefined) d.name = name;
     this.paint();
   }
@@ -158,33 +202,42 @@ export class Crowd {
     const list = this.shown();
     const n = list.length;
     const c = new THREE.Color();
-    const hairN = this.hair.map(() => 0);
-    const accN = this.acc.map(() => 0);
+    const pair = (m: THREE.InstancedMesh, i: number, hex: string) => {
+      c.set(hex);
+      m.setColorAt(i * 2, c);
+      m.setColorAt(i * 2 + 1, c);
+    };
+    const torsoN = this.torsos.map(() => 0), headN = this.heads.map(() => 0);
+    const hairN = this.hair.map(() => 0), accN = this.acc.map(() => 0);
     list.forEach((d, i) => {
       const l = d.look;
-      c.set(LOOK.pantalon[l.pantalon]);
-      this.legs.setColorAt(i * 2, c);
-      this.legs.setColorAt(i * 2 + 1, c);
-      this.torso.setColorAt(i, c.set(LOOK.remera[l.remera]));
-      c.set(LOOK.piel[l.piel]);
-      this.arms.setColorAt(i * 2, c);
-      this.arms.setColorAt(i * 2 + 1, c);
-      this.heads.setColorAt(i, c);
+      const skin = LOOK.piel[l.piel], shirt = LOOK.remera[l.remera], pants = LOOK.pantalon[l.pantalon];
+      pair(this.thighs, i, pants);
+      // Con short se ve la pierna; con musculosa, el brazo entero; con buzo, manga larga.
+      pair(this.shins, i, l.abajo === 1 ? skin : pants);
+      pair(this.shoes, i, LOOK.zapas[l.zapas]);
+      pair(this.upperArms, i, l.arriba === 1 ? skin : shirt);
+      pair(this.foreArms, i, l.arriba === 2 ? shirt : skin);
+      pair(this.hands, i, skin);
+      this.torsos[l.estampa].setColorAt(torsoN[l.estampa]++, c.set(shirt));
+      this.heads[l.cara].setColorAt(headN[l.cara]++, c.set(skin));
       // Con la caja puesta no se ve el pelo.
       const hair = l.accesorio === CAJA ? null : this.hair[l.pelo];
       if (hair) hair.setColorAt(hairN[l.pelo]++, c.set(LOOK.peloColor[l.peloColor]));
       const acc = this.acc[l.accesorio];
       if (acc) acc.setColorAt(accN[l.accesorio]++, c.set(ACC_COLOR[l.accesorio]));
     });
-    this.legs.count = this.arms.count = n * 2;
-    this.torso.count = this.heads.count = n;
+    for (const m of [this.thighs, this.shins, this.shoes, this.upperArms, this.foreArms, this.hands]) m.count = n * 2;
+    this.torsos.forEach((m, i) => (m.count = torsoN[i]));
+    this.heads.forEach((m, i) => (m.count = headN[i]));
     this.hair.forEach((m, i) => m && (m.count = hairN[i]));
     this.acc.forEach((m, i) => m && (m.count = accN[i]));
-    for (const m of this.group.children as THREE.InstancedMesh[]) if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    for (const m of this.all) if (m.instanceColor) m.instanceColor.needsUpdate = true;
   }
 
   // Temporales para no generar basura en cada frame.
   private root = new THREE.Matrix4();
+  private joint = new THREE.Matrix4();
   private local = new THREE.Matrix4();
   private out = new THREE.Matrix4();
   private euler = new THREE.Euler();
@@ -192,10 +245,26 @@ export class Crowd {
   private quat = new THREE.Quaternion();
   private scale = new THREE.Vector3();
 
-  private part(mesh: THREE.InstancedMesh, i: number, x: number, y: number, z: number, rx: number, ry: number, rz: number) {
+  /** joint = parent · traslación · rotación (una articulación, sin escala). */
+  private bend(parent: THREE.Matrix4, x: number, y: number, z: number, rx: number, ry: number, rz: number) {
     this.local.makeRotationFromEuler(this.euler.set(rx, ry, rz));
     this.local.setPosition(x, y, z);
-    mesh.setMatrixAt(i, this.out.multiplyMatrices(this.root, this.local));
+    return this.joint.multiplyMatrices(parent, this.local);
+  }
+
+  /** Matriz de la articulación actual con el grosor de la parte (la escala va al final: no deforma). */
+  private sized(sx: number, sy: number, sz: number) {
+    return this.out.copy(this.joint).scale(this.scale.set(sx, sy, sz));
+  }
+
+  /** Brazo o pierna: parte de arriba, articulación del medio y parte de abajo (con mano o zapatilla). */
+  private limb(upper: THREE.InstancedMesh, lower: THREE.InstancedMesh, tip: THREE.InstancedMesh, i: number, x: number, y: number, len: number, rx: number, rz: number, bendX: number, thick: number) {
+    this.bend(this.root, x, y, 0, rx, 0, rz);
+    upper.setMatrixAt(i, this.sized(thick, 1, thick));
+    this.bend(this.out.copy(this.joint), 0, -len, 0, bendX, 0, 0);
+    const m = this.sized(thick, 1, thick);
+    lower.setMatrixAt(i, m);
+    tip.setMatrixAt(i, m);
   }
 
   /**
@@ -204,70 +273,101 @@ export class Crowd {
    * @param t tiempo en segundos (para el vaivén cuando no hay música)
    */
   update(beats: number, energy: number, t: number) {
-    const hairN = this.hair.map(() => 0);
-    const accN = this.acc.map(() => 0);
+    const torsoN = this.torsos.map(() => 0), headN = this.heads.map(() => 0);
+    const hairN = this.hair.map(() => 0), accN = this.acc.map(() => 0);
     const e = energy;
     this.shown().forEach((d, i) => {
+      const b = BUILDS[d.look.cuerpo] ?? BUILDS[0];
       const f = beats + d.phase * 0.012;
       const s = Math.sin(Math.PI * f);
       const hop01 = Math.abs(s);
       const w = Math.sin(TAU * f);
       const idle = Math.sin(t * 0.9 + d.phase);
       let hop = 0, yaw = d.yaw + idle * 0.08 * (1 - e), lean = 0, headRx = 0;
-      let aLx = 0, aLz = 0.12, aRx = 0, aRz = -0.12, legSwing = 0;
+      // Hombros (x, z), codos, caderas y rodillas.
+      let aLx = 0, aLz = 0.1, aRx = 0, aRz = -0.1, eL = -0.15, eR = -0.15;
+      let tL = 0, tR = 0, kL = 0, kR = 0;
       switch (d.look.baile) {
         case 1: // manos arriba
           hop = hop01 * 0.07;
-          aLz = 0.12 + (2.6 + 0.25 * w) * e;
-          aRz = -0.12 - (2.6 + 0.25 * w) * e;
+          aLz = 0.1 + (2.55 + 0.25 * w) * e;
+          aRz = -0.1 - (2.55 + 0.25 * w) * e;
+          eL = eR = -0.15 - 0.35 * Math.max(0, w) * e;
           headRx = -0.15 * e;
+          kL = kR = (1 - hop01) * 0.3 * e;
+          tL = tR = -kL * 0.5;
           break;
         case 2: // puño
           hop = hop01 * 0.1;
-          aRz = -0.12 - (2.3 + 0.5 * hop01) * e;
-          aLx = 0.3 * s * e;
+          aRz = -0.1 - 2.2 * e;
+          eR = -0.2 - 1.1 * (1 - hop01) * e;
+          aLx = -0.35 * e;
+          eL = -1.3 * e;
           headRx = 0.2 * hop01 * e;
+          kL = kR = (1 - hop01) * 0.35 * e;
+          tL = tR = -kL * 0.5;
           break;
         case 3: { // robot: poses duras que cambian con cada beat
           const step = ((Math.floor(f) % 4) + 4) % 4;
           const k = Math.min(1, (f - Math.floor(f)) * 6);
-          const P = [[-1.5, 0.1, 0, -0.1], [0, 1.5, -1.5, -0.1], [0, 0.1, -1.5, -0.1], [-1.5, 1.5, 0, -1.5]];
-          const a = P[(step + 3) % 4], b = P[step];
-          aLx = (a[0] + (b[0] - a[0]) * k) * e;
-          aLz = 0.12 + (a[1] + (b[1] - a[1]) * k) * e;
-          aRx = (a[2] + (b[2] - a[2]) * k) * e;
-          aRz = -0.12 + (a[3] + (b[3] - a[3]) * k) * e;
+          // [hombro izq x, codo izq, hombro der x, codo der]
+          const P = [[-1.5, 0, 0, -1.5], [0, -1.5, -1.5, 0], [-1.5, -1.5, 0, 0], [0, 0, -1.5, -1.5]];
+          const from = P[(step + 3) % 4], to = P[step];
+          const mix = (j: number) => (from[j] + (to[j] - from[j]) * k) * e;
+          aLx = mix(0);
+          eL = mix(1);
+          aRx = mix(2);
+          eR = mix(3);
           yaw += [0.35, 0, -0.35, 0][step] * e;
+          headRx = step % 2 ? 0.15 * e : 0;
           break;
         }
         case 4: // cabeceo
           hop = hop01 * 0.03;
           headRx = 0.55 * Math.max(0, w) * e;
           lean = 0.12 * e;
-          aLx = aRx = -0.25 * e;
+          aLx = aRx = -0.3 * e;
+          eL = eR = -1.1 * e;
+          kL = kR = Math.max(0, w) * 0.4 * e;
+          tL = tR = -kL * 0.5;
           break;
         default: // saltito
           hop = hop01 * 0.14;
-          aLx = 0.55 * s * e;
-          aRx = -0.55 * s * e;
-          legSwing = 0.3 * s * e;
+          aLx = 0.5 * s * e;
+          aRx = -0.5 * s * e;
+          eL = eR = -0.9 * e;
+          tL = 0.3 * s * e;
+          tR = -0.3 * s * e;
+          kL = Math.max(0, -s) * 0.6 * e;
+          kR = Math.max(0, s) * 0.6 * e;
           headRx = 0.1 * w * e;
       }
       hop *= e;
-      this.root.compose(this.pos.set(d.x, hop, d.z), this.quat.setFromEuler(this.euler.set(lean, yaw, 0)), this.scale.set(d.sx, d.sy, d.sx));
-      this.part(this.legs, i * 2, 0.09, LEG_H, 0, legSwing, 0, 0);
-      this.part(this.legs, i * 2 + 1, -0.09, LEG_H, 0, -legSwing, 0, 0);
-      this.torso.setMatrixAt(i, this.root);
-      this.part(this.arms, i * 2, 0.265, SHOULDER_Y, 0, aLx, 0, aLz);
-      this.part(this.arms, i * 2 + 1, -0.265, SHOULDER_Y, 0, aRx, 0, aRz);
-      this.part(this.heads, i, 0, NECK_Y, 0, headRx, 0, 0);
+      // En el creador gira despacio para verlo de todos lados.
+      if (this.solo) yaw = Math.sin(t * 0.7) * 0.9;
+      const h = b.h * d.vary;
+      this.root.compose(this.pos.set(d.x, hop, d.z), this.quat.setFromEuler(this.euler.set(lean, yaw, 0)), this.scale.set(h, h, h));
+
+      const hip = 0.1 * b.w, shoulder = 0.2 * b.w + 0.055 * b.limb;
+      this.limb(this.thighs, this.shins, this.shoes, i * 2, hip, HIP_Y, THIGH, tL, 0, kL, b.limb);
+      this.limb(this.thighs, this.shins, this.shoes, i * 2 + 1, -hip, HIP_Y, THIGH, tR, 0, kR, b.limb);
+      this.limb(this.upperArms, this.foreArms, this.hands, i * 2, shoulder, SHOULDER_Y, UPPER, aLx, aLz, eL, b.limb);
+      this.limb(this.upperArms, this.foreArms, this.hands, i * 2 + 1, -shoulder, SHOULDER_Y, UPPER, aRx, aRz, eR, b.limb);
+
+      const print = d.look.estampa;
+      this.torsos[print].setMatrixAt(torsoN[print]++, this.out.copy(this.root).scale(this.scale.set(b.w, 1, b.d)));
+
+      this.bend(this.root, 0, NECK_Y, 0, headRx, 0, 0);
+      const head = this.sized(b.head, b.head, b.head);
+      const face = d.look.cara;
+      this.heads[face].setMatrixAt(headN[face]++, head);
       const hair = d.look.accesorio === CAJA ? null : this.hair[d.look.pelo];
-      if (hair) hair.setMatrixAt(hairN[d.look.pelo]++, this.out);
+      if (hair) hair.setMatrixAt(hairN[d.look.pelo]++, head);
       const acc = this.acc[d.look.accesorio];
-      if (acc) acc.setMatrixAt(accN[d.look.accesorio]++, this.out);
-      d.headY = hop + (NECK_Y + 0.3) * d.sy;
+      if (acc) acc.setMatrixAt(accN[d.look.accesorio]++, head);
+      d.headY = hop + (NECK_Y + 0.3 * b.head) * h;
     });
-    for (const m of this.group.children as THREE.InstancedMesh[]) m.instanceMatrix.needsUpdate = true;
+    for (const m of this.all) m.instanceMatrix.needsUpdate = true;
   }
 
   /** Posición de arriba de la cabeza del bailarín `i` (para colgarle el nombre). */

@@ -92,6 +92,7 @@ const FRAGMENT = /* glsl */ `
 uniform vec3 uColor;
 uniform sampler2D map;
 uniform float uHasMap;
+uniform float uDecal;
 uniform float uAffine;
 uniform float uFlat;
 uniform float uLit;
@@ -114,7 +115,12 @@ varying float vFogDepth;
 void main() {
   vec2 uv = mix(vUv, vAffine.xy / vAffine.z, uAffine);
   vec4 base = vec4(uColor * vTint, 1.0);
-  if (uHasMap > 0.5) base *= texture2D(map, uv);
+  if (uHasMap > 0.5) {
+    vec4 tex = texture2D(map, uv);
+    // Estampa: la textura se pega arriba del color donde es opaca (no se tiñe ni recorta).
+    if (uDecal > 0.5) base.rgb = mix(base.rgb, tex.rgb, step(0.5, tex.a));
+    else base *= tex;
+  }
   if (base.a < 0.5) discard;
 
   vec3 light = vLight;
@@ -133,6 +139,8 @@ void main() {
 export interface PSXMaterialOptions {
   color?: THREE.ColorRepresentation;
   map?: THREE.Texture | null;
+  /** La textura es una estampa sobre el color (remeras): donde es transparente se ve el color. */
+  decal?: boolean;
   /** false = sin iluminación (sombras falsas, fondos, neones). */
   lit?: boolean;
   side?: THREE.Side;
@@ -164,6 +172,7 @@ export function makePSXMaterial(opts: PSXMaterialOptions = {}): PSXMaterial {
       uColor: { value: new THREE.Color(opts.color ?? 0xffffff) },
       map: { value: opts.map ?? null },
       uHasMap: { value: opts.map ? 1 : 0 },
+      uDecal: { value: opts.decal ? 1 : 0 },
       uLit: { value: opts.lit === false ? 0 : 1 },
       uGlitch: opts.glitch ?? { value: 0 },
       uOpacity: { value: opts.opacity ?? 1 },

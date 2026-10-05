@@ -1,4 +1,4 @@
-import { LOOK, LOOK_KEYS, LOOK_LABELS, type Look, type LookKey, NAME_MAX, type Raro, cleanName, randomLook, validLook } from '../../shared/look';
+import { LOOK, LOOK_GROUPS, LOOK_LABELS, type Look, type LookKey, NAME_MAX, type Raro, cleanName, randomLook, validLook } from '../../shared/look';
 import { saveRaro } from '../api';
 import type { BoilerRoom } from '../scenes/boiler';
 import { sfx } from '../style-kit';
@@ -25,10 +25,15 @@ export interface CreadorOptions {
   onSaved: (raro: Raro, total: number) => void;
 }
 
-/** Menú de personalización: nombre + opciones, con el personaje en vivo al lado. */
+/**
+ * Menú de personalización: nombre + opciones en pestañas (cuerpo, pelo, ropa, baile), con el
+ * personaje girando en vivo al lado. Los colores se eligen tocando la muestra; el resto, con
+ * las flechitas. Con teclado: ↑↓ para moverse y ←→ para cambiar.
+ */
 export function openCreador(o: CreadorOptions) {
   const mine = o.mine();
-  const start = mine ?? loadDraft();
+  // Un guardado viejo puede no traer las opciones nuevas: ahí se arranca de uno al azar.
+  const start = (mine && validLook(mine.look) ? mine : null) ?? loadDraft();
   const look: Look = { ...(start?.look ?? randomLook()) };
   let name = start?.name ?? '';
 
@@ -63,54 +68,92 @@ export function openCreador(o: CreadorOptions) {
     preview();
   });
 
-  const rows = new Map<LookKey, () => void>();
-  const opciones = el('div', 'opciones');
-  for (const key of LOOK_KEYS) {
+  /** Repintan cada fila cuando cambia el look (al azar, o al tocar una opción). */
+  const painters: (() => void)[] = [];
+
+  const row = (key: LookKey) => {
     const options = LOOK[key] as readonly string[];
-    const valor = el('span', 'valor');
-    const paint = () => {
-      const v = options[look[key]];
-      if (v.startsWith('#')) {
-        const sw = el('span', 'muestra');
-        sw.style.background = v;
-        valor.replaceChildren(sw, `${look[key] + 1}/${options.length}`);
-      } else valor.replaceChildren(el('span', '', v));
-    };
-    const step = (d: number) => {
-      look[key] = (look[key] + d + options.length) % options.length;
+    const isColor = options[0].startsWith('#');
+    const set = (i: number) => {
+      look[key] = (i + options.length) % options.length;
       sfx.move();
       paint();
       preview();
     };
-    const prev = el('button', 'btn chico', '<');
-    const next = el('button', 'btn chico', '>');
-    // Con teclado se maneja la fila entera (← →); los botones son para mouse y dedo.
-    prev.tabIndex = next.tabIndex = -1;
-    prev.type = next.type = 'button';
-    prev.setAttribute('aria-label', `${LOOK_LABELS[key]} anterior`);
-    next.setAttribute('aria-label', `${LOOK_LABELS[key]} siguiente`);
-    prev.addEventListener('click', () => step(-1));
-    next.addEventListener('click', () => step(1));
-    const row = el('div', 'opcion', [el('span', '', LOOK_LABELS[key]), prev, valor, next]);
-    row.tabIndex = 0;
-    row.setAttribute('role', 'group');
-    row.setAttribute('aria-label', LOOK_LABELS[key]);
-    row.addEventListener('keydown', (e) => {
+    const body = el('div', isColor ? 'muestras' : 'selector');
+    let paint: () => void;
+    if (isColor) {
+      // Paleta: se toca el color directo.
+      const swatches = options.map((hex, i) => {
+        const b = el('button', 'muestra');
+        b.type = 'button';
+        b.tabIndex = -1;
+        b.style.background = hex;
+        b.setAttribute('aria-label', `${LOOK_LABELS[key]} ${i + 1}`);
+        b.addEventListener('click', () => set(i));
+        return b;
+      });
+      body.append(...swatches);
+      paint = () => swatches.forEach((b, i) => b.classList.toggle('on', i === look[key]));
+    } else {
+      const prev = el('button', 'btn chico', '<');
+      const next = el('button', 'btn chico', '>');
+      const valor = el('span', 'valor');
+      prev.type = next.type = 'button';
+      // Con teclado se maneja la fila entera (← →); los botones son para mouse y dedo.
+      prev.tabIndex = next.tabIndex = -1;
+      prev.setAttribute('aria-label', `${LOOK_LABELS[key]} anterior`);
+      next.setAttribute('aria-label', `${LOOK_LABELS[key]} siguiente`);
+      prev.addEventListener('click', () => set(look[key] - 1));
+      next.addEventListener('click', () => set(look[key] + 1));
+      body.append(prev, valor, next);
+      paint = () => valor.replaceChildren(el('span', '', options[look[key]]), el('small', '', `${look[key] + 1}/${options.length}`));
+    }
+    const r = el('div', 'opcion', [el('span', 'etiqueta', LOOK_LABELS[key]), body]);
+    r.tabIndex = 0;
+    r.setAttribute('role', 'group');
+    r.setAttribute('aria-label', LOOK_LABELS[key]);
+    r.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
       e.preventDefault();
-      step(e.key === 'ArrowLeft' ? -1 : 1);
+      set(look[key] + (e.key === 'ArrowLeft' ? -1 : 1));
     });
-    rows.set(key, paint);
+    r.addEventListener('focus', () => sfx.move());
+    painters.push(paint);
     paint();
-    opciones.append(row);
-  }
+    return r;
+  };
+
+  // Pestañas: un grupo de opciones a la vez, así el menú no es una lista eterna.
+  const tabs = el('div', 'pestanas');
+  tabs.setAttribute('role', 'tablist');
+  const pages = LOOK_GROUPS.map((g) => el('div', 'opciones', g.keys.map(row)));
+  const tabButtons = LOOK_GROUPS.map((g, i) => {
+    const b = el('button', 'btn chico', g.name);
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.addEventListener('click', () => {
+      sfx.select();
+      show(i);
+    });
+    tabs.append(b);
+    return b;
+  });
+  const show = (i: number) => {
+    pages.forEach((pg, j) => (pg.hidden = j !== i));
+    tabButtons.forEach((b, j) => {
+      b.classList.toggle('on', j === i);
+      b.setAttribute('aria-selected', String(j === i));
+    });
+  };
+  show(0);
 
   const random = el('button', 'btn', 'AL AZAR');
   random.type = 'button';
   random.addEventListener('click', () => {
     Object.assign(look, randomLook());
     sfx.select();
-    rows.forEach((paint) => paint());
+    painters.forEach((paint) => paint());
     preview();
   });
   const save = el('button', 'btn rojo', mine ? 'GUARDAR CAMBIOS' : 'ENTRAR A LA PISTA');
@@ -120,9 +163,10 @@ export function openCreador(o: CreadorOptions) {
   const captcha = el('div');
   const turnstile = mountTurnstile(captcha);
 
-  const form = el('form', 'form', [
+  const form = el('form', 'form creador', [
     el('label', 'campo creador-nombre', [el('span', '', `NOMBRE (HASTA ${NAME_MAX})`), input]),
-    opciones,
+    tabs,
+    ...pages,
     captcha,
     el('div', 'fila', [random, save]),
     status,
