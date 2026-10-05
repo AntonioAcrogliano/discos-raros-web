@@ -29,7 +29,7 @@ Redes: YouTube @discosraros · Instagram @discosraros.arg · Kick discosRaros.
 
 - **Audio desde YouTube**: se usa el YouTube IFrame API. No se puede leer el audio, así que no hay audio-reactividad real: el baile se sincroniza a un BPM fijo o aproximado por set. El player tiene que quedar visible. Idea: mostrarlo como la "tele" o pantalla del club con CSS3DRenderer.
 - **Autoplay**: los navegadores bloquean el sonido hasta que haya un click, así que la pantalla de entrada tiene un botón tipo "PRESS START".
-- **Último set automático**: se busca el último video del canal (YouTube Data API desde una función serverless, cacheado). Hay que filtrar solo sets (por playlist o título).
+- **Último set automático**: sale del feed RSS público del canal (`server/sets.ts`, sin clave de API, cacheado 15 min). Solo entran los títulos tipo `DISCOS RAROS #57 - NOMBRE [GÉNERO]`; el género entre corchetes define el BPM aproximado del baile.
 - **Pista infinita**: nunca se renderizan todos los personajes. Se usa instancing y se muestran como máximo unos 150 a la vez (el tuyo siempre, más los recientes y una muestra aleatoria), con contador total ("1.234 raros en la pista").
 - **Personaje del visitante**: menú de personalización (cuerpo, colores, ropa, accesorios) + nombre visible. **Sin foto de cara** (se descartó: mucho quilombo de moderación). Lo único a moderar es el nombre.
 - **Mobile**: el boiler room tiene que andar en celular (con menos personajes y menos resolución). El juego de pelea es solo para desktop.
@@ -38,11 +38,24 @@ Redes: YouTube @discosraros · Instagram @discosraros.arg · Kick discosRaros.
 
 - Discos y Raros ya existen en la app de PCX (`psx-viewer/characters/characters.json`), armados por código: **`persona1` = Discos**, **`persona2` = Raros**. Para el MVP van con los outfits que tienen ahí (más adelante pueden cambiar).
 - Discos y Raros son el mismo modelo low-poly en la cabina y en el juego de pelea: se hacen una vez y se reutilizan.
-- Se pueden armar en Blender (o generar con IA y bajarles polígonos), riggear y animar con Mixamo, exportar a glTF/GLB y guardar en `public/models/`.
-- Mientras no estén, se usan placeholders hechos con primitivas.
+- Están en `public/models/discos.glb` y `raros.glb`, exportados de la app de PCX con GLTFExporter (cabeza desde las fotos ya horneada en texturas de 64×64). No tienen skinning: son grupos anidados con nombre (`body`, `head`, `armL`, `foreL`, `legL`, `kneeL`…), los carga `src/characters/glbRig.ts` y se animan por código.
+- Para re-exportarlos (outfit nuevo, etc.): trabajar sobre una **copia** de `psx-viewer` (nunca sobre la carpeta original), construir `Character` con la entrada de `characters.json`, `await loadPhotos()`, nombrar las articulaciones del rig, pasar los materiales a `MeshBasicMaterial` y exportar con `GLTFExporter` en binario.
+- Si un GLB no carga, entra el personaje de cajas de `src/characters/rig.ts` (mismo esqueleto).
 
 ## Convenciones
 
 - Hablar en español rioplatense en commits y comentarios de UI.
 - Commits chicos, uno por feature.
 - Probar siempre en Chrome desktop y en un celular de gama media.
+
+## Cómo está armado
+
+-  → http://localhost:5180 (el 5173 es del visor de PCX).  chequea tipos y compila.
+- : paleta, material PSX, post-procesado, texturas, títulos, sonidos y  (renderer + post + capa de textos + loop). Todas las escenas pasan por ahí.
+- : club, pista instanciada (), DJs, tele de YouTube. : el juego (se carga recién al entrar).
+-  y : barra, ventanas y secciones (Sets, Crear tu raro, Contacto). Rutas por hash (…).
+- : opciones del personaje del visitante y validación de nombres; lo usan cliente y servidor. Agregar opciones **al final** de cada lista (los guardados usan el índice).
+- : toda la API (). La corre Vite en desarrollo y las funciones de  en Vercel. Sin las variables de Supabase guarda en .
+- : moderación (personajes y mensajes de contacto), protegida con .
+- Variables de entorno: ver . Tablas: .
+- La fuente pixelada dibuja mal las mayúsculas con tilde: los carteles van sin tilde ( en ); la Ñ sí va.
