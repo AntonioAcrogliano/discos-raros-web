@@ -55,17 +55,49 @@ function faceBox(w: number, h: number, d: number) {
   return g;
 }
 
-// Peinados y accesorios, relativos a la base del cuello (la cabeza va de y=0.02 a y=0.30).
-const cap = () => at(new THREE.BoxGeometry(0.28, 0.1, 0.28), 0, 0.29, -0.01);
+// Peinados y accesorios, relativos a la base del cuello. La cabeza es una caja que va de
+// y=0.02 a y=0.30, con x y z entre -0.13 y 0.13; la cara mira a +z.
+// Todo pelo sobresale 1 cm de la cabeza (nunca queda al ras: parpadea) y deja la cara libre.
+const bx = (w: number, h: number, d: number, x: number, y: number, z: number) => at(new THREE.BoxGeometry(w, h, d), x, y, z);
+/** Casco de pelo: tapa de arriba, nuca y patillas. `back` es hasta dónde baja atrás. */
+const helmet = (back = 0.1, sides = 0.15) =>
+  merge(
+    bx(0.28, 0.07, 0.28, 0, 0.305, 0),
+    bx(0.28, 0.3 - back, 0.03, 0, (0.3 + back) / 2, -0.133),
+    bx(0.03, 0.29 - sides, 0.2, 0.132, (0.29 + sides) / 2, -0.03),
+    bx(0.03, 0.29 - sides, 0.2, -0.132, (0.29 + sides) / 2, -0.03),
+  );
+/** Rulos sin la parte de arriba (lo que asoma por debajo de un gorro). */
+const curlsSides = () => [bx(0.07, 0.17, 0.26, 0.17, 0.2, -0.03), bx(0.07, 0.17, 0.26, -0.17, 0.2, -0.03), bx(0.36, 0.26, 0.08, 0, 0.19, -0.17)];
 const HAIR_GEOS: (THREE.BufferGeometry | null)[] = [
-  cap(),
-  merge(at(new THREE.BoxGeometry(0.29, 0.1, 0.28), 0, 0.29, -0.01), at(new THREE.BoxGeometry(0.29, 0.36, 0.07), 0, 0.14, -0.14)),
-  at(new THREE.BoxGeometry(0.06, 0.16, 0.3), 0, 0.37, 0),
-  at(new THREE.IcosahedronGeometry(0.21, 0), 0, 0.3, -0.02),
+  // CORTO
+  helmet(),
+  // LARGO: la nuca y los costados bajan hasta los hombros.
+  helmet(0, 0.05),
+  // CRESTA
+  bx(0.06, 0.15, 0.3, 0, 0.375, 0),
+  // RULOS: un bloque arriba (deja la frente y los ojos a la vista) y los costados inflados.
+  merge(bx(0.36, 0.2, 0.34, 0, 0.34, -0.02), ...curlsSides()),
+  // PELADO
   null,
-  merge(cap(), at(new THREE.BoxGeometry(0.28, 0.07, 0.05), 0, 0.235, 0.125)),
-  merge(cap(), at(new THREE.BoxGeometry(0.09, 0.24, 0.09), 0, 0.2, -0.19)),
+  // FLEQUILLO
+  merge(helmet(), bx(0.28, 0.06, 0.03, 0, 0.25, 0.145)),
+  // COLITA: gomita y cola atrás.
+  merge(helmet(), bx(0.07, 0.07, 0.07, 0, 0.26, -0.19), bx(0.08, 0.2, 0.07, 0, 0.14, -0.21)),
+  // (interno) RULOS con gorro puesto
+  merge(...curlsSides()),
 ];
+const RULOS = 3, CRESTA = 2, RULOS_CON_GORRO = 7;
+
+/** Qué malla de pelo le toca (o -1 si no se ve): el gorro y la caja tapan lo de arriba. */
+function hairIndex(l: Look): number {
+  if (l.accesorio === CAJA) return -1;
+  const hat = l.accesorio === 1 || l.accesorio === 2;
+  if (hat && l.pelo === CRESTA) return -1;
+  if (hat && l.pelo === RULOS) return RULOS_CON_GORRO;
+  return l.pelo;
+}
+
 const ACC_GEOS: (THREE.BufferGeometry | null)[] = [
   null,
   merge(at(new THREE.BoxGeometry(0.3, 0.12, 0.3), 0, 0.33, 0), at(new THREE.BoxGeometry(0.26, 0.03, 0.16), 0, 0.285, 0.21)),
@@ -221,9 +253,9 @@ export class Crowd {
       pair(this.hands, i, skin);
       this.torsos[l.estampa].setColorAt(torsoN[l.estampa]++, c.set(shirt));
       this.heads[l.cara].setColorAt(headN[l.cara]++, c.set(skin));
-      // Con la caja puesta no se ve el pelo.
-      const hair = l.accesorio === CAJA ? null : this.hair[l.pelo];
-      if (hair) hair.setColorAt(hairN[l.pelo]++, c.set(LOOK.peloColor[l.peloColor]));
+      const hi = hairIndex(l);
+      const hair = hi < 0 ? null : this.hair[hi];
+      if (hair) hair.setColorAt(hairN[hi]++, c.set(LOOK.peloColor[l.peloColor]));
       const acc = this.acc[l.accesorio];
       if (acc) acc.setColorAt(accN[l.accesorio]++, c.set(ACC_COLOR[l.accesorio]));
     });
@@ -361,8 +393,9 @@ export class Crowd {
       const head = this.sized(b.head, b.head, b.head);
       const face = d.look.cara;
       this.heads[face].setMatrixAt(headN[face]++, head);
-      const hair = d.look.accesorio === CAJA ? null : this.hair[d.look.pelo];
-      if (hair) hair.setMatrixAt(hairN[d.look.pelo]++, head);
+      const hi = hairIndex(d.look);
+      const hair = hi < 0 ? null : this.hair[hi];
+      if (hair) hair.setMatrixAt(hairN[hi]++, head);
       const acc = this.acc[d.look.accesorio];
       if (acc) acc.setMatrixAt(accN[d.look.accesorio]++, head);
       d.headY = hop + (NECK_Y + 0.3 * b.head) * h;
