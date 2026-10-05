@@ -43,15 +43,14 @@ async function main() {
   // El último set arranca solo (el click de PRESS START es lo que habilita el sonido).
   void sets.then((list) => list[0] && room.play(list[0], list));
 
-  /** Entra a la pelea (el código se baja recién acá) y devuelve cómo salir. */
-  const openPelea = () => {
+  /** Entra a un juego (el código se baja recién acá) y devuelve cómo salir. */
+  const openGame = (load: () => Promise<{ stop(): void }>) => () => {
     let stopped = false;
     let stop = () => {};
     setChrome(false);
-    void import('./pelea').then(async ({ startPelea }) => {
-      const pelea = await startPelea(stage, room, () => go(''));
-      if (stopped) pelea.stop();
-      else stop = () => pelea.stop();
+    void load().then((game) => {
+      if (stopped) game.stop();
+      else stop = () => game.stop();
     });
     return () => {
       stopped = true;
@@ -59,6 +58,9 @@ async function main() {
       setChrome(true);
     };
   };
+  const exit = () => go('');
+  const openPelea = openGame(() => import('./pelea').then((m) => m.startPelea(stage, room, exit)));
+  const openFutbol = openGame(() => import('./futbol').then((m) => m.startFutbol(stage, room, exit)));
 
   mountUi([
     { path: '', label: 'LA PISTA' },
@@ -69,8 +71,13 @@ async function main() {
       open: () => openCreador({ room, mine: () => data.mine, onSaved: (raro, total) => setPista({ ...data, mine: raro, total }) }),
     },
     { path: 'contacto', label: 'CONTACTO', open: openContacto },
-    // El juego de pelea es solo para PC (teclado o joystick).
-    ...(isTouch() ? [] : [{ path: 'pelea', label: 'DISCOS VS RAROS', open: openPelea }]),
+    // Los juegos son solo para PC (teclado o joystick).
+    ...(isTouch()
+      ? []
+      : [
+          { path: 'pelea', label: 'PELEA', open: openPelea },
+          { path: 'futbol', label: 'CABEZAZOS', open: openFutbol },
+        ]),
   ]);
 }
 

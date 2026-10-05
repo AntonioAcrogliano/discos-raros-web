@@ -19,7 +19,7 @@ import {
 export const CLUB = {
   halfW: 6.6,
   backZ: -5.3,
-  frontZ: 6.6,
+  frontZ: 9.6,
   ceilY: 5.6,
   boothZ: 2.5,
   boothH: 1.0,
@@ -47,7 +47,7 @@ export function buildClub(): Club {
 
   // --- Pista: baldosas que cambian de color con el beat ------------------------------
   // Una sola textura con 4×4 píxeles por baldosa, que se redibuja en cada beat.
-  const TX = 13, TZ = 12, PX = 4;
+  const TX = 13, TZ = 15, PX = 4;
   const floorCv = makeCanvas(TX * PX, TZ * PX);
   const floorTex = toPSXTexture(floorCv.canvas);
   const floorGeo = new THREE.PlaneGeometry(halfW * 2, depth, TX, TZ);

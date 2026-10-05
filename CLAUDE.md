@@ -52,7 +52,8 @@ Redes: YouTube @discosraros · Instagram @discosraros.arg · Kick discosRaros.
 
 - `npm run dev` → http://localhost:5180 (el 5173 es del visor de PCX). `npm run build` chequea tipos y compila.
 - `src/style-kit/`: paleta, material PSX, post-procesado, texturas, títulos, sonidos y `PSXStage` (renderer + post + capa de textos + loop). Todas las escenas pasan por ahí.
-- `src/scenes/boiler/`: club, pista instanciada (`crowd.ts`), DJs, tele de YouTube. `src/pelea/`: el juego (se carga recién al entrar).
+- `src/scenes/boiler/`: club, pista instanciada (`crowd.ts`), DJs, tele de YouTube.
+- Juegos (solo PC, se cargan recién al entrar y usan el club de escenario con `room.takeover`): `src/pelea/` (Discos vs Raros) y `src/futbol/` (Cabezazos; la física y la CPU están en `game.ts`, sin Three.js, así se pueden simular partidos con Node para ajustar la dificultad).
 - `src/ui/` y `src/sections/`: barra, ventanas y secciones (Sets, Crear tu raro, Contacto). Rutas por hash (`#/sets`…).
 - `shared/look.ts`: opciones del personaje del visitante y validación de nombres; lo usan cliente y servidor. Agregar opciones **al final** de cada lista (los guardados usan el índice).
 - `server/`: toda la API (`router.ts`). La corre Vite en desarrollo y las funciones de `api/` en Vercel. Sin las variables de Supabase guarda en `.data/db.json`.
