@@ -1,0 +1,56 @@
+/* Base del sitio: paleta de DR, fuente pixelada y el canvas a pantalla completa. */
+
+:root {
+  --dr-rojo: #ff004a;
+  --dr-amarillo: #ffe600;
+  --dr-verde: #016239;
+  --dr-rosa: #fee0ea;
+  --dr-crema: #f9f2e8;
+  --dr-negro: #0f1217;
+  --dr-rojo-oscuro: #7a0024;
+  --dr-verde-claro: #028a50;
+  --dr-verde-oscuro: #01361f;
+  --pix-font: 'Press Start 2P', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--dr-negro);
+  color: var(--dr-crema);
+  font: 10px/1.6 var(--pix-font);
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  overscroll-behavior: none;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+  touch-action: none;
+}
+
+/* Botón invisible que ocupa toda la pantalla: el texto se dibuja en el canvas, pero el
+   click, el Enter y los lectores de pantalla usan un botón de verdad. */
+.press-start {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.press-start:focus { outline: none; }
