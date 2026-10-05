@@ -1,0 +1,114 @@
+/*
+ * Interfaz tipo menú de juego de PS1 con la paleta de DR: ventanas negras con borde crema,
+ * barra de título verde, cursor amarillo que titila y sombras duras. Nada redondeado ni suave.
+ */
+
+.ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; font: 10px/1.7 var(--pix-font); text-transform: uppercase; }
+.ui > * { pointer-events: auto; }
+.ui [hidden] { display: none !important; }
+
+@keyframes dr-blink { 50% { opacity: 0; } }
+
+/* --- Botones y opciones ---------------------------------------------------------- */
+.btn {
+  position: relative; display: inline-block; margin: 0; padding: 9px 12px 8px;
+  font: inherit; text-transform: uppercase; text-decoration: none; text-align: left; cursor: pointer;
+  color: var(--dr-crema); background: var(--dr-negro);
+  border: 2px solid var(--dr-crema); border-radius: 0; box-shadow: 3px 3px 0 #000;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:hover, .btn:focus-visible, .btn.on { outline: none; color: var(--dr-amarillo); border-color: var(--dr-amarillo); background: var(--dr-verde); }
+.btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000; }
+.btn:focus-visible::before {
+  content: ''; position: absolute; left: -14px; top: 50%; margin-top: -6px;
+  border: 6px solid transparent; border-left: 8px solid var(--dr-amarillo); border-right: 0;
+  animation: dr-blink 0.8s steps(1) infinite;
+}
+.btn[disabled] { opacity: 0.5; cursor: default; }
+.btn.rojo { background: var(--dr-rojo-oscuro); }
+.btn.rojo:hover, .btn.rojo:focus-visible { background: var(--dr-rojo); color: var(--dr-crema); }
+.btn.chico { padding: 5px 7px 4px; font-size: 8px; box-shadow: 2px 2px 0 #000; }
+
+/* --- Barra de abajo -------------------------------------------------------------- */
+.navbar {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 10px;
+  padding: 10px 18px calc(10px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, transparent, #000a 60%);
+}
+
+/* --- Cartel de arriba (contador, qué suena) -------------------------------------- */
+.hud { position: fixed; left: 10px; top: calc(10px + env(safe-area-inset-top)); right: 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+.hud > div { padding: 6px 8px 5px; background: #0f1217; border: 2px solid var(--dr-crema); box-shadow: 3px 3px 0 #000; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud .contador { color: var(--dr-amarillo); }
+.hud .suena { color: var(--dr-rosa); font-size: 8px; }
+.hud > div:empty { display: none; }
+
+/* --- Ventanas --------------------------------------------------------------------- */
+.panel-wrap {
+  position: fixed; inset: 0; display: grid; place-items: center; padding: 12px;
+  padding-top: calc(12px + env(safe-area-inset-top)); padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  /* Oscurecido con tramado, no con transparencia. */
+  background-image: conic-gradient(#000 25%, transparent 0 50%, #000 0 75%, transparent 0);
+  background-size: 4px 4px;
+}
+.panel { display: flex; flex-direction: column; width: min(700px, 100%); max-height: 100%; background: var(--dr-negro); border: 2px solid var(--dr-crema); box-shadow: 6px 6px 0 #000; }
+.panel.angosto { width: min(460px, 100%); }
+.panel-title {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 7px 12px;
+  color: var(--dr-amarillo); text-shadow: 2px 2px 0 var(--dr-rojo-oscuro); font-size: 12px;
+  background: linear-gradient(180deg, var(--dr-verde-claro), var(--dr-verde) 60%, var(--dr-verde-oscuro));
+  border-bottom: 2px solid var(--dr-crema);
+}
+.panel-body { overflow: auto; padding: 14px 16px 14px 22px; scrollbar-color: var(--dr-crema) var(--dr-negro); }
+.panel-foot { padding: 6px 12px 5px; border-top: 2px solid var(--dr-crema); color: var(--dr-rosa); font-size: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.panel-foot b { color: var(--dr-amarillo); font-weight: normal; }
+.panel p { margin: 0 0 12px; }
+.aviso { color: var(--dr-rosa); }
+.error { color: var(--dr-rojo); }
+.ok { color: var(--dr-amarillo); }
+.fila { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+
+/* --- Sets -------------------------------------------------------------------------- */
+.sets { display: grid; gap: 12px; }
+.set { display: grid; grid-template-columns: 96px 1fr; gap: 4px 12px; align-items: center; width: 100%; padding: 8px; }
+.set canvas { grid-row: span 3; width: 96px; height: 54px; image-rendering: pixelated; border: 2px solid var(--dr-crema); background: #000; }
+.set .num { color: var(--dr-amarillo); }
+.set .nombre { overflow-wrap: anywhere; }
+.set .meta { font-size: 8px; color: var(--dr-rosa); }
+.set .genero { color: var(--dr-negro); background: var(--dr-amarillo); padding: 1px 4px 0; margin-right: 6px; }
+.set.suena { border-color: var(--dr-rojo); }
+.set.suena .num::after { content: ' ♪ SONANDO'; color: var(--dr-rojo); }
+.set-fila { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
+.set-fila .yt { display: grid; place-items: center; }
+
+/* --- Formularios ------------------------------------------------------------------- */
+.form { display: grid; gap: 12px; }
+.campo { display: grid; gap: 4px; }
+.campo > span { color: var(--dr-amarillo); font-size: 8px; }
+.campo input, .campo textarea, .campo select {
+  width: 100%; padding: 8px; font: inherit; text-transform: none; color: var(--dr-negro); background: var(--dr-crema);
+  border: 2px solid var(--dr-negro); outline: 2px solid var(--dr-crema); border-radius: 0;
+}
+.campo input:focus, .campo textarea:focus, .campo select:focus { outline-color: var(--dr-amarillo); background: #fff; }
+.campo textarea { min-height: 110px; resize: vertical; }
+.trampa { position: absolute; left: -9999px; }
+
+/* --- Creador de personaje ---------------------------------------------------------- */
+.opciones { display: grid; gap: 8px; }
+.opcion { display: grid; grid-template-columns: minmax(90px, 1fr) auto minmax(110px, 1.2fr) auto; gap: 8px; align-items: center; padding: 4px 6px; border: 2px solid transparent; }
+.opcion:focus-visible, .opcion:focus-within { outline: none; border-color: var(--dr-amarillo); background: var(--dr-verde-oscuro); }
+.opcion .valor { text-align: center; color: var(--dr-amarillo); display: flex; align-items: center; justify-content: center; gap: 6px; }
+.opcion .muestra { display: inline-block; width: 28px; height: 14px; border: 2px solid var(--dr-crema); }
+.creador-nombre input { text-transform: uppercase; }
+
+@media (max-width: 560px) {
+  .ui { font-size: 8px; }
+  .panel-title { font-size: 10px; }
+  .panel-body { padding: 12px 10px 12px 16px; }
+  .navbar { gap: 6px; padding-left: 8px; padding-right: 8px; }
+  .btn { padding: 8px 8px 7px; }
+  .set { grid-template-columns: 80px 1fr; }
+  .set canvas { width: 80px; height: 45px; }
+  .opcion { grid-template-columns: 1fr auto 1fr auto; }
+}

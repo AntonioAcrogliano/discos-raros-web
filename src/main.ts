@@ -1,5 +1,8 @@
-import { DR, PSXStage, fontsReady, outlined, titleUnit } from './style-kit';
+import { PSXStage, fontsReady } from './style-kit';
 import { buildTestCube } from './scenes/testCube';
+import { openContacto } from './sections/contacto';
+import { openSets } from './sections/sets';
+import { mountUi } from './ui/shell';
 import { showStartScreen } from './ui/startScreen';
 
 async function main() {
@@ -11,15 +14,11 @@ async function main() {
 
   await showStartScreen(stage);
 
-  // Fase 1: después de PRESS START queda la escena de prueba con un cartelito.
-  // En la Fase 3 acá entra el boiler room.
-  stage.onOverlay = (ctx, w, h) => {
-    const unit = titleUnit(w, h);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    outlined(ctx, 'STYLE-KIT OK', unit, unit, unit, DR.amarillo, DR.rojo);
-    outlined(ctx, `${w}x${h}`, unit, unit * 3, unit, DR.rosa);
-  };
+  mountUi([
+    { path: '', label: 'LA PISTA' },
+    { path: 'sets', label: 'SETS', open: () => openSets({ playing: () => null, play: (s) => window.open(s.url, '_blank', 'noopener') }) },
+    { path: 'contacto', label: 'CONTACTO', open: openContacto },
+  ]);
 }
 
 void main();

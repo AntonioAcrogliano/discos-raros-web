@@ -1,0 +1,10 @@
+body.admin { overflow: auto; height: auto; min-height: 100%; }
+.admin-ui { position: static; pointer-events: auto; display: grid; gap: 20px; justify-items: center; padding: 20px 12px 40px; }
+.admin-ui .panel { max-height: none; }
+.admin-lista { display: grid; gap: 8px; }
+.admin-fila { display: grid; grid-template-columns: minmax(110px, 1fr) 2fr auto auto; gap: 10px; align-items: center; padding: 4px 0; border-bottom: 2px solid #ffffff22; }
+.admin-msg { padding: 8px 0; border-bottom: 2px solid #ffffff22; }
+.admin-msg p { margin: 8px 0 0; text-transform: none; white-space: pre-wrap; overflow-wrap: anywhere; font-family: Tahoma, Verdana, sans-serif; font-size: 13px; }
+.admin-msg a { color: var(--dr-amarillo); text-transform: none; }
+.admin-ui .genero { color: var(--dr-negro); background: var(--dr-amarillo); padding: 1px 4px 0; }
+.admin-ui b { font-weight: normal; color: var(--dr-crema); }
