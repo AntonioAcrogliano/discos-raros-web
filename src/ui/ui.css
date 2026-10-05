@@ -120,3 +120,7 @@
   .panel-wrap.dock { place-items: end center; padding-left: 12px; }
   .panel-wrap.dock .panel { max-height: 60%; }
 }
+
+/* Botón que llama la atención (la pista vacía esperando al primero). */
+@keyframes dr-llamar { 50% { background: var(--dr-rojo); border-color: var(--dr-amarillo); color: var(--dr-crema); } }
+.btn.llamar { animation: dr-llamar 0.9s steps(1) infinite; }

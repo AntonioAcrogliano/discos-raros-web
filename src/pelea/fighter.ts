@@ -5,7 +5,9 @@ import type { Rig } from '../characters/rig';
  * (sin animaciones grabadas), así sirve igual para los modelos reales y para los de cajas.
  */
 
-export type AttackName = 'alto' | 'bajo' | 'patada';
+export type AttackName = 'alto' | 'bajo' | 'patada' | SpecialName;
+/** Habilidades: una combinación de direcciones + patada (ver SPECIAL_INPUTS). */
+export type SpecialName = 'vinilo' | 'humo' | 'vomito';
 /** A qué altura pega: alto pasa por arriba del agachado, medio le pega, bajo hay que bloquearlo agachado. */
 export type Level = 'alto' | 'medio' | 'bajo';
 
@@ -22,12 +24,35 @@ export interface Attack {
   blockstun: number;
   /** Empujón al que lo recibe (m/s). */
   push: number;
+  /** Vida que saca aunque lo bloqueen (por defecto 1). */
+  chip?: number;
+  /** No pega el cuerpo: sale algo volando (lo maneja la pelea). */
+  projectile?: boolean;
 }
 
 export const ATTACKS: Record<AttackName, Attack> = {
   alto: { startup: 0.1, active: 0.09, recovery: 0.17, range: 1.1, damage: 8, level: 'alto', hitstun: 0.3, blockstun: 0.15, push: 2.2 },
   bajo: { startup: 0.14, active: 0.09, recovery: 0.23, range: 1.05, damage: 6, level: 'bajo', hitstun: 0.27, blockstun: 0.17, push: 1.6 },
   patada: { startup: 0.22, active: 0.11, recovery: 0.36, range: 1.4, damage: 14, level: 'medio', hitstun: 0.42, blockstun: 0.22, push: 3.6 },
+  // Revolear un vinilo: cruza toda la pista a media altura. Hay que bloquearlo parado.
+  vinilo: { startup: 0.32, active: 0.05, recovery: 0.42, range: 0, damage: 12, level: 'medio', hitstun: 0.36, blockstun: 0.2, push: 3, chip: 2, projectile: true },
+  // Aros de humo: tres, lentos y altos. Agachándose pasan por arriba.
+  humo: { startup: 0.5, active: 0.45, recovery: 0.35, range: 0, damage: 6, level: 'alto', hitstun: 0.3, blockstun: 0.16, push: 1.2, projectile: true },
+  // Tomar una birra y vomitarle: tarda un montón (regalado), pero pega fuerte y de lejos.
+  vomito: { startup: 0.85, active: 0.3, recovery: 0.5, range: 1.95, damage: 20, level: 'medio', hitstun: 0.6, blockstun: 0.3, push: 2.5, chip: 5 },
+};
+
+/** Cuántos aros salen por cada "humo" y cada cuánto. */
+export const SMOKE_RINGS = 3;
+export const SMOKE_EVERY = 0.17;
+
+/** Direcciones relativas al rival: f = hacia él, b = para atrás, d = abajo. */
+export type Dir = 'f' | 'b' | 'd';
+/** Las dos direcciones que hay que marcar justo antes de la patada. */
+export const SPECIAL_INPUTS: Record<SpecialName, [Dir, Dir]> = {
+  vinilo: ['b', 'f'],
+  humo: ['d', 'f'],
+  vomito: ['d', 'd'],
 };
 
 /** Lo que quiere hacer un luchador en este frame (venga del teclado, del joystick o de la CPU). */
@@ -73,6 +98,8 @@ export class Fighter {
   attack: AttackName | null = null;
   /** El golpe actual ya conectó (o fue bloqueado). */
   landed = false;
+  /** Cosas que ya tiró en esta habilidad (vinilo, aros de humo). */
+  shots = 0;
   crouching = false;
   blocking = false;
   wins = 0;
@@ -100,6 +127,7 @@ export class Fighter {
   get striking() {
     if (this.state !== 'attack' || !this.attack || this.landed) return false;
     const a = ATTACKS[this.attack];
+    if (a.projectile) return false;
     return this.t >= a.startup && this.t < a.startup + a.active;
   }
 
@@ -129,7 +157,7 @@ export class Fighter {
 
   takeBlock(a: Attack, from: number) {
     // El bloqueo saca un punto, pero nunca noquea.
-    this.hp = Math.max(1, this.hp - 1);
+    this.hp = Math.max(1, this.hp - (a.chip ?? 1));
     this.vx = from * a.push * 0.55;
     this.state = 'blockstun';
     this.stun = a.blockstun;
@@ -153,6 +181,7 @@ export class Fighter {
         this.state = 'attack';
         this.attack = intent.attack;
         this.landed = false;
+        this.shots = 0;
         this.t = 0;
       } else if (!this.crouching && !this.blocking && intent.move) {
         this.moving = intent.move;
@@ -169,6 +198,11 @@ export class Fighter {
     this.state = 'idle';
     this.attack = null;
     this.t = 0;
+  }
+
+  /** Está empinando la birra (antes de vomitar). */
+  get drinking() {
+    return this.state === 'attack' && this.attack === 'vomito' && this.t < ATTACKS.vomito.startup * 0.7;
   }
 
   /** Calcula la pose del momento y la aplica al esqueleto (suavizada). */
@@ -205,6 +239,22 @@ export class Fighter {
         p.aRx = k(p.aRx, -1.15);
         p.fRx = k(p.fRx, -0.05);
         p.bodyRy = k(0, 0.4);
+      } else if (this.attack === 'vinilo') {
+        // Carga el brazo atrás y lo revolea como un frisbee.
+        const wind = Math.min(1, this.t / a.startup);
+        const thrown = this.t >= a.startup;
+        Object.assign(p, thrown ? { aRx: -1.5, aRz: 0.35, fRx: -0.1, bodyRy: 0.55, bodyRx: 0.15 } : { aRx: 0.75 * wind, aRz: -0.9 * wind, fRx: -1.2, bodyRy: -0.65 * wind });
+        speed = 30;
+      } else if (this.attack === 'humo') {
+        // Pitada con la cabeza para atrás y después sopla para adelante.
+        const blowing = this.t >= a.startup;
+        Object.assign(p, { aRx: -1.25, aRz: 0.25, fRx: blowing ? -1.1 : -2.25, headRx: blowing ? 0.12 : -0.4, bodyRx: blowing ? 0.2 : -0.12 });
+        speed = 18;
+      } else if (this.attack === 'vomito') {
+        if (this.drinking) Object.assign(p, { aRx: -1.3, aRz: 0.2, fRx: -2.3, headRx: -0.75, bodyRx: -0.22 });
+        else if (this.t < a.startup) Object.assign(p, { bodyRx: 0.05, headRx: 0.35, aLx: -0.5, fLx: -1.5, aRx: -0.5, fRx: -1.5, aLz: -0.35, aRz: 0.35, bodyY: -0.03 + Math.sin(time * 40) * 0.015 });
+        else Object.assign(p, { bodyRx: 0.6, headRx: 0.3, aLx: -0.6, fLx: -1.5, aRx: -0.6, fRx: -1.5, aLz: -0.35, aRz: 0.35, lLx: -0.5, kLx: 0.6 });
+        speed = 18;
       } else {
         p.lRx = k(p.lRx, -1.55);
         p.kRx = k(p.kRx, this.t < a.startup ? 1.3 * (1 - out) + 0.9 * out * (1 - out) * 4 : 0.05);

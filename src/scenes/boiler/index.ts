@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { type Look, type Raro, type SetInfo, randomLook } from '../../../shared/look';
+import type { Look, Raro, SetInfo } from '../../../shared/look';
 import type { PistaData } from '../../api';
 import { DR, type PSXStage, outlined, psxUniforms, titleUnit } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
@@ -9,8 +9,6 @@ import { loadGlbRig } from '../../characters/glbRig';
 import { buildPlaceholderDjs, makeDjs } from './djs';
 import { Tele } from './tele';
 
-/** Con menos gente real que esto, la pista se completa con extras sin nombre. */
-const MIN_FILL = 48;
 const FOG = '#120a1f';
 
 export type BoilerMode = 'pista' | 'creador' | 'pelea';
@@ -75,19 +73,12 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let draft: Raro | null = null;
   /** ¿El primer lugar de la pista es el del visitante? */
   let hasFirst = false;
-  const bots: Raro[] = [];
-  {
-    let seed = 2024;
-    const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-    for (let i = 0; i < MAX_DANCERS; i++) bots.push({ id: `bot-${i}`, name: '', look: randomLook(r) });
-  }
   const rebuild = () => {
     const first = draft ?? pista.mine;
     hasFirst = Boolean(first);
     const others = pista.raros.filter((x) => x.id !== pista.mine?.id);
-    const list = [...(first ? [first] : []), ...others];
-    const fill = Math.max(0, Math.min(crowd.capacity, MIN_FILL) - list.length);
-    crowd.setDancers([...list, ...bots.slice(0, fill)]);
+    // Solo baila gente que se sumó de verdad: si no hay nadie, la pista está vacía.
+    crowd.setDancers([...(first ? [first] : []), ...others]);
     pickShowcase();
   };
 

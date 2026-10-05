@@ -11,6 +11,9 @@ import { showStartScreen } from './ui/startScreen';
 
 async function main() {
   const stage = new PSXStage(document.querySelector<HTMLCanvasElement>('#stage')!);
+  // En la compu, el doble de resolución interna (640×480); en el celular, la de la Play (320×240).
+  stage.post.settings.resolution = isTouch() ? '320×240' : '640×480';
+  stage.resize();
   const room = createBoilerRoom(stage);
   if (import.meta.env.DEV) (window as unknown as { dr: unknown }).dr = { stage, room };
 
@@ -25,7 +28,7 @@ async function main() {
   stage.onOverlay = (ctx, w, h, t) => room.drawOverlay(ctx, w, h, t);
 
   const contador = (total: number) => {
-    hudContador.textContent = total > 0 ? `${total.toLocaleString('es-AR')} ${total === 1 ? 'RARO' : 'RAROS'} EN LA PISTA` : '';
+    hudContador.textContent = total > 0 ? `${total.toLocaleString('es-AR')} ${total === 1 ? 'RARO' : 'RAROS'} EN LA PISTA` : 'LA PISTA ESTA VACIA. SE EL PRIMERO.';
   };
   room.onNowPlaying = (s) => (hudSuena.textContent = sinTildes(`♪ #${s.number} ${s.name}${s.genre ? ` [${s.genre}]` : ''}`.toUpperCase()));
   let data: PistaData = { total: 0, raros: [], mine: null };
@@ -33,9 +36,10 @@ async function main() {
     data = d;
     room.setPista(d);
     contador(d.total);
-    setRouteLabel('crear', d.mine ? 'TU RARO' : 'CREA TU RARO');
+    setRouteLabel('crear', d.mine ? 'TU RARO' : d.total ? 'CREA TU RARO' : 'ENTRA A LA PISTA', !d.mine && d.total === 0);
   };
   void pista.then((d) => d && setPista(d));
+  contador(0);
   // El último set arranca solo (el click de PRESS START es lo que habilita el sonido).
   void sets.then((list) => list[0] && room.play(list[0], list));
 

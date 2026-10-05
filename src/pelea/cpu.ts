@@ -1,4 +1,4 @@
-import { ATTACKS, type AttackName, type Fighter, type Intent } from './fighter';
+import { ATTACKS, type AttackName, type Fighter, type Intent, type Level } from './fighter';
 
 /**
  * IA simple del rival: se acerca, tira golpes cuando está a distancia y a veces bloquea lo
@@ -9,10 +9,12 @@ export class Cpu {
   private hold: Intent = { move: 0, down: false, block: false, attack: null };
   private holdFor = 0;
   private reacted = false;
+  private dodged = false;
 
   constructor(public level = 0) {}
 
-  think(dt: number, me: Fighter, foe: Fighter): Intent {
+  /** @param incoming lo más cercano que viene volando hacia él (distancia y altura), si hay algo. */
+  think(dt: number, me: Fighter, foe: Fighter, incoming: { dist: number; level: Level } | null = null): Intent {
     const dist = Math.abs(foe.x - me.x);
     const skill = Math.min(1, 0.3 + this.level * 0.2);
 
@@ -28,6 +30,17 @@ export class Cpu {
         this.holdFor = threat.startup + threat.active - foe.t + 0.12;
       }
     }
+    // Algo viene volando: cubrirse (o agacharse si viene alto) hasta que pase.
+    if (!incoming) this.dodged = false;
+    else if (!this.dodged && incoming.dist < 1.6) {
+      // Una sola tirada de dados por cada cosa que le tiran.
+      this.dodged = true;
+      if (Math.random() < skill + 0.15) {
+        const duck = incoming.level === 'alto';
+        this.hold = { move: 0, down: duck, block: !duck, attack: null };
+        this.holdFor = 0.5;
+      }
+    }
     if (this.holdFor > 0) {
       this.holdFor -= dt;
       return this.hold;
@@ -38,7 +51,14 @@ export class Cpu {
     if (this.wait > 0) return out;
     this.wait = 0.34 - skill * 0.18 + Math.random() * 0.25;
 
-    if (dist > 1.25) {
+    if (dist > 2.3 && Math.random() < 0.22) {
+      // De lejos: revolear algo.
+      out.attack = Math.random() < 0.6 ? 'vinilo' : 'humo';
+      out.move = 0;
+    } else if (dist > 1.25 && dist < 1.9 && Math.random() < 0.07) {
+      out.attack = 'vomito';
+      out.move = 0;
+    } else if (dist > 1.25) {
       // Lejos: acercarse (cada tanto duda).
       out.move = Math.random() < 0.85 ? 1 : 0;
     } else if (Math.random() < 0.45 + skill * 0.25) {

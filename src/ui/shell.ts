@@ -27,10 +27,12 @@ export interface Route {
 const routes: Route[] = [];
 const buttons = new Map<string, HTMLAnchorElement>();
 
-/** Cambia el texto de un botón de la barra. */
-export function setRouteLabel(path: string, label: string) {
+/** Cambia el texto de un botón de la barra (y si tiene que titilar para llamar la atención). */
+export function setRouteLabel(path: string, label: string, call = false) {
   const b = buttons.get(path);
-  if (b) b.textContent = label;
+  if (!b) return;
+  b.textContent = label;
+  b.classList.toggle('llamar', call);
 }
 let panel: { root: HTMLElement; onClose?: () => void } | null = null;
 let leave: (() => void) | null = null;

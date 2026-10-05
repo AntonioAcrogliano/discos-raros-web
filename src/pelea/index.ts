@@ -3,9 +3,9 @@ import { loadGlbRig } from '../characters/glbRig';
 import { type Rig, buildBoxRig } from '../characters/rig';
 import type { BoilerRoom } from '../scenes/boiler';
 import { DISCOS_COLORS, RAROS_COLORS } from '../scenes/boiler/djs';
-import { DR, DR_CYCLE, type PSXStage, blip, box, makePSXMaterial, outlined, titleUnit } from '../style-kit';
+import { DR, DR_CYCLE, type PSXMaterial, type PSXStage, blip, box, fitSize, makePSXMaterial, makeRecordTexture, outlined, titleUnit } from '../style-kit';
 import { Cpu } from './cpu';
-import { ARENA_HALF, ATTACKS, Fighter, MAX_HP, NO_INTENT } from './fighter';
+import { ARENA_HALF, ATTACKS, type Attack, Fighter, MAX_HP, NO_INTENT, SMOKE_EVERY, SMOKE_RINGS } from './fighter';
 import { PlayerInput } from './input';
 
 /**
@@ -19,6 +19,9 @@ const WINS_TO_MATCH = 2;
 const MIN_GAP = 0.78;
 
 type Phase = 'select' | 'intro' | 'fight' | 'ko' | 'end';
+
+/** Lista de movimientos de la pantalla de selección. */
+const MOVES = ['HABILIDADES', 'ATRAS, ADELANTE + PATADA: REVOLEAR UN VINILO', 'ABAJO, ADELANTE + PATADA: AROS DE HUMO', 'ABAJO, ABAJO + PATADA: BIRRA Y VOMITO'];
 
 async function loadRig(file: string, fallback: Parameters<typeof buildBoxRig>[0]): Promise<Rig> {
   try {
@@ -50,6 +53,47 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   const spark = box(0.34, 0.34, 0.34, makePSXMaterial({ color: DR.amarillo, lit: false }));
   spark.visible = false;
   group.add(spark);
+  // --- Habilidades: lo que vuela por la pista -------------------------------------------
+  interface Shot { mesh: THREE.Mesh; owner: Fighter; kind: 'vinilo' | 'humo'; x: number; y: number; vx: number; age: number }
+  let shots: Shot[] = [];
+  const vinylGeo = new THREE.CylinderGeometry(0.21, 0.21, 0.025, 8);
+  const label = makePSXMaterial({ map: makeRecordTexture('#15101c', DR.rojo), lit: false });
+  const vinylMats = [makePSXMaterial({ color: DR.negro }), label, label];
+  const ringGeo = new THREE.TorusGeometry(0.2, 0.05, 4, 8).rotateY(Math.PI / 2);
+  const ringMat = makePSXMaterial({ color: '#d8d4e0', lit: false, opacity: 0.75 });
+  const spawnShot = (owner: Fighter, kind: Shot['kind']) => {
+    const mesh = kind === 'vinilo' ? new THREE.Mesh(vinylGeo, vinylMats) : new THREE.Mesh(ringGeo, ringMat);
+    const shot: Shot = { mesh, owner, kind, x: owner.x + owner.dir * 0.5, y: kind === 'vinilo' ? 1.15 : 1.5, vx: owner.dir * (kind === 'vinilo' ? 6.5 : 2.7), age: 0 };
+    mesh.position.set(shot.x, shot.y, ARENA_Z);
+    mesh.renderOrder = 2;
+    group.add(mesh);
+    shots.push(shot);
+    if (kind === 'vinilo') blip(900, 0.18, 'triangle', 0.08);
+    else blip(180, 0.2, 'sine', 0.1);
+  };
+  const clearShots = () => {
+    for (const s of shots) s.mesh.removeFromParent();
+    shots = [];
+  };
+  // Vómito: cuadraditos verdes que salen en chorro (puro adorno; el daño va por distancia).
+  const pukeMats = [makePSXMaterial({ color: '#8fd14a', lit: false }), makePSXMaterial({ color: '#c9d94a', lit: false })];
+  const puke = Array.from({ length: 28 }, (_, i) => {
+    const mesh = box(0.09, 0.09, 0.09, pukeMats[i % 2]);
+    mesh.visible = false;
+    group.add(mesh);
+    return { mesh, vx: 0, vy: 0, life: 0 };
+  });
+  let pukeNext = 0;
+  // El chop de birra, en la mano derecha de cada uno (se ve solo mientras toma).
+  const mugs = fighters.map((f) => {
+    const mug = new THREE.Group();
+    mug.add(box(0.11, 0.15, 0.11, makePSXMaterial({ color: DR.amarillo })), box(0.12, 0.04, 0.12, makePSXMaterial({ color: DR.crema }), 0, 0.09, 0));
+    mug.position.set(0, -f.rig.height * 0.2, 0.08);
+    mug.rotation.x = 1.9;
+    mug.visible = false;
+    f.rig.foreR.add(mug);
+    return mug;
+  });
   room.scene.add(group);
 
   const input = new PlayerInput();
@@ -71,6 +115,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     phaseT = 0;
   };
   const placeFighters = () => {
+    clearShots();
     fighters[0].reset(-1.5, 1);
     fighters[1].reset(1.5, -1);
   };
@@ -105,24 +150,108 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     // El golpe alto pasa por arriba del que está agachado.
     if (atk.level === 'alto' && b.low) return;
     a.landed = true;
-    const from = Math.sign(b.x - a.x) || a.dir;
+    connect(atk, a, b, Math.sign(b.x - a.x) || a.dir);
+  };
+
+  /** Un golpe (o algo que venía volando) de `a` le llega a `b`: bloqueo o daño. */
+  const connect = (atk: Attack, a: Fighter, b: Fighter, from: number) => {
     const y = atk.level === 'bajo' ? 0.55 : atk.level === 'medio' ? 1.0 : 1.45;
     spark.position.set(b.x - from * 0.25, y, ARENA_Z + 0.3);
     spark.visible = true;
     sparkT = 0.12;
     if (b.blocks(atk.level)) {
       b.takeBlock(atk, from);
-      (spark.material as ReturnType<typeof makePSXMaterial>).uniforms.uColor.value.set(DR.crema);
+      (spark.material as PSXMaterial).uniforms.uColor.value.set(DR.crema);
       blip(520, 0.05, 'square', 0.06);
       hitstop = 0.04;
     } else {
       b.takeHit(atk, from);
-      (spark.material as ReturnType<typeof makePSXMaterial>).uniforms.uColor.value.set(atk.damage > 10 ? DR.rojo : DR.amarillo);
+      (spark.material as PSXMaterial).uniforms.uColor.value.set(atk.damage > 10 ? DR.rojo : DR.amarillo);
       blip(150, 0.14, 'sawtooth', 0.14);
       blip(70, 0.18, 'square', 0.12, 0.02);
       hitstop = atk.damage > 10 ? 0.11 : 0.07;
       shake = atk.damage > 10 ? 0.16 : 0.08;
       if (b.hp <= 0) endRound(a);
+    }
+  };
+
+  /** Lo que cada habilidad larga a medida que avanza (el vinilo, los aros, el chorro). */
+  const fire = (f: Fighter) => {
+    if (f.state !== 'attack' || !f.attack) return;
+    const a = ATTACKS[f.attack];
+    if (f.attack === 'vinilo' && f.t >= a.startup && f.shots === 0) {
+      f.shots = 1;
+      spawnShot(f, 'vinilo');
+    } else if (f.attack === 'humo' && f.t >= a.startup) {
+      const due = Math.min(SMOKE_RINGS, Math.floor((f.t - a.startup) / SMOKE_EVERY) + 1);
+      while (f.shots < due) {
+        f.shots++;
+        spawnShot(f, 'humo');
+      }
+    } else if (f.attack === 'vomito') {
+      if (f.shots === 0) {
+        f.shots = 1;
+        blip(300, 0.5, 'sine', 0.06);
+      }
+      if (f.t >= a.startup && f.t < a.startup + a.active) {
+        if (f.shots === 1) {
+          f.shots = 2;
+          blip(70, 0.4, 'sawtooth', 0.14);
+          blip(55, 0.3, 'square', 0.1, 0.1);
+        }
+        for (let i = 0; i < 2; i++) {
+          const p = puke[pukeNext++ % puke.length];
+          p.mesh.position.set(f.x + f.dir * 0.4, 1.42 + Math.random() * 0.08, ARENA_Z + (Math.random() - 0.5) * 0.2);
+          p.vx = f.dir * (3.5 + Math.random() * 2.5);
+          p.vy = 0.6 + Math.random() * 1.2;
+          p.life = 0.55;
+          p.mesh.visible = true;
+        }
+      }
+    }
+  };
+
+  /** Mueve lo que vuela y, si `live`, resuelve contra quién choca. */
+  const updateShots = (dt: number, live: boolean) => {
+    const gone = new Set<Shot>();
+    for (const s of shots) {
+      s.x += s.vx * dt;
+      s.age += dt;
+      s.mesh.position.set(s.x, s.y + (s.kind === 'humo' ? Math.sin(s.age * 6) * 0.04 : 0), ARENA_Z);
+      if (s.kind === 'vinilo') {
+        s.mesh.rotation.y += dt * 25;
+        s.mesh.rotation.z = Math.sin(s.age * 9) * 0.25;
+      } else s.mesh.scale.setScalar(1 + s.age * 0.5);
+      if (Math.abs(s.x) > 7.5 || s.age > 5) gone.add(s);
+      if (!live || gone.has(s)) continue;
+      const foe = fighters[0] === s.owner ? fighters[1] : fighters[0];
+      const atk = ATTACKS[s.kind];
+      if (foe.state !== 'ko' && Math.abs(s.x - foe.x) < 0.4 && !(atk.level === 'alto' && foe.low)) {
+        connect(atk, s.owner, foe, Math.sign(s.vx));
+        gone.add(s);
+        continue;
+      }
+      // Dos cosas que se cruzan en el aire se anulan.
+      for (const o of shots) {
+        if (o.owner !== s.owner && !gone.has(o) && Math.abs(o.x - s.x) < 0.3) {
+          gone.add(o);
+          gone.add(s);
+          blip(700, 0.06, 'square', 0.05);
+          break;
+        }
+      }
+    }
+    if (gone.size) {
+      for (const s of gone) s.mesh.removeFromParent();
+      shots = shots.filter((s) => !gone.has(s));
+    }
+    for (const p of puke) {
+      if (!p.mesh.visible) continue;
+      p.life -= dt;
+      p.vy -= 9 * dt;
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      if (p.life <= 0 || p.mesh.position.y < 0.05) p.mesh.visible = false;
     }
   };
 
@@ -153,7 +282,15 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
       else {
         clock -= dt;
         me.update(dt, input.intent(me.dir, me.state === 'idle'), foe);
-        foe.update(dt, cpu.think(dt, foe, me), me);
+        // A la CPU se le avisa de lo más cercano que le viene volando.
+        let incoming: { dist: number; level: Attack['level'] } | null = null;
+        for (const s of shots) {
+          const d = Math.abs(s.x - foe.x);
+          if (s.owner === me && (!incoming || d < incoming.dist)) incoming = { dist: d, level: ATTACKS[s.kind].level };
+        }
+        foe.update(dt, cpu.think(dt, foe, me, incoming), me);
+        fire(a);
+        fire(b);
         // No se atraviesan: si quedan encimados, se separan parejo.
         const gap = Math.abs(b.x - a.x);
         if (gap < MIN_GAP) {
@@ -163,6 +300,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
         }
         resolve(a, b);
         resolve(b, a);
+        if (phase === 'fight') updateShots(dt, true);
         if (phase === 'fight' && clock <= 0) {
           clock = 0;
           // Se acabó el tiempo: gana el que tiene más vida.
@@ -191,7 +329,9 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
       else if (left <= 0) onExit();
     }
 
+    if (phase !== 'fight') updateShots(dt, false);
     for (const f of fighters) f.applyPose(dt, t);
+    mugs.forEach((m, i) => (m.visible = fighters[i].drinking));
     shadows.forEach((s, i) => s.position.set(fighters[i].x, 0.02, ARENA_Z));
     if (sparkT > 0) {
       sparkT -= dt;
@@ -243,6 +383,8 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
         outlined(ctx, on ? `1P ${f.name}` : f.name, x, h * 0.86, unit, on ? DR.amarillo : DR.rosa);
       });
       outlined(ctx, '< >  ENTER', w / 2, h * 0.94, unit, DR.crema);
+      ctx.textAlign = 'left';
+      MOVES.forEach((m, i) => outlined(ctx, m, unit, unit * (9 + i * 1.6), fitSize(m, Math.floor(unit * 0.75), w * 0.55), i ? DR.rosa : DR.amarillo));
       return;
     }
 
@@ -305,7 +447,11 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     }
     if (phase === 'fight' || phase === 'intro') {
       ctx.textAlign = 'center';
-      outlined(ctx, 'A/D MOVER  S AGACHAR  J ALTO  K BAJO  L PATADA  ESPACIO BLOQUEO', w / 2, h - unit * 1.2, Math.max(6, Math.floor(unit * 0.75)), DR.rosa);
+      const keys = 'A/D MOVER  S AGACHAR  J ALTO  K BAJO  L PATADA  ESPACIO BLOQUEO';
+      const moves = 'ATRAS,ADELANTE+L VINILO  ABAJO,ADELANTE+L HUMO  ABAJO,ABAJO+L BIRRA';
+      const size = Math.floor(unit * 0.75);
+      outlined(ctx, keys, w / 2, h - unit * 2.5, fitSize(keys, size, w), DR.rosa);
+      outlined(ctx, moves, w / 2, h - unit * 1.1, fitSize(moves, size, w), DR.amarillo);
     }
   };
 
@@ -316,6 +462,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     }
   };
   window.addEventListener('keydown', onKey);
+  if (import.meta.env.DEV) (window as unknown as { drPelea: unknown }).drPelea = { fighters, shots: () => shots };
   room.setMode('pelea');
   room.takeover = { update, drawOverlay };
 
@@ -326,6 +473,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
       room.takeover = null;
       room.setMode('pista');
       group.removeFromParent();
+      mugs.forEach((m) => m.removeFromParent());
     },
   };
 }

@@ -1,14 +1,20 @@
-import type { AttackName, Intent } from './fighter';
+import { type AttackName, type Dir, type Intent, SPECIAL_INPUTS, type SpecialName } from './fighter';
 
 /**
  * Entrada del jugador: teclado o joystick (Gamepad API, layout estándar).
  * Los golpes se guardan un instante (buffer), así no se pierden si se aprietan
  * un pelito antes de que termine el golpe anterior.
+ * También recuerda las últimas direcciones marcadas: dos direcciones + patada = habilidad.
  */
 
 const KEY_ATTACK: Record<string, AttackName> = { KeyJ: 'alto', KeyK: 'bajo', KeyL: 'patada' };
 const PAD_ATTACK: Record<number, AttackName> = { 2: 'alto', 0: 'bajo', 1: 'patada', 3: 'patada' };
 const BUFFER = 0.16;
+/** Direcciones absolutas (el "adelante" se resuelve según hacia dónde mira el luchador). */
+type AbsDir = 'L' | 'R' | 'D';
+const KEY_DIR: Record<string, AbsDir> = { ArrowLeft: 'L', KeyA: 'L', ArrowRight: 'R', KeyD: 'R', ArrowDown: 'D', KeyS: 'D' };
+/** Tiempo máximo entre una dirección y la otra, y entre la última y la patada. */
+const COMBO_GAP = 0.45;
 
 export class PlayerInput {
   private held = new Set<string>();
@@ -18,6 +24,9 @@ export class PlayerInput {
   /** Enter / Start apretado desde la última vez que se consultó. */
   private confirmed = false;
   private stepped = 0;
+  private clock = 0;
+  private history: { d: AbsDir; t: number }[] = [];
+  private padDirs: Record<AbsDir, boolean> = { L: false, R: false, D: false };
 
   constructor() {
     window.addEventListener('keydown', this.onDown);
@@ -40,12 +49,30 @@ export class PlayerInput {
     this.held.add(e.code);
     const a = KEY_ATTACK[e.code];
     if (a) this.queue(a);
+    if (KEY_DIR[e.code]) this.mark(KEY_DIR[e.code]);
     if (e.code === 'Enter') this.confirmed = true;
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.stepped = -1;
     if (e.code === 'ArrowRight' || e.code === 'KeyD') this.stepped = 1;
   };
   private onUp = (e: KeyboardEvent) => this.held.delete(e.code);
   private onBlur = () => this.held.clear();
+
+  private mark(d: AbsDir) {
+    this.history.push({ d, t: this.clock });
+    if (this.history.length > 4) this.history.shift();
+  }
+
+  /** ¿Las dos últimas direcciones + esta patada forman una habilidad? */
+  private special(dir: number): SpecialName | null {
+    const [prev, last] = this.history.slice(-2);
+    if (!prev || !last || this.clock - last.t > COMBO_GAP || last.t - prev.t > COMBO_GAP) return null;
+    const rel = (d: AbsDir): Dir => (d === 'D' ? 'd' : (d === 'R') === dir > 0 ? 'f' : 'b');
+    for (const name of Object.keys(SPECIAL_INPUTS) as SpecialName[]) {
+      const [a, b] = SPECIAL_INPUTS[name];
+      if (rel(prev.d) === a && rel(last.d) === b) return name;
+    }
+    return null;
+  }
 
   private queue(a: AttackName) {
     this.queued = a;
@@ -59,10 +86,20 @@ export class PlayerInput {
 
   /** Leer el joystick una vez por frame (los botones no avisan solos). */
   poll(dt: number) {
+    this.clock += dt;
     this.queuedFor -= dt;
     if (this.queuedFor <= 0) this.queued = null;
     const p = this.pad();
     if (!p) return;
+    const now: Record<AbsDir, boolean> = {
+      L: Boolean(p.buttons[14]?.pressed) || p.axes[0] < -0.5,
+      R: Boolean(p.buttons[15]?.pressed) || p.axes[0] > 0.5,
+      D: Boolean(p.buttons[13]?.pressed) || p.axes[1] > 0.5,
+    };
+    for (const d of ['L', 'R', 'D'] as const) {
+      if (now[d] && !this.padDirs[d]) this.mark(d);
+      this.padDirs[d] = now[d];
+    }
     p.buttons.forEach((b, i) => {
       if (b.pressed && !this.padHeld.has(i)) {
         this.padHeld.add(i);
@@ -105,6 +142,13 @@ export class PlayerInput {
     if (canAttack && this.queued) {
       attack = this.queued;
       this.queued = null;
+      if (attack === 'patada') {
+        const s = this.special(dir);
+        if (s) {
+          attack = s;
+          this.history = [];
+        }
+      }
     }
     return {
       move: x * dir,

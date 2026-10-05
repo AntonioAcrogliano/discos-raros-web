@@ -4,6 +4,7 @@ import { psxUniforms } from './psxMaterial';
 export const RESOLUTIONS = {
   '256×224': [256, 224],
   '320×240': [320, 240],
+  '480×360': [480, 360],
   '640×480': [640, 480],
 } as const;
 export type ResolutionKey = keyof typeof RESOLUTIONS;

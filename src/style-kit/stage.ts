@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { psxUniforms } from './psxMaterial';
 import { PSXPost } from './psxPost';
-import { makeCanvas } from './textures';
 
 export type OverlayDraw = (ctx: CanvasRenderingContext2D, w: number, h: number, t: number) => void;
 
@@ -20,12 +19,17 @@ export class PSXStage {
   onOverlay: OverlayDraw | null = null;
   /** Después de dibujar el frame (para capas que siguen a la cámara, como la tele de YouTube). */
   onAfterRender: (() => void) | null = null;
-
   /** Cambió el tamaño de la ventana (ancho y alto en píxeles CSS). */
   onResize: ((w: number, h: number) => void) | null = null;
 
-  private overlayCanvas = makeCanvas(1, 1);
-  private overlayTex: THREE.CanvasTexture | null = null;
+  /**
+   * La capa de textos es un canvas aparte, a la resolución interna y agrandado sin suavizar.
+   * Va por encima de todo lo que no sea interfaz (incluida la tele de YouTube, que es un iframe
+   * arriba del canvas 3D): así las barras de vida y los carteles nunca quedan tapados.
+   */
+  readonly overlayCanvas = document.createElement('canvas');
+  private overlayCtx = this.overlayCanvas.getContext('2d', { willReadFrequently: true })!;
+  private overlayDirty = false;
   private last = 0;
   private time = 0;
   private running = false;
@@ -35,6 +39,8 @@ export class PSXStage {
     // La imagen se arma a baja resolución y se agranda: no hace falta más que 1 píxel por píxel CSS.
     this.renderer.setPixelRatio(1);
     this.post = new PSXPost(this.renderer);
+    this.overlayCanvas.className = 'overlay-layer';
+    canvas.after(this.overlayCanvas);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -44,12 +50,9 @@ export class PSXStage {
     const h = Math.max(1, window.innerHeight);
     this.renderer.setSize(w, h, false);
     this.post.setSize(w, h);
-    const iw = this.post.internalWidth, ih = this.post.internalHeight;
-    this.overlayCanvas = makeCanvas(iw, ih);
-    this.overlayTex?.dispose();
-    this.overlayTex = new THREE.CanvasTexture(this.overlayCanvas.canvas);
-    this.overlayTex.magFilter = this.overlayTex.minFilter = THREE.NearestFilter;
-    this.overlayTex.generateMipmaps = false;
+    this.overlayCanvas.width = this.post.internalWidth;
+    this.overlayCanvas.height = this.post.internalHeight;
+    this.overlayCtx.imageSmoothingEnabled = false;
     this.onResize?.(w, h);
   }
 
@@ -67,22 +70,20 @@ export class PSXStage {
 
   private frame(now: number) {
     // Si la pestaña estuvo en segundo plano, no pegar un salto.
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.time += dt;
     psxUniforms.uTime.value = this.time;
     this.post.time = this.time;
     this.onUpdate?.(this.time, dt);
 
-    if (this.onOverlay && this.overlayTex) {
-      const { canvas, ctx } = this.overlayCanvas;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      this.onOverlay(ctx, canvas.width, canvas.height, this.time);
-      harden(ctx, canvas.width, canvas.height);
-      this.overlayTex.needsUpdate = true;
-      this.post.overlay = this.overlayTex;
-    } else {
-      this.post.overlay = null;
+    const { width, height } = this.overlayCanvas;
+    if (this.onOverlay || this.overlayDirty) this.overlayCtx.clearRect(0, 0, width, height);
+    this.overlayDirty = false;
+    if (this.onOverlay) {
+      this.onOverlay(this.overlayCtx, width, height, this.time);
+      harden(this.overlayCtx, width, height);
+      this.overlayDirty = true;
     }
     this.post.render(this.scene, this.camera);
     this.onAfterRender?.();
