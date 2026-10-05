@@ -112,3 +112,11 @@
   .set canvas { width: 80px; height: 45px; }
   .opcion { grid-template-columns: 1fr auto 1fr auto; }
 }
+
+/* Ventana acoplada a un costado (creador de personaje): deja ver la pista al lado. */
+.panel-wrap.dock { background: none; pointer-events: none; place-items: center start; padding-left: max(12px, 3vw); }
+.panel-wrap.dock .panel { pointer-events: auto; width: min(440px, 100%); }
+@media (orientation: portrait) {
+  .panel-wrap.dock { place-items: end center; padding-left: 12px; }
+  .panel-wrap.dock .panel { max-height: 60%; }
+}

@@ -133,8 +133,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         wantTarget.set(0, 0.15, -0.25);
         wantFov = 62;
       } else {
-        wantPos.set(-0.85, 1.3, 2.9);
-        wantTarget.set(-0.85, 1.0, -0.25);
+        wantPos.set(-0.9, 1.25, 3.4);
+        wantTarget.set(-0.9, 1.05, -0.25);
         wantFov = 48;
       }
     } else {
@@ -189,6 +189,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     setMode(m) {
       mode = m;
       club.booth.visible = djGroup.visible = m === 'pista';
+      crowd.setSolo(m === 'creador');
     },
     play(set, list) {
       if (list) playlist = list;

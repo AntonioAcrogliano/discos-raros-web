@@ -87,6 +87,7 @@ export class Crowd {
   readonly group = new THREE.Group();
   private slots = makeSlots();
   private dancers: Dancer[] = [];
+  private solo = false;
   private legs: THREE.InstancedMesh;
   private torso: THREE.InstancedMesh;
   private arms: THREE.InstancedMesh;
@@ -142,13 +143,24 @@ export class Crowd {
     this.paint();
   }
 
+  /** Mostrar solo al primero (mientras se arma el personaje, para verlo sin gente alrededor). */
+  setSolo(solo: boolean) {
+    this.solo = solo;
+    this.paint();
+  }
+
+  private shown() {
+    return this.solo ? this.dancers.slice(0, 1) : this.dancers;
+  }
+
   /** Colores y cantidades por malla (cuando cambia quién baila o cómo se ve). */
   private paint() {
-    const n = this.dancers.length;
+    const list = this.shown();
+    const n = list.length;
     const c = new THREE.Color();
     const hairN = this.hair.map(() => 0);
     const accN = this.acc.map(() => 0);
-    this.dancers.forEach((d, i) => {
+    list.forEach((d, i) => {
       const l = d.look;
       c.set(LOOK.pantalon[l.pantalon]);
       this.legs.setColorAt(i * 2, c);
@@ -195,7 +207,7 @@ export class Crowd {
     const hairN = this.hair.map(() => 0);
     const accN = this.acc.map(() => 0);
     const e = energy;
-    this.dancers.forEach((d, i) => {
+    this.shown().forEach((d, i) => {
       const f = beats + d.phase * 0.012;
       const s = Math.sin(Math.PI * f);
       const hop01 = Math.abs(s);
@@ -261,7 +273,7 @@ export class Crowd {
   /** Posición de arriba de la cabeza del bailarín `i` (para colgarle el nombre). */
   headTop(i: number, out: THREE.Vector3) {
     const d = this.dancers[i];
-    return d ? out.set(d.x, d.headY + (d.look.accesorio ? 0.22 : 0.08), d.z) : null;
+    return d ? out.set(d.x, d.headY + (d.look.accesorio ? 0.16 : 0.04), d.z) : null;
   }
 
   nameOf(i: number) {

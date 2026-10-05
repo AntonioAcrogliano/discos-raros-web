@@ -26,6 +26,12 @@ export interface Route {
 
 const routes: Route[] = [];
 const buttons = new Map<string, HTMLAnchorElement>();
+
+/** Cambia el texto de un botón de la barra. */
+export function setRouteLabel(path: string, label: string) {
+  const b = buttons.get(path);
+  if (b) b.textContent = label;
+}
 let panel: { root: HTMLElement; onClose?: () => void } | null = null;
 
 export function mountUi(list: Route[]) {
@@ -69,6 +75,8 @@ function closePanel() {
 export interface PanelOptions {
   title: string;
   narrow?: boolean;
+  /** Acoplada a un costado, sin oscurecer la pista. */
+  dock?: boolean;
   /** Ayuda de teclas de abajo: pares [tecla, qué hace]. */
   hints?: [string, string][];
   onClose?: () => void;
@@ -77,7 +85,7 @@ export interface PanelOptions {
 /** Abre una ventana (cierra la que hubiera) y devuelve dónde poner el contenido. */
 export function openPanel(o: PanelOptions) {
   closePanel();
-  const wrap = el('div', 'panel-wrap');
+  const wrap = el('div', `panel-wrap${o.dock ? ' dock' : ''}`);
   const root = el('section', `panel${o.narrow ? ' angosto' : ''}`);
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', o.title);
