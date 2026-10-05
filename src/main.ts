@@ -5,8 +5,8 @@ import { openContacto } from './sections/contacto';
 import { openCreador } from './sections/creador';
 import { openSets } from './sections/sets';
 import { PSXStage, fontsReady, makeLogoCanvas, setLogoSprite } from './style-kit';
-import { sinTildes } from './ui/dom';
-import { hudContador, hudSuena, mountUi, setRouteLabel } from './ui/shell';
+import { isTouch, sinTildes } from './ui/dom';
+import { go, hudContador, hudSuena, mountUi, setChrome, setRouteLabel } from './ui/shell';
 import { showStartScreen } from './ui/startScreen';
 
 async function main() {
@@ -39,6 +39,23 @@ async function main() {
   // El último set arranca solo (el click de PRESS START es lo que habilita el sonido).
   void sets.then((list) => list[0] && room.play(list[0], list));
 
+  /** Entra a la pelea (el código se baja recién acá) y devuelve cómo salir. */
+  const openPelea = () => {
+    let stopped = false;
+    let stop = () => {};
+    setChrome(false);
+    void import('./pelea').then(async ({ startPelea }) => {
+      const pelea = await startPelea(stage, room, () => go(''));
+      if (stopped) pelea.stop();
+      else stop = () => pelea.stop();
+    });
+    return () => {
+      stopped = true;
+      stop();
+      setChrome(true);
+    };
+  };
+
   mountUi([
     { path: '', label: 'LA PISTA' },
     { path: 'sets', label: 'SETS', open: () => openSets({ playing: () => room.playing()?.id ?? null, play: (s) => void sets.then((list) => room.play(s, list)) }) },
@@ -48,6 +65,8 @@ async function main() {
       open: () => openCreador({ room, mine: () => data.mine, onSaved: (raro, total) => setPista({ ...data, mine: raro, total }) }),
     },
     { path: 'contacto', label: 'CONTACTO', open: openContacto },
+    // El juego de pelea es solo para PC (teclado o joystick).
+    ...(isTouch() ? [] : [{ path: 'pelea', label: 'DISCOS VS RAROS', open: openPelea }]),
   ]);
 }
 

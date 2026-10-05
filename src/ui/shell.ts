@@ -20,8 +20,8 @@ export interface Route {
   /** '' es la pista (sin ventana). */
   path: string;
   label: string;
-  /** Abre la sección. No se llama para la pista. */
-  open?: () => void | Promise<void>;
+  /** Abre la sección. No se llama para la pista. Puede devolver cómo cerrarla al irse. */
+  open?: () => void | (() => void) | Promise<void>;
 }
 
 const routes: Route[] = [];
@@ -33,6 +33,12 @@ export function setRouteLabel(path: string, label: string) {
   if (b) b.textContent = label;
 }
 let panel: { root: HTMLElement; onClose?: () => void } | null = null;
+let leave: (() => void) | null = null;
+
+/** Mostrar u ocultar la barra y el cartel (la pelea usa toda la pantalla). */
+export function setChrome(visible: boolean) {
+  navbar.hidden = hud.hidden = !visible;
+}
 
 export function mountUi(list: Route[]) {
   routes.push(...list);
@@ -59,9 +65,12 @@ export function go(path: string) {
 function render() {
   const path = currentPath();
   closePanel();
+  leave?.();
+  leave = null;
   for (const [p, b] of buttons) b.classList.toggle('on', p === path);
   const route = routes.find((r) => r.path === path);
-  if (route?.open) void route.open();
+  const out = route?.open?.();
+  if (typeof out === 'function') leave = out;
 }
 
 function closePanel() {

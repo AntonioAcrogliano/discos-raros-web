@@ -13,14 +13,23 @@ import { Tele } from './tele';
 const MIN_FILL = 48;
 const FOG = '#120a1f';
 
-export type BoilerMode = 'pista' | 'creador';
+export type BoilerMode = 'pista' | 'creador' | 'pelea';
+
+/** Otro modo de juego (la pelea) que usa el club de escenario: maneja la cámara y dibuja su HUD. */
+export interface Takeover {
+  update(t: number, dt: number): void;
+  drawOverlay(ctx: CanvasRenderingContext2D, w: number, h: number, t: number): void;
+}
 
 export interface BoilerRoom {
+  scene: THREE.Scene;
+  /** Con el modo 'pelea': la pista sigue bailando atrás y esto maneja cámara y carteles. */
+  takeover: Takeover | null;
   /** Quiénes están en la pista (lo que devuelve la API). */
   setPista(data: PistaData): void;
   /** Vista previa del personaje que se está armando (null = volver a lo guardado). */
   setDraft(draft: { name: string; look: Look } | null): void;
-  /** 'creador' acerca la cámara al personaje del visitante y esconde la cabina. */
+  /** 'creador' acerca la cámara al personaje del visitante y esconde la cabina; 'pelea' saca a los DJs de la cabina. */
   setMode(mode: BoilerMode): void;
   /** Pone un set en la tele y la pista baila a su BPM. */
   play(set: SetInfo, playlist?: SetInfo[]): void;
@@ -119,7 +128,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   stage.onAfterRender = () => tele.render();
   stage.onUpdate = (t, dt) => {
     // Sin video (o si YouTube no cargó) la pista baila igual; con el video en pausa, se frena.
-    const target = mode === 'creador' ? 0.8 : tele.videoId ? (tele.playing ? 1 : 0.12) : 0.7;
+    const target = mode === 'creador' ? 0.8 : mode === 'pelea' ? 1 : tele.videoId ? (tele.playing ? 1 : 0.12) : 0.7;
     energy += (target - energy) * Math.min(1, dt * 3);
     // Arriba de 150 BPM (drum and bass) se baila a medio tiempo, si no es un flipper.
     const danceBpm = bpm > 150 ? bpm / 2 : bpm;
@@ -133,6 +142,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       lastShowcase = t;
       pickShowcase();
     }
+
+    if (mode === 'pelea') return room.takeover?.update(t, dt);
 
     const portrait = stage.camera.aspect < 1;
     let wantFov: number;
@@ -183,6 +194,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   };
 
   const room: BoilerRoom = {
+    scene,
+    takeover: null,
     onNowPlaying: null,
     setPista(data) {
       pista = data;
@@ -198,7 +211,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     },
     setMode(m) {
       mode = m;
-      club.booth.visible = djGroup.visible = m === 'pista';
+      club.booth.visible = m !== 'creador';
+      djGroup.visible = m === 'pista';
       crowd.setSolo(m === 'creador');
     },
     play(set, list) {
@@ -210,6 +224,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     },
     playing: () => current,
     drawOverlay(ctx, w, h, t) {
+      if (mode === 'pelea') return room.takeover?.drawOverlay(ctx, w, h, t);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       if (mode === 'pista') for (const i of showcase) label(ctx, w, h, i, DR.crema, false, t);
