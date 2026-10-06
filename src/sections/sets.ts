@@ -1,7 +1,7 @@
 import type { SetInfo } from '../../shared/look';
 import { fetchSets } from '../api';
 import { sfx } from '../style-kit';
-import { el } from '../ui/dom';
+import { el, sinTildes } from '../ui/dom';
 import { go, openPanel } from '../ui/shell';
 
 /** Miniatura pixelada: la de YouTube achicada a 64×36 y agrandada sin suavizar. */
@@ -36,7 +36,7 @@ export async function openSets(o: SetsOptions) {
     sets = await fetchSets();
   } catch (e) {
     status.className = 'error';
-    status.textContent = `NO SE PUDIERON CARGAR LOS SETS. ${(e as Error).message}`;
+    status.textContent = sinTildes(`NO SE PUDIERON CARGAR LOS SETS. ${(e as Error).message}`.toUpperCase());
     p.body.append(canal());
     return;
   }
