@@ -3,9 +3,10 @@ import { loadGlbRig } from '../characters/glbRig';
 import { type Rig, buildBoxRig } from '../characters/rig';
 import type { BoilerRoom } from '../scenes/boiler';
 import { DISCOS_COLORS, RAROS_COLORS } from '../scenes/boiler/djs';
-import { DR, DR_CYCLE, type PSXMaterial, type PSXStage, blip, box, fitSize, makePSXMaterial, makeRecordTexture, outlined, titleUnit } from '../style-kit';
+import { DR, type PSXMaterial, type PSXStage, blip, box, fitSize, makePSXMaterial, makeRecordTexture, outlined, titleUnit } from '../style-kit';
+import { type Control, PauseMenu, banner, dim, drawSelect, resultBox, topBand } from '../juegos/hud';
 import { Cpu, DIFFICULTIES } from './cpu';
-import { ARENA_HALF, ATTACKS, type Attack, Fighter, MAX_HP, NO_INTENT, SMOKE_EVERY, SMOKE_RINGS } from './fighter';
+import { ARENA_HALF, ATTACKS, type Attack, type AttackName, Fighter, MAX_HP, NO_INTENT, SMOKE_EVERY, SMOKE_RINGS } from './fighter';
 import { PlayerInput } from './input';
 
 /**
@@ -20,15 +21,22 @@ const MIN_GAP = 0.78;
 
 type Phase = 'select' | 'intro' | 'fight' | 'ko' | 'end';
 
-/** Lista de movimientos de la pantalla de selección. */
-const MOVES = [
-  'MOVIMIENTOS',
-  'W: SALTAR (GOLPE EN EL AIRE = VOLADORA)',
-  'I: AGARRE (LE GANA AL BLOQUEO)',
-  'ATRAS, ADELANTE + PATADA: REVOLEAR UN VINILO',
-  'ABAJO, ADELANTE + PATADA: AROS DE HUMO',
-  'ABAJO, ABAJO + PATADA: BIRRA Y VOMITO',
+/** Controles, para la pantalla de selección y el menú de pausa. */
+const CONTROLS: Control[] = [
+  ['A / D', 'MOVER'],
+  ['W', 'SALTAR'],
+  ['S', 'AGACHARSE'],
+  ['J', 'GOLPE ALTO'],
+  ['K', 'GOLPE BAJO'],
+  ['L', 'PATADA'],
+  ['I', 'AGARRE'],
+  ['ESPACIO', 'BLOQUEO'],
+  ['ATRAS, ADELANTE + L', 'VINILO'],
+  ['ABAJO, ADELANTE + L', 'HUMO'],
+  ['ABAJO, ABAJO + L', 'BIRRA'],
 ];
+/** Cartelito que salta cuando conecta algo especial. */
+const SHOUTS: Partial<Record<AttackName, string>> = { vinilo: 'VINILAZO!', humo: 'HUMO!', vomito: 'VOMITO!', voladora: 'VOLADORA!', patada: 'PATADON!' };
 
 async function loadRig(file: string, fallback: Parameters<typeof buildBoxRig>[0]): Promise<Rig> {
   try {
@@ -115,6 +123,13 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   let shake = 0;
   let sparkT = 0;
   let playerWon = false;
+  /** Vida que muestra cada barra: baja con retraso para que se vea cuánto sacó el golpe. */
+  const shownHp = [MAX_HP, MAX_HP];
+  /** Cartelito del momento (BLOQUEO, AGARRE!, VINILAZO!…). */
+  let shout = { text: '', color: DR.crema as string, t: 9 };
+  const say = (text: string, color: string = DR.amarillo) => (shout = { text, color, t: 0 });
+  /** Segundos de pelea jugados en esta partida (la ayuda de teclas se muestra solo al principio). */
+  let played = 0;
   const camPos = new THREE.Vector3(0, 1.5, ARENA_Z + 5);
   const camTarget = new THREE.Vector3(0, 1.15, ARENA_Z);
 
@@ -130,6 +145,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   const newMatch = () => {
     round = 1;
     fighters[0].wins = fighters[1].wins = 0;
+    played = 0;
     cpu.difficulty = DIFFICULTIES[difficulty];
     startRound();
   };
@@ -141,6 +157,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   };
   const endRound = (winner: Fighter | null) => {
     if (winner) {
+      if (winner.hp >= MAX_HP) say('PERFECT!', DR.amarillo);
       winner.wins++;
       if (winner.state !== 'ko') {
         winner.state = 'win';
@@ -166,6 +183,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
       if (b.low || b.airborne || b.state === 'hit') return;
       a.landed = true;
       a.throwFoe(b);
+      say('AGARRE!', DR.rojo);
       blip(260, 0.1, 'square', 0.08);
       blip(520, 0.3, 'triangle', 0.07, 0.1);
       return;
@@ -185,6 +203,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
       (spark.material as PSXMaterial).uniforms.uColor.value.set(DR.crema);
       blip(520, 0.05, 'square', 0.06);
       hitstop = 0.04;
+      say('BLOQUEO', DR.crema);
     } else {
       b.takeHit(atk, from);
       (spark.material as PSXMaterial).uniforms.uColor.value.set(atk.damage > 10 ? DR.rojo : DR.amarillo);
@@ -192,6 +211,8 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
       blip(70, 0.18, 'square', 0.12, 0.02);
       hitstop = atk.damage > 10 ? 0.11 : 0.07;
       shake = atk.damage > 10 ? 0.16 : 0.08;
+      const name = (Object.keys(ATTACKS) as AttackName[]).find((k) => ATTACKS[k] === atk);
+      if (name && SHOUTS[name]) say(SHOUTS[name]!, atk.damage > 10 ? DR.rojo : DR.amarillo);
       if (b.hp <= 0) endRound(a);
     }
   };
@@ -283,6 +304,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     const [a, b] = fighters;
     const me = fighters[player], foe = fighters[1 - player];
 
+    const logic = () => {
     if (phase === 'select') {
       const step = input.takeStep();
       if (step) {
@@ -366,7 +388,15 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
       else if (left <= 0) onExit();
     }
 
-    if (phase !== 'fight') updateShots(dt, false);
+    };
+    if (!pause.open) {
+      logic();
+      shout.t += dt;
+      if (phase === 'fight') played += dt;
+      // Las barras alcanzan a la vida real de a poco.
+      fighters.forEach((f, i) => (shownHp[i] = f.hp >= shownHp[i] ? f.hp : Math.max(f.hp, shownHp[i] - dt * 28)));
+    }
+    if (phase !== 'fight' && !pause.open) updateShots(dt, false);
     for (const f of fighters) f.applyPose(dt, t);
     mugs.forEach((m, i) => (m.visible = fighters[i].drinking));
     shadows.forEach((s, i) => s.position.set(fighters[i].x, 0.02, ARENA_Z));
@@ -396,14 +426,9 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     }
   };
 
-  /** Texto grande centrado, agrandado desde el medio. */
-  const big = (ctx: CanvasRenderingContext2D, w: number, y: number, s: string, size: number, scale: number, fill: string | CanvasGradient, shadow?: string) => {
-    ctx.save();
-    ctx.translate(Math.round(w / 2), Math.round(y));
-    ctx.scale(scale, scale);
-    outlined(ctx, s, 0, 0, size, fill, shadow);
-    ctx.restore();
-  };
+  const v = new THREE.Vector3();
+  /** Dónde cae en la pantalla (0–1 a lo ancho) un punto de la pista. */
+  const screenX = (x: number) => (v.set(x, 1, ARENA_Z).project(stage.camera).x + 1) / 2;
 
   const drawOverlay = (ctx: CanvasRenderingContext2D, w: number, h: number, t: number) => {
     const unit = titleUnit(w, h);
@@ -411,106 +436,113 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     const [a, b] = fighters;
 
     if (phase === 'select') {
-      ctx.textAlign = 'center';
-      outlined(ctx, 'DISCOS VS RAROS', w / 2, unit * 3, unit * 2, DR.amarillo, DR.rojo);
-      outlined(ctx, 'ELEGI TU PELEADOR', w / 2, unit * 6, unit, DR.crema);
-      const blink = Math.floor(t * 4) % 2 === 0;
-      fighters.forEach((f, i) => {
-        const x = w / 2 + (i ? 1 : -1) * w * 0.2;
-        const on = i === player;
-        if (on && blink) outlined(ctx, 'V', x, h * 0.3, unit, DR.rojo);
-        outlined(ctx, on ? `1P ${f.name}` : f.name, x, h * 0.86, unit, on ? DR.amarillo : DR.rosa);
+      drawSelect(ctx, w, h, t, {
+        title: 'DISCOS VS RAROS',
+        prompt: 'ELEGI TU PELEADOR',
+        players: fighters.map((f) => ({ name: f.name, cx: screenX(f.x) })),
+        me: player,
+        difficulty,
+        difficulties: DIFFICULTIES.map((d) => d.name),
+        controls: CONTROLS,
+        cardTop: 0.25,
+        cardBottom: 0.8,
+        go: 'PELEAR',
       });
-      const diff = `DIFICULTAD: ${DIFFICULTIES[difficulty].name}`;
-      outlined(ctx, diff, w / 2, unit * 8, unit, [DR.verdeClaro, DR.amarillo, DR.rojo][difficulty], DR.negro);
-      const help = 'IZQ/DER: PELEADOR   ARRIBA/ABAJO: DIFICULTAD   ENTER: PELEAR';
-      outlined(ctx, help, w / 2, h * 0.94, fitSize(help, Math.floor(unit * 0.75), w), DR.crema);
-      // La lista va en el medio, entre los dos peleadores.
-      MOVES.forEach((m, i) => outlined(ctx, m, w / 2, unit * (11 + i * 1.6), fitSize(m, Math.floor(unit * 0.75), w * 0.5), i ? DR.rosa : DR.amarillo));
       return;
     }
 
-    // --- Barras de vida, reloj y rounds ganados ---
-    const barW = Math.floor(w / 2 - unit * 4.5), barH = unit, y = unit * 1.5;
+    // --- Marcador: barras de vida, reloj y rounds ganados ---
+    topBand(ctx, w, unit * 4.6);
+    const barW = Math.floor(w / 2 - unit * 4.5), barH = Math.round(unit * 1.1), y = Math.round(unit * 0.9);
     fighters.forEach((f, i) => {
       const x0 = i ? w - unit - barW : unit;
+      ctx.fillStyle = DR.crema;
+      ctx.fillRect(x0 - 3, y - 3, barW + 6, barH + 6);
       ctx.fillStyle = DR.negro;
-      ctx.fillRect(x0 - 2, y - 2, barW + 4, barH + 4);
+      ctx.fillRect(x0 - 1, y - 1, barW + 2, barH + 2);
       ctx.fillStyle = DR.rojoOscuro;
       ctx.fillRect(x0, y, barW, barH);
-      const fill = Math.round((barW * f.hp) / MAX_HP);
-      ctx.fillStyle = f.hp > 30 ? DR.amarillo : Math.floor(t * 8) % 2 ? DR.rojo : DR.amarillo;
-      // La barra se vacía hacia el centro de la pantalla.
-      ctx.fillRect(i ? x0 : x0 + barW - fill, y, fill, barH);
+      // La barra se vacía hacia el centro. Primero lo que acaba de perder (claro), después lo que le queda.
+      const part = (hp: number, color: string) => {
+        const fill = Math.round((barW * hp) / MAX_HP);
+        ctx.fillStyle = color;
+        ctx.fillRect(i ? x0 : x0 + barW - fill, y, fill, barH);
+      };
+      part(shownHp[i], DR.crema);
+      part(f.hp, f.hp > 30 ? DR.amarillo : Math.floor(t * 8) % 2 ? DR.rojo : DR.amarillo);
+      // Nombre (con la marca de quién es el jugador) y rounds ganados.
+      const ny = y + barH + unit * 1.3;
       ctx.textAlign = i ? 'right' : 'left';
-      outlined(ctx, i === player ? `1P ${f.name}` : f.name, i ? w - unit : unit, y + barH + unit, unit, DR.crema);
+      const label = i === player ? `1P ${f.name}` : `CPU ${f.name}`;
+      outlined(ctx, label, i ? w - unit : unit, ny, unit, i === player ? DR.amarillo : DR.crema);
       for (let n = 0; n < WINS_TO_MATCH; n++) {
-        const wx = i ? x0 + n * (unit + 2) : x0 + barW - unit - n * (unit + 2);
+        const wx = i ? x0 + n * (unit * 1.4) : x0 + barW - unit - n * (unit * 1.4);
         ctx.fillStyle = DR.negro;
-        ctx.fillRect(wx - 1, y + barH + unit * 2 - 1, unit + 2, unit / 2 + 2);
+        ctx.fillRect(wx - 2, ny - unit / 2 - 2, unit + 4, unit + 4);
         ctx.fillStyle = n < f.wins ? DR.rojo : '#33303a';
-        ctx.fillRect(wx, y + barH + unit * 2, unit, unit / 2);
+        ctx.fillRect(wx, ny - unit / 2, unit, unit);
       }
     });
     ctx.textAlign = 'center';
-    outlined(ctx, String(Math.ceil(clock)).padStart(2, '0'), w / 2, y + unit * 0.6, unit * 2, clock < 10 ? DR.rojo : DR.crema);
+    outlined(ctx, String(Math.ceil(clock)).padStart(2, '0'), w / 2, y + unit * 0.8, unit * 2, clock < 10 ? (Math.floor(t * 4) % 2 ? DR.rojo : DR.crema) : DR.crema);
+    outlined(ctx, `ROUND ${round}`, w / 2, y + unit * 2.7, Math.round(unit * 0.75), DR.rosa);
 
     const cy = h * 0.45;
     if (phase === 'intro') {
-      if (phaseT < 1.3) big(ctx, w, cy, `ROUND ${round}`, unit * 2, Math.min(1, phaseT * 5) * 1.2, DR.amarillo, DR.rojo);
-      else big(ctx, w, cy, 'FIGHT!', unit * 2, 1.2 + Math.max(0, 1.6 - phaseT) * 3, DR.rojo, DR.amarillo);
+      if (phaseT < 1.3) banner(ctx, w, cy, `ROUND ${round}`, unit * 2, Math.min(1, phaseT * 5) * 1.2, DR.amarillo, DR.rojo);
+      else banner(ctx, w, cy, 'FIGHT!', unit * 2, 1.2 + Math.max(0, 1.6 - phaseT) * 3, DR.rojo, DR.amarillo);
     } else if (phase === 'fight' && phaseT < 0.35) {
-      big(ctx, w, cy, 'FIGHT!', unit * 2, 1.2, DR.rojo, DR.amarillo);
+      banner(ctx, w, cy, 'FIGHT!', unit * 2, 1.2, DR.rojo, DR.amarillo);
     } else if (phase === 'ko') {
       const ko = a.state === 'ko' || b.state === 'ko';
       const text = ko ? 'K.O.' : a.hp === b.hp ? 'EMPATE' : 'TIME UP';
       const pop = 1.6 + Math.max(0, 0.25 - phaseT) * 8;
-      if (phaseT < 1.6) big(ctx, w, cy, text, unit * 2, pop, DR.rojo, DR.crema);
+      if (phaseT < 1.6) banner(ctx, w, cy, text, unit * 2, pop, DR.rojo, DR.crema);
       else {
         const winner = fighters.find((f) => f.state === 'win') ?? (a.state === 'ko' ? b : b.state === 'ko' ? a : null);
-        if (winner) big(ctx, w, cy, `${winner.name} GANA`, unit * 2, 1, DR.amarillo, DR.rojo);
+        if (winner) banner(ctx, w, cy, `${winner.name} GANA`, unit * 2, 1, DR.amarillo, DR.rojo);
       }
     } else if (phase === 'end') {
-      const left = Math.max(0, Math.ceil(9.99 - phaseT));
-      if (playerWon) {
-        const title = 'YOU WIN!';
-        const size = unit * 2;
-        ctx.font = `${size}px "Press Start 2P"`;
-        // Arcoíris letra por letra, como NEW RECORD!.
-        [...title].forEach((ch, i) => {
-          const x = w / 2 + (i - (title.length - 1) / 2) * size;
-          outlined(ctx, ch, x, cy + Math.round(Math.sin(t * 8 + i) * 3), size, DR_CYCLE[(i + Math.floor(t * 6)) % DR_CYCLE.length]);
-        });
-      } else big(ctx, w, cy, 'GAME OVER', unit * 2, 1.2, DR.rojo, DR.negro);
-      outlined(ctx, playerWon ? 'OTRA?' : 'CONTINUE?', w / 2, cy + unit * 4, unit, DR.crema);
-      outlined(ctx, String(left), w / 2, cy + unit * 6.5, unit * 2, DR.amarillo, DR.rojo);
-      outlined(ctx, 'ENTER = REVANCHA   ESC = SALIR', w / 2, h - unit * 2, unit, DR.rosa);
+      resultBox(ctx, w, h, t, {
+        title: playerWon ? 'GANASTE!' : 'GAME OVER',
+        color: playerWon ? DR.amarillo : DR.rojo,
+        lines: [`${a.name} ${a.wins} - ${b.wins} ${b.name}`, `DIFICULTAD: ${DIFFICULTIES[difficulty].name}`],
+        seconds: 10 - phaseT,
+      });
       return;
+    }
+    // Cartelito del golpe: aparece de golpe y se va rápido.
+    if (shout.t < 0.75 && phase !== 'intro') {
+      banner(ctx, w, h * 0.3, shout.text, unit, 1.4 + Math.max(0, 0.12 - shout.t) * 6, Math.floor(shout.t * 20) % 2 ? shout.color : DR.crema, DR.negro);
     }
     if (phase === 'fight' || phase === 'intro') {
       ctx.textAlign = 'center';
-      const keys = 'A/D MOVER  W SALTAR  S AGACHAR  J ALTO  K BAJO  L PATADA  I AGARRE  ESPACIO BLOQUEO';
-      const moves = 'ATRAS,ADELANTE+L VINILO  ABAJO,ADELANTE+L HUMO  ABAJO,ABAJO+L BIRRA';
-      const size = Math.floor(unit * 0.75);
-      outlined(ctx, keys, w / 2, h - unit * 2.5, fitSize(keys, size, w), DR.rosa);
-      outlined(ctx, moves, w / 2, h - unit * 1.1, fitSize(moves, size, w), DR.amarillo);
+      if (round === 1 && played < 8) {
+        // Al principio de la partida, un repaso corto; después no molesta.
+        const keys = 'A/D MOVER  W SALTAR  S AGACHAR  J ALTO  K BAJO  L PATADA  I AGARRE  ESPACIO BLOQUEO';
+        dim(ctx, 0, h - unit * 2.2, w, unit * 2.2);
+        outlined(ctx, keys, w / 2, h - unit * 1.1, fitSize(keys, Math.floor(unit * 0.75), w), DR.crema);
+      } else {
+        ctx.textAlign = 'right';
+        outlined(ctx, 'ESC: PAUSA Y CONTROLES', w - unit, h - unit, Math.floor(unit * 0.6), DR.rosa);
+      }
     }
+    pause.draw(ctx, w, h, t, CONTROLS);
   };
 
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      onExit();
-    }
-  };
-  window.addEventListener('keydown', onKey);
+  const pause = new PauseMenu({
+    canPause: () => phase === 'fight' || phase === 'intro' || phase === 'ko',
+    onRestart: () => newMatch(),
+    onExit,
+  });
+
   if (import.meta.env.DEV) (window as unknown as { drPelea: unknown }).drPelea = { fighters, shots: () => shots };
   room.setMode('pelea');
   room.takeover = { update, drawOverlay };
 
   return {
     stop() {
-      window.removeEventListener('keydown', onKey);
+      pause.dispose();
       input.dispose();
       room.takeover = null;
       room.setMode('pista');

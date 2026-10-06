@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { loadGlbRig } from '../characters/glbRig';
 import { type Rig, buildBoxRig } from '../characters/rig';
+import { type Control, PauseMenu, banner, dim, drawSelect, resultBox, topBand } from '../juegos/hud';
 import type { BoilerRoom } from '../scenes/boiler';
 import { DISCOS_COLORS, RAROS_COLORS } from '../scenes/boiler/djs';
 import { DR, DR_CYCLE, type PSXMaterial, type PSXStage, blip, box, fitSize, makeCanvas, makeCheckerTexture, makePSXMaterial, makeRecordTexture, outlined, titleUnit, toPSXTexture } from '../style-kit';
@@ -16,6 +17,19 @@ const ARENA_Z = 4.35;
 const BODY_SCALE = 0.7, HEAD_SCALE = 3;
 
 type Phase = 'select' | 'ready' | 'play' | 'goal' | 'end';
+
+/** Controles, para la pantalla de selección y el menú de pausa. */
+const CONTROLS: Control[] = [
+  ['A / D', 'MOVER'],
+  ['W', 'SALTAR'],
+  ['J o ESPACIO', 'PATEAR'],
+  ['K', 'TIRO VINILO'],
+  ['', 'BARRA LLENA'],
+  ['', 'Y PELOTA CERCA'],
+  ['RIVAL ADELANTE', 'GLOBITO'],
+  ['PELOTA ALTA', 'VOLEA'],
+  ['EMPATE', 'GOL DE ORO'],
+];
 
 async function loadRig(file: string, fallback: Parameters<typeof buildBoxRig>[0]): Promise<Rig> {
   try {
@@ -194,6 +208,12 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
   let lastScorer = 0;
   let shake = 0;
   const walk = [0, 0];
+  let camDist = 4.3, camY = 0.95;
+  /** Cartelito del momento (TIRO VINILO!, ULTIMOS 10…). */
+  let shout = { text: '', color: DR.crema as string, t: 9 };
+  const say = (text: string, color: string = DR.amarillo) => (shout = { text, color, t: 0 });
+  /** Segundos jugados en esta partida (la ayuda de teclas se muestra solo al principio). */
+  let played = 0;
 
   const setPhase = (p: Phase) => {
     phase = p;
@@ -209,6 +229,7 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
     cpu.difficulty = SOCCER_DIFFICULTIES[difficulty];
     clock = MATCH_SECONDS;
     golden = false;
+    played = 0;
     kickoff(players, ball);
     setPhase('ready');
     blip(440, 0.12);
@@ -219,6 +240,7 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
     input.poll();
     phaseT += dt;
 
+    const logic = () => {
     if (phase === 'select') {
       if (input.took('ArrowLeft', 'KeyA')) me = 0;
       if (input.took('ArrowRight', 'KeyD')) me = 1;
@@ -239,14 +261,19 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
       if (ev.kick) blip(240, 0.07, 'square', 0.1);
       else if (ev.bounce > 3) blip(160 + ev.bounce * 8, 0.04, 'square', Math.min(0.08, ev.bounce * 0.008));
       if (ev.special) {
+        say('TIRO VINILO!', DR.rojo);
         blip(900, 0.25, 'sawtooth', 0.09);
         blip(1400, 0.2, 'square', 0.06, 0.05);
       }
       if (ev.knock) {
+        say('LO VOLTEO!', DR.amarillo);
         blip(110, 0.25, 'sawtooth', 0.14);
         shake = 0.2;
       }
+      const before = clock;
       if (!golden) clock = Math.max(0, clock - dt);
+      if (before > 10 && clock <= 10) say('ULTIMOS 10!', DR.rojo);
+      played += dt;
       if (ev.goal !== null) {
         players[ev.goal].score++;
         lastScorer = ev.goal;
@@ -260,6 +287,7 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
         } else {
           // Empate: sigue hasta que alguien la meta.
           golden = true;
+          say('GOL DE ORO!', DR.amarillo);
           blip(660, 0.3, 'square', 0.07);
         }
       }
@@ -277,6 +305,12 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
     } else if (phase === 'end') {
       if (phaseT > 0.8 && input.took('Enter', 'KeyJ', 'Space')) newMatch();
       else if (phaseT > 10) onExit();
+    }
+
+    };
+    if (!pause.open) {
+      logic();
+      shout.t += dt;
     }
 
     // --- Dibujar el estado -------------------------------------------------------------
@@ -323,22 +357,21 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
     // Cámara fija de costado, con toda la cancha a la vista (más lejos si la pantalla es angosta).
     shake = Math.max(0, shake - dt);
     const sx = shake > 0 ? Math.sin(t * 90) * shake * 0.5 : 0;
-    const dist = Math.max(5.7, 10.2 / Math.max(0.8, stage.camera.aspect));
-    stage.camera.position.set(ball.x * 0.08 + sx, 1.95, ARENA_Z + dist);
-    stage.camera.lookAt(ball.x * 0.08, 1.6, ARENA_Z);
+    const select = phase === 'select';
+    const want = select ? 4.3 : Math.max(5.7, 10.2 / Math.max(0.8, stage.camera.aspect));
+    camDist += (want - camDist) * Math.min(1, dt * 4);
+    camY += ((select ? 0.95 : 1.6) - camY) * Math.min(1, dt * 4);
+    const cx = select ? 0 : ball.x * 0.08;
+    stage.camera.position.set(cx + sx, camY + 0.35, ARENA_Z + camDist);
+    stage.camera.lookAt(cx, camY, ARENA_Z);
     if (stage.camera.fov !== 46) {
       stage.camera.fov = 46;
       stage.camera.updateProjectionMatrix();
     }
   };
 
-  const big = (ctx: CanvasRenderingContext2D, w: number, y: number, s: string, size: number, scale: number, fill: string, shadowColor?: string) => {
-    ctx.save();
-    ctx.translate(Math.round(w / 2), Math.round(y));
-    ctx.scale(scale, scale);
-    outlined(ctx, s, 0, 0, size, fill, shadowColor);
-    ctx.restore();
-  };
+  const v = new THREE.Vector3();
+  const screenX = (x: number) => (v.set(x, 1, ARENA_Z).project(stage.camera).x + 1) / 2;
 
   const drawOverlay = (ctx: CanvasRenderingContext2D, w: number, h: number, t: number) => {
     const unit = titleUnit(w, h);
@@ -346,48 +379,52 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
     ctx.textAlign = 'center';
 
     if (phase === 'select') {
-      outlined(ctx, 'CABEZAZOS', w / 2, unit * 3, unit * 2, DR.amarillo, DR.rojo);
-      outlined(ctx, 'ELEGI CON QUIEN JUGAS', w / 2, unit * 6, unit, DR.crema);
-      outlined(ctx, `DIFICULTAD: ${SOCCER_DIFFICULTIES[difficulty].name}`, w / 2, unit * 8, unit, [DR.verdeClaro, DR.amarillo, DR.rojo][difficulty], DR.negro);
-      const moves = ['A/D: MOVER   W: SALTAR', 'J O ESPACIO: PATEAR', 'K: TIRO VINILO (CON LA BARRA LLENA Y LA PELOTA CERCA)', `${MATCH_SECONDS} SEGUNDOS. SI EMPATAN, GOL DE ORO.`];
-      moves.forEach((m, i) => outlined(ctx, m, w / 2, unit * (11 + i * 1.6), fitSize(m, Math.floor(unit * 0.75), w * 0.6), DR.rosa));
-      players.forEach((p, i) => {
-        const on = i === me;
-        outlined(ctx, on ? `1P ${p.name}` : p.name, w / 2 + (i ? 1 : -1) * w * 0.22, h * 0.86, unit, on ? DR.amarillo : DR.rosa);
-        if (on && Math.floor(t * 4) % 2 === 0) outlined(ctx, 'V', w / 2 + (i ? 1 : -1) * w * 0.22, h * 0.8, unit, DR.rojo);
+      drawSelect(ctx, w, h, t, {
+        title: 'CABEZAZOS',
+        prompt: 'ELEGI CON QUIEN JUGAS',
+        players: players.map((p) => ({ name: p.name, cx: screenX(p.x) })),
+        me,
+        difficulty,
+        difficulties: SOCCER_DIFFICULTIES.map((d) => d.name),
+        controls: CONTROLS,
+        cardTop: 0.25,
+        cardBottom: 0.8,
+        go: 'JUGAR',
       });
-      const help = 'IZQ/DER: JUGADOR   ARRIBA/ABAJO: DIFICULTAD   ENTER: JUGAR';
-      outlined(ctx, help, w / 2, h * 0.94, fitSize(help, Math.floor(unit * 0.75), w), DR.crema);
       return;
     }
 
-    // --- Marcador, reloj y barras del tiro especial ---
-    const y = unit * 2;
-    outlined(ctx, `${players[0].score} - ${players[1].score}`, w / 2, y, unit * 2, DR.crema, DR.rojo);
-    outlined(ctx, golden ? 'GOL DE ORO' : String(Math.ceil(clock)).padStart(2, '0'), w / 2, y + unit * 2.4, unit, golden ? DR.amarillo : clock < 10 ? DR.rojo : DR.rosa);
-    const barW = Math.floor(w * 0.22);
+    // --- Marcador: nombres, barra del tiro especial, goles y reloj ---
+    topBand(ctx, w, unit * 4.6);
+    const barW = Math.floor(w * 0.26), barH = Math.round(unit * 0.8), by = Math.round(unit * 2.5);
     players.forEach((p, i) => {
       const x0 = i ? w - unit - barW : unit;
       ctx.textAlign = i ? 'right' : 'left';
-      outlined(ctx, i === me ? `1P ${p.name}` : p.name, i ? w - unit : unit, y - unit * 0.4, unit, DR.crema);
+      outlined(ctx, i === me ? `1P ${p.name}` : `CPU ${p.name}`, i ? w - unit : unit, unit * 1.3, unit, i === me ? DR.amarillo : DR.crema);
+      ctx.fillStyle = DR.crema;
+      ctx.fillRect(x0 - 3, by - 3, barW + 6, barH + 6);
       ctx.fillStyle = DR.negro;
-      ctx.fillRect(x0 - 2, y + unit * 0.6 - 2, barW + 4, unit * 0.6 + 4);
+      ctx.fillRect(x0 - 1, by - 1, barW + 2, barH + 2);
       ctx.fillStyle = '#33303a';
-      ctx.fillRect(x0, y + unit * 0.6, barW, unit * 0.6);
+      ctx.fillRect(x0, by, barW, barH);
       const full = p.power >= 1;
       ctx.fillStyle = full ? DR_CYCLE[Math.floor(t * 8) % DR_CYCLE.length] : DR.verdeClaro;
       const fill = Math.round(barW * p.power);
-      ctx.fillRect(i ? x0 + barW - fill : x0, y + unit * 0.6, fill, unit * 0.6);
-      if (full && i === me) outlined(ctx, 'K!', i ? x0 - unit : x0 + barW + unit, y + unit * 0.9, unit, DR.amarillo, DR.rojo);
+      ctx.fillRect(i ? x0 + barW - fill : x0, by, fill, barH);
+      // Debajo de la barra, qué es y cuándo se puede usar.
+      const tip = full ? (i === me ? 'TIRO VINILO LISTO: APRETA K' : 'TIRO VINILO LISTO') : 'TIRO VINILO';
+      outlined(ctx, tip, i ? w - unit : unit, by + barH + unit * 0.9, Math.round(unit * 0.6), full && Math.floor(t * 4) % 2 ? DR.amarillo : DR.rosa);
     });
     ctx.textAlign = 'center';
+    outlined(ctx, `${players[0].score} - ${players[1].score}`, w / 2, unit * 1.6, unit * 2, DR.crema, DR.rojo);
+    const last = !golden && clock < 10;
+    outlined(ctx, golden ? 'GOL DE ORO' : String(Math.ceil(clock)).padStart(2, '0'), w / 2, unit * 3.7, unit, golden ? DR.amarillo : last ? (Math.floor(t * 4) % 2 ? DR.rojo : DR.crema) : DR.rosa);
 
     const cy = h * 0.42;
-    if (phase === 'ready') big(ctx, w, cy, phaseT < 0.9 ? 'PREPARADOS' : 'YA!', unit * 2, 1.1, DR.amarillo, DR.rojo);
+    if (phase === 'ready') banner(ctx, w, cy, phaseT < 0.9 ? 'PREPARADOS' : 'YA!', unit * 2, 1.1, DR.amarillo, DR.rojo);
     else if (phase === 'goal') {
       const title = 'GOOOL!';
       const size = unit * 3;
-      ctx.font = `${size}px "Press Start 2P"`;
       [...title].forEach((ch, i) => {
         const x = w / 2 + (i - (title.length - 1) / 2) * size;
         outlined(ctx, ch, x, cy + Math.round(Math.sin(t * 9 + i) * unit * 0.4), size, DR_CYCLE[(i + Math.floor(t * 8)) % DR_CYCLE.length]);
@@ -395,30 +432,43 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
       outlined(ctx, `DE ${players[lastScorer].name}`, w / 2, cy + unit * 4, unit, DR.crema);
     } else if (phase === 'end') {
       const won = players[me].score > players[1 - me].score;
-      big(ctx, w, cy, won ? 'GANASTE!' : 'PERDISTE', unit * 2, 1.3, won ? DR.amarillo : DR.rojo, won ? DR.rojo : DR.negro);
-      outlined(ctx, 'ENTER = REVANCHA   ESC = SALIR', w / 2, cy + unit * 4, unit, DR.rosa);
-      outlined(ctx, String(Math.max(0, Math.ceil(10 - phaseT))), w / 2, cy + unit * 6.5, unit * 2, DR.amarillo, DR.rojo);
+      resultBox(ctx, w, h, t, {
+        title: won ? 'GANASTE!' : 'PERDISTE',
+        color: won ? DR.amarillo : DR.rojo,
+        lines: [`${players[0].name} ${players[0].score} - ${players[1].score} ${players[1].name}`, `DIFICULTAD: ${SOCCER_DIFFICULTIES[difficulty].name}`],
+        seconds: 10 - phaseT,
+      });
+      return;
+    }
+    if (shout.t < 0.9 && phase === 'play') {
+      banner(ctx, w, h * 0.3, shout.text, unit, 1.4 + Math.max(0, 0.12 - shout.t) * 6, Math.floor(shout.t * 20) % 2 ? shout.color : DR.crema, DR.negro);
     }
     if (phase === 'play' || phase === 'ready') {
-      const keys = 'A/D MOVER  W SALTAR  J/ESPACIO PATEAR  K TIRO VINILO';
-      outlined(ctx, keys, w / 2, h - unit * 1.2, fitSize(keys, Math.floor(unit * 0.75), w), DR.rosa);
+      if (played < 8) {
+        const keys = 'A/D MOVER   W SALTAR   J O ESPACIO PATEAR   K TIRO VINILO';
+        dim(ctx, 0, h - unit * 2.2, w, unit * 2.2);
+        outlined(ctx, keys, w / 2, h - unit * 1.1, fitSize(keys, Math.floor(unit * 0.75), w), DR.crema);
+      } else {
+        ctx.textAlign = 'right';
+        outlined(ctx, 'ESC: PAUSA Y CONTROLES', w - unit, h - unit, Math.floor(unit * 0.6), DR.rosa);
+      }
     }
+    pause.draw(ctx, w, h, t, CONTROLS);
   };
 
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      onExit();
-    }
-  };
-  window.addEventListener('keydown', onKey);
-  if (import.meta.env.DEV) (window as unknown as { drFutbol: unknown }).drFutbol = { players, ball, phase: () => phase };
+  const pause = new PauseMenu({
+    canPause: () => phase === 'ready' || phase === 'play' || phase === 'goal',
+    onRestart: () => newMatch(),
+    onExit,
+  });
+
+  if (import.meta.env.DEV) (window as unknown as { drFutbol: unknown }).drFutbol = { players, ball, phase: () => phase, end: () => setPhase('end') };
   room.setMode('pelea');
   room.takeover = { update, drawOverlay };
 
   return {
     stop() {
-      window.removeEventListener('keydown', onKey);
+      pause.dispose();
       input.dispose();
       room.takeover = null;
       room.setMode('pista');
