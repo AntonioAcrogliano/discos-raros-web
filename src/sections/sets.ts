@@ -41,11 +41,11 @@ export async function openSets(o: SetsOptions) {
     return;
   }
   if (!p.body.isConnected) return;
-  status.textContent = 'UN SET NUEVO POR SEMANA, CADA UNO DE UN PALO DISTINTO. ELEGÍ UNO Y SUENA EN LA PISTA.';
+  status.textContent = 'UN SET NUEVO POR SEMANA, CADA UNO DE UN PALO DISTINTO. ELEGI UNO Y SUENA EN LA PISTA.';
   const list = el('div', 'sets');
   const playing = o.playing();
   for (const s of sets) {
-    const row = el('button', `btn set${s.id === playing ? ' suena' : ''}`, [
+    const row = el('button', `btn set${s.id === playing ? ' sonando' : ''}`, [
       thumb(s),
       el('span', 'num', `#${s.number}`),
       el('span', 'nombre', s.name),
@@ -57,7 +57,7 @@ export async function openSets(o: SetsOptions) {
       o.play(s);
       go('');
     });
-    const yt = el('a', 'btn chico yt', 'YT ↗');
+    const yt = el('a', 'btn chico yt', 'VER EN YT');
     yt.href = s.url;
     yt.target = '_blank';
     yt.rel = 'noopener';
@@ -69,7 +69,7 @@ export async function openSets(o: SetsOptions) {
 }
 
 function canal() {
-  const a = el('a', 'btn', 'TODOS LOS SETS EN YOUTUBE ↗');
+  const a = el('a', 'btn', 'TODOS LOS SETS EN YOUTUBE');
   a.href = 'https://www.youtube.com/@discosraros';
   a.target = '_blank';
   a.rel = 'noopener';

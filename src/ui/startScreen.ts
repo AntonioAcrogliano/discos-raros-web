@@ -1,3 +1,4 @@
+import { redesLinks } from '../redes';
 import { DR, type PSXStage, drawLogo, drawPressStart, outlined, sfx, titleUnit, unlockAudio } from '../style-kit';
 
 /**
@@ -10,7 +11,9 @@ export function showStartScreen(stage: PSXStage): Promise<void> {
     const button = document.createElement('button');
     button.className = 'press-start';
     button.textContent = 'Press Start: entrar a Discos Raros';
-    document.body.append(button);
+    // Las redes van encima del botón gigante: se puede ir a YouTube sin entrar a la pista.
+    const redes = redesLinks('redes en-inicio');
+    document.body.append(button, redes);
     button.focus();
 
     stage.onOverlay = (ctx, w, h, t) => {
@@ -31,6 +34,7 @@ export function showStartScreen(stage: PSXStage): Promise<void> {
       sfx.start();
       window.removeEventListener('keydown', onKey);
       button.remove();
+      redes.remove();
       // Medio segundo de PRESS START titilando rápido, como cuando el juego toma el botón.
       stage.onOverlay = (ctx, w, h, t) => {
         if (pressedAt < 0) pressedAt = t;

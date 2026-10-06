@@ -32,6 +32,12 @@ export interface BoilerRoom {
   /** Pone un set en la tele y la pista baila a su BPM. */
   play(set: SetInfo, playlist?: SetInfo[]): void;
   playing(): SetInfo | null;
+  /** Pausa o reanuda el set. */
+  toggle(): void;
+  /** Pasa al set siguiente (1) o al anterior (-1) de la lista. */
+  skip(d: number): void;
+  /** Avisa cuando el set empieza a sonar o se pausa. */
+  onPlayState: ((playing: boolean) => void) | null;
   onNowPlaying: ((set: SetInfo) => void) | null;
   drawOverlay(ctx: CanvasRenderingContext2D, w: number, h: number, t: number): void;
 }
@@ -98,6 +104,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let bpm = 126;
   let beats = 0;
   let energy = 0.7;
+  tele.onState = (p) => room.onPlayState?.(p);
   tele.onEnded = () => {
     // Terminó el set: sigue el anterior de la lista (del más nuevo al más viejo).
     if (!current || !playlist.length) return;
@@ -188,6 +195,13 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     scene,
     takeover: null,
     onNowPlaying: null,
+    onPlayState: null,
+    toggle: () => tele.toggle(),
+    skip(d) {
+      if (!current || !playlist.length) return;
+      const i = playlist.findIndex((s) => s.id === current!.id);
+      room.play(playlist[(i + d + playlist.length) % playlist.length]);
+    },
     setPista(data) {
       // Un guardado con opciones viejas (de antes de un cambio de menú) no se dibuja.
       const ok = (r: Raro | null): r is Raro => Boolean(r && validLook(r.look));

@@ -1,3 +1,4 @@
+import { redesLinks } from '../redes';
 import { sfx } from '../style-kit';
 import { el } from './dom';
 import './ui.css';
@@ -10,8 +11,45 @@ import './ui.css';
 export const ui = el('div', 'ui');
 const hud = el('div', 'hud');
 export const hudContador = el('div', 'contador');
-export const hudSuena = el('div', 'suena');
-hud.append(hudContador, hudSuena);
+/** Reproductor: qué set suena, con anterior / pausa / siguiente y el link a YouTube. */
+const suena = el('div', 'suena');
+suena.hidden = true;
+const titulo = el('div', 'titulo');
+const ctrl = (label: string, aria: string) => {
+  const b = el('button', 'btn chico', label);
+  b.type = 'button';
+  b.setAttribute('aria-label', aria);
+  b.addEventListener('click', () => sfx.select());
+  return b;
+};
+const prev = ctrl('<<', 'Set anterior');
+const toggle = ctrl('||', 'Pausar');
+const next = ctrl('>>', 'Set siguiente');
+const verYt = el('a', 'btn chico', 'VER EN YT');
+verYt.target = '_blank';
+verYt.rel = 'noopener';
+const todos = el('a', 'btn chico', 'MAS SETS');
+todos.href = '#/sets';
+todos.setAttribute('aria-label', 'Todos los sets');
+suena.append(titulo, el('div', 'controles', [prev, toggle, next, verYt, todos]));
+hud.append(el('div', 'hud-izq', [hudContador, suena]), redesLinks());
+
+export const player = {
+  /** Muestra qué set suena. */
+  set(text: string, url: string) {
+    suena.hidden = false;
+    titulo.textContent = text;
+    verYt.href = url;
+  },
+  setPlaying(playing: boolean) {
+    toggle.textContent = playing ? '||' : '>';
+    toggle.setAttribute('aria-label', playing ? 'Pausar' : 'Reproducir');
+    suena.classList.toggle('pausa', !playing);
+  },
+  onPrev: (fn: () => void) => prev.addEventListener('click', fn),
+  onNext: (fn: () => void) => next.addEventListener('click', fn),
+  onToggle: (fn: () => void) => toggle.addEventListener('click', fn),
+};
 const navbar = el('nav', 'navbar');
 navbar.setAttribute('aria-label', 'Secciones');
 ui.append(hud, navbar);
@@ -20,6 +58,8 @@ export interface Route {
   /** '' es la pista (sin ventana). */
   path: string;
   label: string;
+  /** false = la ruta existe pero no tiene botón en la barra (se entra desde otra ventana). */
+  nav?: boolean;
   /** Abre la sección. No se llama para la pista. Puede devolver cómo cerrarla al irse. */
   open?: () => void | (() => void) | Promise<void>;
 }
@@ -45,6 +85,7 @@ export function setChrome(visible: boolean) {
 export function mountUi(list: Route[]) {
   routes.push(...list);
   for (const r of list) {
+    if (r.nav === false) continue;
     const a = el('a', 'btn', r.label);
     a.href = `#/${r.path}`;
     a.addEventListener('click', () => sfx.select());
@@ -78,6 +119,7 @@ function render() {
 function closePanel() {
   if (!panel) return;
   panel.root.remove();
+  ui.classList.remove('con-ventana');
   panel.onClose?.();
   panel = null;
   navbar.hidden = false;
@@ -116,6 +158,7 @@ export function openPanel(o: PanelOptions) {
     if (e.target === wrap) go('');
   });
   ui.append(wrap);
+  ui.classList.add('con-ventana');
   navbar.hidden = true;
   panel = { root: wrap, onClose: o.onClose };
   return {

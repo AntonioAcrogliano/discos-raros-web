@@ -1,14 +1,9 @@
 import { sendContact } from '../api';
+import { redesLinks } from '../redes';
 import { sfx } from '../style-kit';
 import { mountTurnstile } from '../turnstile';
 import { el } from '../ui/dom';
 import { openPanel } from '../ui/shell';
-
-const REDES: [string, string][] = [
-  ['YOUTUBE', 'https://www.youtube.com/@discosraros'],
-  ['INSTAGRAM', 'https://www.instagram.com/discosraros.arg'],
-  ['KICK', 'https://kick.com/discosraros'],
-];
 
 function campo(label: string, input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, name: string) {
   input.name = name;
@@ -73,15 +68,12 @@ export function openContacto() {
     }
   });
 
-  const redes = el('div', 'fila');
-  for (const [label, href] of REDES) {
-    const a = el('a', 'btn chico', `${label} ↗`);
-    a.href = href;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    redes.append(a);
-  }
-
-  p.body.append(el('p', 'aviso', 'FECHAS, PRENSA, PROPUESTAS RARAS: ESCRIBINOS.'), form, el('p'), redes);
+  p.body.append(
+    el('p', 'aviso', 'SEGUINOS:'),
+    redesLinks('redes en-ventana'),
+    el('p'),
+    el('p', 'aviso', 'FECHAS, PRENSA, PROPUESTAS RARAS: ESCRIBINOS.'),
+    form,
+  );
   p.focusFirst();
 }

@@ -11,6 +11,7 @@ import { CLUB } from './club';
 interface YTPlayer {
   loadVideoById(id: string): void;
   playVideo(): void;
+  pauseVideo(): void;
   getPlayerState(): number;
 }
 interface YTNamespace {
@@ -38,6 +39,8 @@ export class Tele {
   playing = false;
   videoId: string | null = null;
   onEnded: (() => void) | null = null;
+  /** Cambió entre sonando y en pausa. */
+  onState: ((playing: boolean) => void) | null = null;
 
   private css = new CSS3DRenderer();
   private holder = document.createElement('div');
@@ -69,6 +72,13 @@ export class Tele {
   /** Llamar después de cada frame: acomoda el iframe a donde quedó la cámara. */
   render() {
     if (this.object.visible) this.css.render(this.stage.scene, this.stage.camera);
+  }
+
+  /** Pausa o reanuda lo que está puesto. */
+  toggle() {
+    if (!this.player) return;
+    if (this.playing) this.player.pauseVideo();
+    else this.player.playVideo();
   }
 
   /** Pone un video. Tiene que llamarse después de un click (PRESS START) para que suene. */
@@ -103,7 +113,9 @@ export class Tele {
         },
         onStateChange: (e: { data: number }) => {
           // 1 = reproduciendo, 0 = terminó.
+          const was = this.playing;
           this.playing = e.data === 1;
+          if (was !== this.playing) this.onState?.(this.playing);
           if (e.data === 0) this.onEnded?.();
         },
       },

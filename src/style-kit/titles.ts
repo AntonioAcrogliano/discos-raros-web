@@ -46,12 +46,12 @@ export function setLogoSprite(canvas: HTMLCanvasElement) {
 }
 
 /** Logo de Discos Raros con un rebote suave: el sprite si ya cargó, o el texto en dos renglones. */
-export function drawLogo(ctx: CanvasRenderingContext2D, w: number, h: number, t: number, y = h * 0.34) {
+export function drawLogo(ctx: CanvasRenderingContext2D, w: number, h: number, t: number, y = h * 0.19) {
   const unit = titleUnit(w, h);
   const bob = Math.round(Math.sin(t * 2) * unit * 0.25);
   if (logoSprite) {
     // Agrandado en múltiplos enteros para que los píxeles queden parejos.
-    const k = Math.max(1, Math.floor(Math.min((w * 0.8) / logoSprite.width, (h * 0.42) / logoSprite.height)));
+    const k = Math.max(1, Math.floor(Math.min((w * 0.8) / logoSprite.width, (h * 0.3) / logoSprite.height)));
     const lw = logoSprite.width * k, lh = logoSprite.height * k;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(logoSprite, Math.round((w - lw) / 2), Math.round(y - lh / 2) + bob, lw, lh);
@@ -80,6 +80,6 @@ export function drawPressStart(ctx: CanvasRenderingContext2D, w: number, h: numb
   ctx.textAlign = 'center';
   const size = fitSize(text, Math.round(unit * 1.5), w);
   if (Math.floor(t * 2.5) % 2 === 0) outlined(ctx, text, w / 2, Math.round(h * 0.72), size, DR.amarillo, DR.rojo);
-  outlined(ctx, '© 1997 DISCOS RAROS', w / 2, Math.round(h * 0.9), fitSize('© 1997 DISCOS RAROS', unit, w), DR.rosa);
+  outlined(ctx, '© 1997 DISCOS RAROS', w / 2, Math.round(h * 0.95), fitSize('© 1997 DISCOS RAROS', Math.round(unit * 0.75), w), DR.rosa);
   ctx.restore();
 }

@@ -3,10 +3,11 @@ import { type PistaData, fetchPista, fetchSets } from './api';
 import { createBoilerRoom } from './scenes/boiler';
 import { openContacto } from './sections/contacto';
 import { openCreador } from './sections/creador';
+import { openJugar } from './sections/jugar';
 import { openSets } from './sections/sets';
 import { PSXStage, fontsReady, makeLogoCanvas, setLogoSprite } from './style-kit';
 import { isTouch, sinTildes } from './ui/dom';
-import { go, hudContador, hudSuena, mountUi, setChrome, setRouteLabel } from './ui/shell';
+import { go, hudContador, mountUi, player, setChrome, setRouteLabel } from './ui/shell';
 import { showStartScreen } from './ui/startScreen';
 
 async function main() {
@@ -24,13 +25,24 @@ async function main() {
   await fontsReady();
   stage.start();
 
+  // Solo en desarrollo: ?autostart saltea el PRESS START (para sacar capturas automáticas).
+  if (import.meta.env.DEV && location.search.includes('autostart')) setTimeout(() => document.querySelector<HTMLElement>('.press-start')?.click(), 300);
   await showStartScreen(stage);
   stage.onOverlay = (ctx, w, h, t) => room.drawOverlay(ctx, w, h, t);
 
   const contador = (total: number) => {
     hudContador.textContent = total > 0 ? `${total.toLocaleString('es-AR')} ${total === 1 ? 'RARO' : 'RAROS'} EN LA PISTA` : 'LA PISTA ESTA VACIA. SE EL PRIMERO.';
   };
-  room.onNowPlaying = (s) => (hudSuena.textContent = sinTildes(`♪ #${s.number} ${s.name}${s.genre ? ` [${s.genre}]` : ''}`.toUpperCase()));
+  // Reproductor del cartel: qué suena, anterior / pausa / siguiente y el link a YouTube.
+  room.onNowPlaying = (s) => {
+    player.set(sinTildes(`#${s.number} ${s.name}${s.genre ? ` [${s.genre}]` : ''}`.toUpperCase()), s.url);
+    document.title = `#${s.number} ${s.name} · DISCOS RAROS`;
+  };
+  room.onPlayState = (playing) => player.setPlaying(playing);
+  player.onToggle(() => room.toggle());
+  // La lista va del set más nuevo al más viejo: "siguiente" es el anterior en el tiempo.
+  player.onNext(() => room.skip(1));
+  player.onPrev(() => room.skip(-1));
   let data: PistaData = { total: 0, raros: [], mine: null };
   const setPista = (d: PistaData) => {
     data = d;
@@ -63,20 +75,20 @@ async function main() {
   const openFutbol = openGame(() => import('./futbol').then((m) => m.startFutbol(stage, room, exit)));
 
   mountUi([
-    { path: '', label: 'LA PISTA' },
     { path: 'sets', label: 'SETS', open: () => openSets({ playing: () => room.playing()?.id ?? null, play: (s) => void sets.then((list) => room.play(s, list)) }) },
     {
       path: 'crear',
       label: 'CREA TU RARO',
       open: () => openCreador({ room, mine: () => data.mine, onSaved: (raro, total) => setPista({ ...data, mine: raro, total }) }),
     },
+    { path: 'jugar', label: 'JUGAR', open: openJugar },
     { path: 'contacto', label: 'CONTACTO', open: openContacto },
-    // Los juegos son solo para PC (teclado o joystick).
+    // Los juegos se abren desde JUGAR y son solo para PC (teclado o joystick).
     ...(isTouch()
       ? []
       : [
-          { path: 'pelea', label: 'PELEA', open: openPelea },
-          { path: 'futbol', label: 'CABEZAZOS', open: openFutbol },
+          { path: 'pelea', label: 'PELEA', nav: false, open: openPelea },
+          { path: 'futbol', label: 'CABEZAZOS', nav: false, open: openFutbol },
         ]),
   ]);
 }
