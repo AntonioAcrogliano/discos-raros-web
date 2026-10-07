@@ -7,6 +7,7 @@ import { el } from './ui/dom';
 
 /**
  * Panel de moderación: lista los personajes y los mensajes de contacto, y deja borrarlos.
+ * También exporta a cada personaje bailando (PNG con transparencia) para el videoclip.
  * La clave se manda en cada pedido y la valida el servidor (ADMIN_PASSWORD); acá no se guarda
  * más que en la pestaña abierta.
  */
@@ -97,6 +98,20 @@ async function load() {
     mensajes.append(row);
   }
 
+  // El exportador trae Three.js: se baja recién acá, después de entrar con la clave.
+  const exportBody = el('div', 'panel-body');
+  const todos = async () => {
+    const all: AdminData['raros'] = [];
+    for (let offset = 0; ; offset += 100) {
+      const page = (await call<AdminData>(`/api/admin?offset=${offset}`)).raros;
+      all.push(...page);
+      if (page.length < 100) break;
+    }
+    // La API los da del más nuevo al más viejo; el número de cada uno es su orden de llegada.
+    return all.reverse();
+  };
+  void import('./exportar').then((m) => m.mountExportador(exportBody, async () => m.cleanRaros(await todos())));
+
   root.replaceChildren(
     el('section', 'panel', [
       el('header', 'panel-title', `PERSONAJES (${data.total})`),
@@ -105,6 +120,7 @@ async function load() {
         data.raros.length ? raros : el('p', 'aviso', 'TODAVÍA NO HAY NADIE EN LA PISTA.'),
       ]),
     ]),
+    el('section', 'panel', [el('header', 'panel-title', 'VIDEOCLIP'), exportBody]),
     el('section', 'panel', [
       el('header', 'panel-title', `MENSAJES (${data.mensajes.length})`),
       el('div', 'panel-body', [data.mensajes.length ? mensajes : el('p', 'aviso', 'SIN MENSAJES.')]),

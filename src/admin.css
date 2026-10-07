@@ -8,3 +8,11 @@ body.admin { overflow: auto; height: auto; min-height: 100%; }
 .admin-msg a { color: var(--dr-amarillo); text-transform: none; }
 .admin-ui .genero { color: var(--dr-negro); background: var(--dr-amarillo); padding: 1px 4px 0; }
 .admin-ui b { font-weight: normal; color: var(--dr-crema); }
+.export-cuerpo { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start; margin-bottom: 12px; }
+.export-previa { display: grid; gap: 8px; justify-items: center; }
+/* Damero de "transparente", como en los programas de dibujo. */
+.export-vista { border: 2px solid var(--dr-crema); background: conic-gradient(#3a3f4a 25%, #262a33 0 50%, #3a3f4a 0 75%, #262a33 0) 0 0 / 16px 16px; line-height: 0; }
+.export-vista canvas { width: 256px; height: auto; image-rendering: pixelated; }
+.export-quien { color: var(--dr-amarillo); font-size: 8px; }
+.export-opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 620px) { .export-cuerpo { grid-template-columns: 1fr; } }
