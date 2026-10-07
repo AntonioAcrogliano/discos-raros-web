@@ -41,7 +41,7 @@ function devApi(): Plugin {
 export default defineConfig({
   plugins: [devApi()],
   // 5173 lo usa el visor de PCX: la web va en otro puerto para poder tener los dos abiertos.
-  server: { port: 5180, host: true },
+  server: { port: Number(process.env.PORT) || 5180, host: true },
   build: {
     rolldownOptions: { input: { main: 'index.html', admin: 'admin.html' } },
   },
