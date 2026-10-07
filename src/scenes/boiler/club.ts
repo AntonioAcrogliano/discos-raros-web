@@ -31,6 +31,8 @@ export interface Club {
   group: THREE.Group;
   /** Cabina y parlantes: se esconden mientras se crea un personaje, para verlo de cerca. */
   booth: THREE.Group;
+  /** Haces de luz: se apagan en el creador, que si no tiñen al personaje y no se ven los colores. */
+  beams: THREE.Mesh[];
   /** @param beats tiempo de baile en beats · @param energy 0–1 · @param t segundos */
   update(beats: number, energy: number, t: number): void;
 }
@@ -224,6 +226,7 @@ export function buildClub(): Club {
   return {
     group,
     booth,
+    beams,
     update(beats, energy, t) {
       for (const u of updaters) u(beats, energy, t);
     },

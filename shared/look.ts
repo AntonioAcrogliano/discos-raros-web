@@ -3,26 +3,43 @@
  * (render) y el servidor (validación). Un look es un índice por cada campo: ocupa nada y no
  * hay forma de mandar algo que no esté en la lista.
  * Ojo: agregar opciones al final de cada lista, nunca en el medio (los guardados usan el índice).
+ * Un campo nuevo va al final, con "nada" como primera opción, y se anota en OPTIONAL.
  */
 export const LOOK = {
-  cuerpo: ['NORMAL', 'FLACO', 'GRANDOTE', 'PETISO', 'LUNGO'],
-  piel: ['#f0d0b8', '#e8c0a0', '#c89a78', '#9c7358', '#6e4a34', '#7dff6a', '#8fa8ff'],
-  cara: ['CONTENTO', 'SERIO', 'ENOJADO', 'SORPRENDIDO', 'DORMIDO', 'BIGOTE', 'BARBA'],
-  pelo: ['CORTO', 'LARGO', 'CRESTA', 'RULOS', 'PELADO', 'FLEQUILLO', 'COLITA'],
-  peloColor: ['#141210', '#3e2a1e', '#6a4a2a', '#c09050', '#d8d8d8', '#ff004a', '#3f49ad', '#028a50'],
-  arriba: ['REMERA', 'MUSCULOSA', 'BUZO'],
-  estampa: ['LISA', 'RAYAS', 'CARITA', 'DISCO', 'CALAVERA'],
-  remera: ['#ff004a', '#ffe600', '#016239', '#fee0ea', '#f9f2e8', '#0f1217', '#2f6bb0', '#8a3ab0', '#ff7a3c', '#2ab0b0'],
-  abajo: ['LARGO', 'SHORT'],
-  pantalon: ['#22283a', '#1a1a1a', '#5a6a8a', '#6a4a2a', '#f9f2e8', '#7a0024'],
-  zapas: ['#f9f2e8', '#0f1217', '#ff004a', '#ffe600', '#2f6bb0'],
-  accesorio: ['NADA', 'GORRA', 'PILUSO', 'LENTES', 'CUERNOS', 'AUREOLA', 'CAJA EN LA CABEZA'],
-  baile: ['SALTITO', 'MANOS ARRIBA', 'PUÑO', 'ROBOT', 'CABECEO'],
+  cuerpo: ['NORMAL', 'FLACO', 'GRANDOTE', 'PETISO', 'LUNGO', 'CABEZON', 'GIGANTE'],
+  piel: ['#f0d0b8', '#e8c0a0', '#c89a78', '#9c7358', '#6e4a34', '#7dff6a', '#8fa8ff', '#ff8ad8', '#ffe066', '#c8c8d0', '#b06aff'],
+  cara: ['CONTENTO', 'SERIO', 'ENOJADO', 'SORPRENDIDO', 'DORMIDO', 'BIGOTE', 'BARBA', 'LENGUA', 'GUIÑO', 'HIPNOTIZADO', 'PAYASO', 'CHICLE', 'VAMPIRO'],
+  pelo: ['CORTO', 'LARGO', 'CRESTA', 'RULOS', 'PELADO', 'FLEQUILLO', 'COLITA', 'RODETES', 'DOS COLITAS', 'AFRO', 'RASTAS', 'PUAS'],
+  peloColor: ['#141210', '#3e2a1e', '#6a4a2a', '#c09050', '#d8d8d8', '#ff004a', '#3f49ad', '#028a50', '#ff5ad0', '#00e5ff', '#b6ff00', '#ff8a00', '#9a4dff', '#f9f2e8'],
+  arriba: ['REMERA', 'MUSCULOSA', 'BUZO', 'TOP', 'EN CUERO', 'ARNES', 'CHALECO'],
+  estampa: ['LISA', 'RAYAS', 'CARITA', 'DISCO', 'CALAVERA', 'BASTONES', 'DAMERO', 'TIE DYE', 'ALIEN', 'HONGO', 'CORAZON', 'RAYO', 'OJO', 'LLAMAS', 'DR'],
+  remera: ['#ff004a', '#ffe600', '#016239', '#fee0ea', '#f9f2e8', '#0f1217', '#2f6bb0', '#8a3ab0', '#ff7a3c', '#2ab0b0', '#b6ff00', '#ff5ad0', '#00e5ff', '#9a4dff', '#c8c8d0'],
+  abajo: ['LARGO', 'SHORT', 'POLLERA', 'ANCHO', 'TUTU'],
+  pantalon: ['#22283a', '#1a1a1a', '#5a6a8a', '#6a4a2a', '#f9f2e8', '#7a0024', '#b6ff00', '#ff5ad0', '#c8c8d0', '#ff7a3c', '#8a3ab0', '#00e5ff'],
+  zapas: ['#f9f2e8', '#0f1217', '#ff004a', '#ffe600', '#2f6bb0', '#b6ff00', '#ff5ad0', '#00e5ff', '#9a4dff'],
+  accesorio: ['NADA', 'GORRA', 'PILUSO', 'LENTES', 'CUERNOS', 'AUREOLA', 'CAJA EN LA CABEZA', 'GORRO DE LANA', 'ANTENITAS', 'OREJITAS', 'AURICULARES', 'CORONA', 'VINCHA', 'CONO', 'CASCO'],
+  baile: ['SALTITO', 'MANOS ARRIBA', 'PUÑO', 'ROBOT', 'CABECEO', 'SHUFFLE', 'PASITO', 'MOLINO', 'TWIST', 'AVIONCITO', 'POGO', 'HELICOPTERO', 'SENTADILLA', 'TIESO', 'ZOMBIE', 'TRAVOLTA'],
+  // De acá para abajo, campos que se agregaron después: la primera opción es "como estaba antes".
+  anteojos: ['NADA', 'OSCUROS', 'RAVE', '3D', 'CORAZONES', 'ANTIPARRAS'],
+  boca: ['NADA', 'CHUPETE', 'SILBATO', 'BARBIJO', 'CHUPETIN'],
+  encima: ['NADA', 'CADENA', 'RIÑONERA', 'MOCHILA', 'ALAS', 'CAPA'],
+  mano: ['NADA', 'PALITOS DE LUZ', 'ABANICO', 'AGUA', 'PULSERAS', 'GUANTES'],
+  calzado: ['ZAPAS', 'PLATAFORMAS', 'BOTAS', 'DESCALZO'],
+  neon: ['#ff004a', '#ffe600', '#b6ff00', '#00e5ff', '#ff5ad0', '#9a4dff', '#ff8a00', '#f9f2e8', '#0f1217'],
 } as const;
 
 export type LookKey = keyof typeof LOOK;
 export type Look = Record<LookKey, number>;
 export const LOOK_KEYS = Object.keys(LOOK) as LookKey[];
+
+/** Campos nuevos: un guardado viejo que no los trae vale igual (queda en la primera opción). */
+const OPTIONAL: ReadonlySet<LookKey> = new Set<LookKey>(['anteojos', 'boca', 'encima', 'mano', 'calzado', 'neon']);
+
+/** Opciones que ya no se ofrecen en el menú (se siguen dibujando para quien las tenga guardadas). */
+export const LOOK_HIDDEN: Partial<Record<LookKey, readonly number[]>> = {
+  // Los lentes pasaron a ANTEOJOS, así se pueden combinar con un gorro.
+  accesorio: [3],
+};
 
 /** Nombre del campo como se muestra en el menú. */
 export const LOOK_LABELS: Record<LookKey, string> = {
@@ -31,22 +48,32 @@ export const LOOK_LABELS: Record<LookKey, string> = {
   cara: 'CARA',
   pelo: 'PELO',
   peloColor: 'COLOR DE PELO',
-  arriba: 'ARRIBA',
+  arriba: 'PRENDA',
   estampa: 'ESTAMPA',
   remera: 'COLOR',
-  abajo: 'ABAJO',
-  pantalon: 'COLOR DE ABAJO',
-  zapas: 'ZAPAS',
-  accesorio: 'ACCESORIO',
-  baile: 'BAILE',
+  abajo: 'PRENDA',
+  pantalon: 'COLOR',
+  zapas: 'COLOR DEL CALZADO',
+  accesorio: 'EN LA CABEZA',
+  baile: 'PASO DE BAILE',
+  anteojos: 'ANTEOJOS',
+  boca: 'EN LA BOCA',
+  encima: 'COLGADO',
+  mano: 'EN LAS MANOS',
+  calzado: 'CALZADO',
+  neon: 'COLOR DE LOS ACCESORIOS',
 };
 
-/** Pestañas del menú de personalización. */
-export const LOOK_GROUPS: { name: string; keys: LookKey[] }[] = [
-  { name: 'CUERPO', keys: ['cuerpo', 'piel', 'cara'] },
-  { name: 'PELO', keys: ['pelo', 'peloColor', 'accesorio'] },
-  { name: 'ROPA', keys: ['arriba', 'estampa', 'remera', 'abajo', 'pantalon', 'zapas'] },
-  { name: 'BAILE', keys: ['baile'] },
+export type LookView = 'todo' | 'cabeza' | 'piernas';
+
+/** Pestañas del menú de personalización. `view` es a dónde mira la cámara mientras se elige. */
+export const LOOK_GROUPS: { name: string; view: LookView; keys: LookKey[] }[] = [
+  { name: 'CUERPO', view: 'todo', keys: ['cuerpo', 'piel', 'cara'] },
+  { name: 'CABEZA', view: 'cabeza', keys: ['pelo', 'peloColor', 'accesorio', 'anteojos', 'boca'] },
+  { name: 'ARRIBA', view: 'todo', keys: ['arriba', 'remera', 'estampa'] },
+  { name: 'ABAJO', view: 'piernas', keys: ['abajo', 'pantalon', 'calzado', 'zapas'] },
+  { name: 'EXTRAS', view: 'todo', keys: ['encima', 'mano', 'neon'] },
+  { name: 'BAILE', view: 'todo', keys: ['baile'] },
 ];
 
 /** Devuelve el look limpio, o null si trae algo fuera de las listas. */
@@ -54,7 +81,7 @@ export function validLook(x: unknown): Look | null {
   if (!x || typeof x !== 'object') return null;
   const out = {} as Look;
   for (const k of LOOK_KEYS) {
-    const v = (x as Record<string, unknown>)[k];
+    const v = (x as Record<string, unknown>)[k] ?? (OPTIONAL.has(k) ? 0 : undefined);
     if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v >= LOOK[k].length) return null;
     out[k] = v;
   }
@@ -63,10 +90,19 @@ export function validLook(x: unknown): Look | null {
 
 export function randomLook(rnd: () => number = Math.random): Look {
   const out = {} as Look;
-  for (const k of LOOK_KEYS) out[k] = Math.floor(rnd() * LOOK[k].length);
-  // Que la mayoría no tenga accesorio ni piel de alien: si no, la pista es un carnaval.
+  for (const k of LOOK_KEYS) {
+    do out[k] = Math.floor(rnd() * LOOK[k].length);
+    while (LOOK_HIDDEN[k]?.includes(out[k]));
+  }
+  // Que la mayoría no tenga de todo ni piel de alien: si no, la pista es un carnaval.
   if (rnd() < 0.55) out.accesorio = 0;
+  if (rnd() < 0.7) out.anteojos = 0;
+  if (rnd() < 0.85) out.boca = 0;
+  if (rnd() < 0.7) out.encima = 0;
+  if (rnd() < 0.65) out.mano = 0;
+  if (rnd() < 0.6) out.calzado = 0;
   if (rnd() < 0.85) out.piel = Math.floor(rnd() * 5);
+  if (rnd() < 0.8) out.cuerpo = Math.floor(rnd() * 5);
   return out;
 }
 

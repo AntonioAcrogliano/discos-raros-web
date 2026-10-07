@@ -161,9 +161,22 @@ export function makeSpeakerTexture(): THREE.CanvasTexture {
   return toPSXTexture(canvas);
 }
 
+/** Dibujo de píxeles a partir de renglones de letras; cada letra es un color de `pal` ('.' = nada). */
+function art(ctx: CanvasRenderingContext2D, rows: string[], pal: Record<string, string>, ox = 0, oy = 0) {
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const color = pal[row[x]];
+      if (!color) continue;
+      ctx.fillStyle = color;
+      ctx.fillRect(ox + x, oy + y, 1, 1);
+    }
+  });
+}
+
 /**
  * Caras de 16×16 sobre blanco (el color de piel lo pone el material o la instancia).
- * El índice es el de LOOK.cara: contento, serio, enojado, sorprendido, dormido, bigote, barba.
+ * El índice es el de LOOK.cara: contento, serio, enojado, sorprendido, dormido, bigote, barba,
+ * lengua, guiño, hipnotizado, payaso, chicle, vampiro.
  */
 export function makeFaceTexture(kind = 1): THREE.CanvasTexture {
   const S = 16;
@@ -175,21 +188,31 @@ export function makeFaceTexture(kind = 1): THREE.CanvasTexture {
   const DARK = '#17131a', HAIR = '#3a2a22';
   px('#ffffff', [0, 0, S, S]);
   // Nariz.
-  px('#c9b0b0', [7, 9, 2, 2]);
+  if (kind === 10) px(DR.rojo, [6, 8, 4, 3], [7, 7, 2, 5]);
+  else px('#c9b0b0', [7, 9, 2, 2]);
   // Ojos.
   if (kind === 4) px(DARK, [3, 8, 3, 1], [10, 8, 3, 1]);
   else if (kind === 3) {
     px(DARK, [2, 5, 4, 4], [10, 5, 4, 4]);
     px('#ffffff', [3, 6, 2, 2], [11, 6, 2, 2]);
     px(DARK, [4, 7, 1, 1], [12, 7, 1, 1]);
+  } else if (kind === 9) {
+    px(DARK, [1, 4, 5, 5], [10, 4, 5, 5]);
+    px('#ffffff', [2, 5, 3, 3], [11, 5, 3, 3]);
+    px(DARK, [3, 6, 1, 1], [12, 6, 1, 1]);
+  } else if (kind === 8) {
+    px(DARK, [3, 6, 3, 3], [10, 8, 3, 1], [9, 7, 1, 1], [13, 7, 1, 1]);
+    px('#ffffff', [4, 6, 1, 1]);
   } else {
     px(DARK, [3, 6, 3, 3], [10, 6, 3, 3]);
     px('#ffffff', [4, 6, 1, 1], [11, 6, 1, 1]);
   }
-  // Cejas del enojado.
-  if (kind === 2) px(DARK, [2, 3, 2, 1], [4, 4, 2, 1], [12, 3, 2, 1], [10, 4, 2, 1]);
+  // Rombos del payaso arriba y abajo de los ojos.
+  if (kind === 10) px('#3f49ad', [4, 3, 1, 3], [11, 3, 1, 3], [4, 9, 1, 2], [11, 9, 1, 2]);
+  // Cejas del enojado (y del vampiro).
+  if (kind === 2 || kind === 12) px(DARK, [2, 3, 2, 1], [4, 4, 2, 1], [12, 3, 2, 1], [10, 4, 2, 1]);
   // Boca.
-  if (kind === 0) px(DARK, [5, 13, 6, 1], [4, 12, 1, 1], [11, 12, 1, 1]);
+  if (kind === 0 || kind === 8) px(DARK, [5, 13, 6, 1], [4, 12, 1, 1], [11, 12, 1, 1]);
   else if (kind === 2) px(DARK, [5, 12, 6, 1], [4, 13, 1, 1], [11, 13, 1, 1]);
   else if (kind === 3) px(DARK, [7, 12, 2, 3]);
   else if (kind === 4) px(DARK, [7, 12, 3, 1]);
@@ -201,15 +224,29 @@ export function makeFaceTexture(kind = 1): THREE.CanvasTexture {
     px('#ffffff', [6, 9, 4, 2]);
     px('#c9b0b0', [7, 9, 2, 2]);
     px(DARK, [6, 12, 4, 1]);
+  } else if (kind === 7) {
+    px(DARK, [4, 12, 8, 1]);
+    px('#ff5a7a', [6, 13, 4, 2], [7, 15, 2, 1]);
+  } else if (kind === 9) px(DARK, [4, 13, 2, 1], [6, 12, 2, 1], [8, 13, 2, 1], [10, 12, 2, 1]);
+  else if (kind === 10) {
+    px(DR.rojo, [3, 12, 10, 2], [2, 11, 2, 1], [12, 11, 2, 1], [5, 14, 6, 1]);
+    px(DARK, [5, 13, 6, 1]);
+  } else if (kind === 11) {
+    px('#ff8ad8', [5, 10, 6, 6], [4, 11, 8, 4]);
+    px('#ffd8f0', [6, 11, 2, 1], [5, 12, 1, 1]);
+  } else if (kind === 12) {
+    px(DARK, [4, 12, 8, 2]);
+    px('#ffffff', [5, 13, 1, 2], [10, 13, 1, 2]);
   } else px(DARK, [5, 12, 6, 1]);
   // El píxel de arriba a la izquierda queda liso: lo usan las otras caras de la cabeza.
-  px(kind === 6 ? '#ffffff' : '#ffffff', [0, 0, 1, 1]);
+  px('#ffffff', [0, 0, 1, 1]);
   return toPSXTexture(canvas);
 }
 
 /**
  * Estampas de remera de 16×16 con fondo transparente (se usan con `decal`).
- * El índice es el de LOOK.estampa menos uno: rayas, carita, disco, calavera.
+ * El índice es el de LOOK.estampa menos uno: rayas, carita, disco, calavera, bastones, damero,
+ * tie dye, alien, hongo, corazón, rayo, ojo, llamas, DR.
  */
 export function makePrintTexture(kind: number): THREE.CanvasTexture {
   const S = 16;
@@ -222,6 +259,7 @@ export function makePrintTexture(kind: number): THREE.CanvasTexture {
     ctx.fillStyle = color;
     for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) ctx.fillRect(x, y, 1, 1);
   };
+  const PAL = { K: DR.negro, W: DR.crema, R: DR.rojo, Y: DR.amarillo, G: '#7dff6a', B: '#2f6bb0' };
   if (kind === 0) px(DR.crema, [0, 3, S, 2], [0, 7, S, 2], [0, 11, S, 2]);
   else if (kind === 1) {
     disc(8, 7, 5.2, DR.negro);
@@ -232,9 +270,62 @@ export function makePrintTexture(kind: number): THREE.CanvasTexture {
     disc(8, 7, 4.5, DR.negro);
     disc(8, 7, 1.9, DR.rojo);
     px(DR.amarillo, [7, 6, 2, 2]);
-  } else {
+  } else if (kind === 3) {
     px(DR.crema, [5, 3, 6, 6], [4, 4, 8, 4], [6, 9, 4, 2]);
     px(DR.negro, [5, 5, 2, 2], [9, 5, 2, 2], [7, 8, 2, 1], [7, 10, 1, 1], [9, 10, 1, 1]);
+  } else if (kind === 4) {
+    for (let x = 1; x < S; x += 4) px(DR.crema, [x, 0, 2, S]);
+  } else if (kind === 5) {
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) if ((x + y) % 2) px(DR.crema, [x * 4, y * 4, 4, 4]);
+  } else if (kind === 6) {
+    const ring = [DR.rojo, DR.amarillo, '#00e5ff', '#ff5ad0', '#b6ff00'];
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const dx = x - 7.5, dy = y - 7.5;
+        const i = Math.floor(Math.hypot(dx, dy) * 0.62 + (Math.atan2(dy, dx) / (Math.PI * 2)) * 5 + 10);
+        px(ring[i % 5], [x, y, 1, 1]);
+      }
+    }
+  } else if (kind === 7) {
+    art(ctx, ['..GGGGGG..', '.GGGGGGGG.', 'GGGGGGGGGG', 'GKKGGGGKKG', 'GKKKGGKKKG', 'GGKKGGKKGG', '.GGGGGGGG.', '..GGGGGG..', '...GKKG...', '....GG....'], PAL, 3, 2);
+  } else if (kind === 8) {
+    art(ctx, ['...RRRR...', '.RRWRRRRR.', 'RRRRRRWWRR', 'RWWRRRWWRR', 'RRRRRRRRRR', '..WWWWWW..', '...WWWW...', '...WWWW...', '..WWWWWW..'], PAL, 3, 3);
+  } else if (kind === 9) {
+    art(ctx, ['.RR...RR.', 'RRRR.RRRR', 'RRRRRRRRR', 'RRRRRRRRR', '.RRRRRRR.', '..RRRRR..', '...RRR...', '....R....'], { R: '#ff5ad0' }, 4, 3);
+  } else if (kind === 10) {
+    art(ctx, ['....YYYY', '...YYYY.', '..YYYY..', '.YYYYYY.', '...YYY..', '..YYY...', '.YYY....', '.YY.....', 'Y.......'], PAL, 4, 3);
+  } else if (kind === 11) {
+    art(ctx, ['...KKKKKK...', '.KKWWWWWWKK.', 'KWWWBBBBWWWK', 'KWWBBKKBBWWK', 'KWWWBBBBWWWK', '.KKWWWWWWKK.', '...KKKKKK...'], PAL, 2, 4);
+  } else if (kind === 12) {
+    const tall = [3, 5, 4, 7, 5, 9, 6, 4, 6, 10, 7, 5, 8, 4, 6, 3];
+    tall.forEach((h, x) => {
+      px(DR.rojo, [x, S - h, 1, h]);
+      if (h > 2) px('#ff8a00', [x, S - h + 2, 1, h - 2]);
+      if (h > 5) px(DR.amarillo, [x, S - h + 5, 1, h - 5]);
+    });
+  } else {
+    const dr = ['DDDD..RRRR.', 'D...D.R...R', 'D...D.R...R', 'D...D.RRRR.', 'D...D.R.R..', 'D...D.R..R.', 'DDDD..R...R'];
+    art(ctx, dr, { D: DR.negro, R: DR.negro }, 3, 5);
+    art(ctx, dr, { D: DR.amarillo, R: DR.amarillo }, 2, 4);
   }
+  return toPSXTexture(canvas);
+}
+
+/** Anteojos 3D de cartón: marco crema, un vidrio rojo y otro celeste. */
+export function make3DGlassesTexture(): THREE.CanvasTexture {
+  const { canvas, ctx } = makeCanvas(8, 4);
+  ctx.fillStyle = DR.crema;
+  ctx.fillRect(0, 0, 8, 4);
+  ctx.fillStyle = DR.rojo;
+  ctx.fillRect(1, 1, 2, 2);
+  ctx.fillStyle = '#00e5ff';
+  ctx.fillRect(5, 1, 2, 2);
+  return toPSXTexture(canvas);
+}
+
+/** Anteojos de corazones, recortados (blanco: el color lo pone la instancia). */
+export function makeHeartGlassesTexture(): THREE.CanvasTexture {
+  const { canvas, ctx } = makeCanvas(16, 6);
+  art(ctx, ['.WW.WW....WW.WW.', 'WWWWWWW..WWWWWWW', 'WWKKWWWWWWWKKWWW', '.WWKWW....WWKWW.', '..WWW......WWW..', '...W........W...'], { W: '#ffffff', K: '#8a8a9a' });
   return toPSXTexture(canvas);
 }

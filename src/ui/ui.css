@@ -123,20 +123,42 @@
 
 /* --- Creador de personaje ---------------------------------------------------------- */
 .creador { gap: 10px; }
-.creador-nombre input { text-transform: uppercase; }
-.pestanas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.pestanas .btn { text-align: center; padding: 7px 2px 6px; }
-.opciones { display: grid; gap: 4px; min-height: 196px; align-content: start; }
-.opcion { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; padding: 5px 6px; border: 2px solid transparent; }
+.creador-nombre { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+.creador-nombre input {
+  width: 100%; min-width: 0; padding: 8px; font: inherit; text-transform: uppercase; color: var(--dr-negro); background: var(--dr-crema);
+  border: 2px solid var(--dr-negro); outline: 2px solid var(--dr-crema); border-radius: 0;
+}
+.creador-nombre input:focus { outline-color: var(--dr-amarillo); background: #fff; }
+.pestanas { display: flex; flex-wrap: wrap; gap: 6px; }
+.pestanas .btn { flex: 1 0 auto; text-align: center; padding: 7px 6px 6px; }
+.opciones { display: grid; gap: 6px; min-height: 250px; align-content: start; }
+.opcion { display: grid; gap: 6px; padding: 6px; border: 2px solid transparent; }
 .opcion:focus-visible, .opcion:focus-within { outline: none; border-color: var(--dr-amarillo); background: var(--dr-verde-oscuro); }
-.opcion .etiqueta { color: var(--dr-rosa); font-size: 8px; }
-.selector { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
-.selector .valor { display: flex; flex-direction: column; align-items: center; color: var(--dr-amarillo); text-align: center; line-height: 1.4; }
-.selector .valor small { font-size: 6px; color: var(--dr-rosa); }
-.muestras { display: flex; flex-wrap: wrap; gap: 5px; }
-.muestra { width: 22px; height: 22px; padding: 0; border: 2px solid var(--dr-negro); outline: 2px solid #ffffff40; border-radius: 0; cursor: pointer; }
+.opcion-titulo { display: flex; justify-content: space-between; gap: 8px; font-size: 8px; }
+.opcion .etiqueta { color: var(--dr-rosa); }
+.opcion .valor { color: var(--dr-amarillo); text-align: right; }
+.fichas { display: flex; flex-wrap: wrap; gap: 5px; }
+.ficha {
+  margin: 0; padding: 6px 6px 5px; font: inherit; font-size: 8px; line-height: 1.2; text-transform: uppercase; cursor: pointer;
+  color: var(--dr-crema); background: #1b2029; border: 2px solid #ffffff40; border-radius: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.ficha:hover { border-color: var(--dr-crema); }
+.ficha.on { color: var(--dr-negro); background: var(--dr-amarillo); border-color: var(--dr-amarillo); box-shadow: 2px 2px 0 var(--dr-rojo); }
+.fichas.dibujos .ficha { padding: 0; line-height: 0; }
+.fichas.dibujos canvas { display: block; width: 40px; height: 40px; image-rendering: pixelated; }
+.fichas.dibujos .ficha.on { box-shadow: 0 0 0 2px var(--dr-rojo); position: relative; z-index: 1; }
+.fichas.grandes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fichas.grandes .ficha { padding: 12px 8px 11px; font-size: 10px; text-align: center; box-shadow: 3px 3px 0 #000; }
+.fichas.grandes .ficha:hover, .fichas.grandes .ficha:focus-visible { outline: none; color: var(--dr-amarillo); border-color: var(--dr-amarillo); background: var(--dr-verde); }
+.fichas.grandes .ficha:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000; }
+.muestras { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px; }
+.muestra { width: 24px; height: 24px; padding: 0; border: 2px solid var(--dr-negro); outline: 2px solid #ffffff40; border-radius: 0; cursor: pointer; }
 .muestra:hover { outline-color: var(--dr-crema); }
 .muestra.on { outline: 2px solid var(--dr-amarillo); box-shadow: 0 0 0 4px var(--dr-rojo); position: relative; z-index: 1; }
+/* El botón de guardar queda siempre a la vista, aunque la lista de opciones sea larga. */
+.creador-pie { position: sticky; bottom: -14px; z-index: 2; display: grid; gap: 8px; justify-items: start; margin: 0 -4px -14px; padding: 10px 4px 12px; background: var(--dr-negro); border-top: 2px solid #ffffff40; }
+.creador-pie p { margin: 0; font-size: 8px; }
 
 @media (max-width: 560px) {
   .ui { font-size: 8px; }
@@ -153,8 +175,13 @@
   .btn { padding: 8px 8px 7px; }
   .set { grid-template-columns: 80px 1fr; }
   .set canvas { width: 80px; height: 45px; }
-  .opcion { grid-template-columns: 76px 1fr; }
-  .opciones { min-height: 170px; }
+  .opciones { min-height: 0; }
+  /* En el celular las pestañas van en un renglón que se corre con el dedo. */
+  .pestanas { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: -10px; padding-right: 10px; }
+  .ficha { padding: 8px 7px 7px; }
+  .muestra { width: 28px; height: 28px; }
+  .creador-pie { bottom: -12px; margin-bottom: -12px; grid-template-columns: auto 1fr; align-items: center; }
+  .creador-pie > div:empty { display: none; }
 }
 
 /* Ventana acoplada a un costado (creador de personaje): deja ver la pista al lado. */

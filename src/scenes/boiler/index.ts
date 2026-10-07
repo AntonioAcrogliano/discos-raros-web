@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { type Look, type Raro, type SetInfo, validLook } from '../../../shared/look';
+import { type Look, type LookView, type Raro, type SetInfo, validLook } from '../../../shared/look';
 import type { PistaData } from '../../api';
 import { DR, type PSXStage, outlined, psxUniforms, titleUnit } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
@@ -29,6 +29,10 @@ export interface BoilerRoom {
   setDraft(draft: { name: string; look: Look } | null): void;
   /** 'creador' acerca la cámara al personaje del visitante y esconde la cabina; 'pelea' saca a los DJs de la cabina. */
   setMode(mode: BoilerMode): void;
+  /** En el creador: qué parte del personaje se mira de cerca. */
+  setView(view: LookView): void;
+  /** En el creador: para dónde mira el personaje (null = gira solo). */
+  setSpin(yaw: number | null): void;
   /** Pone un set en la tele y la pista baila a su BPM. */
   play(set: SetInfo, playlist?: SetInfo[]): void;
   playing(): SetInfo | null;
@@ -114,6 +118,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
 
   // --- Cámara ----------------------------------------------------------------------------
   let mode: BoilerMode = 'pista';
+  let view: LookView = 'todo';
   const camPos = new THREE.Vector3(0, 2.2, 6.7);
   const camTarget = new THREE.Vector3(0, 1.75, 0.4);
   const wantPos = new THREE.Vector3();
@@ -147,13 +152,22 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     let wantFov: number;
     if (mode === 'creador') {
       // El menú va a la izquierda (o abajo en el celular): el personaje queda del otro lado.
+      // Según la pestaña se acerca a la cabeza o a las piernas (la altura depende del cuerpo).
+      const size = crowd.scaleOf(0), big = Math.max(1, size);
+      const at = view === 'cabeza' ? 1.5 * size : view === 'piernas' ? 0.45 * size : 0.95 * big;
+      const dist = view === 'todo' ? 3.3 * big : 2.3;
       if (portrait) {
-        wantPos.set(0, 0.7, 4.2);
-        wantTarget.set(0, 0.15, -0.55);
+        // El menú tapa más de la mitad de abajo: el personaje va arriba, visto desde lo alto para
+        // que la tele de la pared del fondo quede fuera de cuadro.
+        const [up, down, back] = view === 'todo' ? [1.75 * big, 1.55 * big, 4.6 * big] : view === 'cabeza' ? [1.0, 1.5, 3.0] : [1.4, 1.75, 3.5];
+        wantPos.set(0, at + up, -0.55 + back);
+        wantTarget.set(0, at - down, -0.55);
         wantFov = 62;
       } else {
-        wantPos.set(-0.9, 1.25, 3.4);
-        wantTarget.set(-0.9, 1.05, -0.55);
+        const side = -0.9 * (dist / 3.95);
+        // Un poco desde arriba: así la tele de la pared del fondo no queda atrás de la cabeza.
+        wantPos.set(side, at + (view === 'todo' ? big : 0.45), -0.55 + dist);
+        wantTarget.set(side, at, -0.55);
         wantFov = 48;
       }
     } else {
@@ -204,8 +218,12 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     },
     setPista(data) {
       // Un guardado con opciones viejas (de antes de un cambio de menú) no se dibuja.
-      const ok = (r: Raro | null): r is Raro => Boolean(r && validLook(r.look));
-      pista = { ...data, raros: data.raros.filter(ok), mine: ok(data.mine) ? data.mine : null };
+      // Uno de antes de que hubiera más opciones se completa con "nada" en lo que le falta.
+      const fix = (r: Raro | null): Raro | null => {
+        const look = r && validLook(r.look);
+        return r && look ? { ...r, look } : null;
+      };
+      pista = { ...data, raros: data.raros.map(fix).filter((r): r is Raro => r !== null), mine: fix(data.mine) };
       rebuild();
     },
     setDraft(d) {
@@ -219,8 +237,17 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     setMode(m) {
       mode = m;
       club.booth.visible = m !== 'creador';
+      for (const b of club.beams) b.visible = m !== 'creador';
       djGroup.visible = m === 'pista';
       crowd.setSolo(m === 'creador');
+      view = 'todo';
+      crowd.spin = null;
+    },
+    setView(v) {
+      view = v;
+    },
+    setSpin(yaw) {
+      crowd.spin = yaw;
     },
     play(set, list) {
       if (list) playlist = list;

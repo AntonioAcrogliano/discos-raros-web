@@ -1,10 +1,11 @@
-import { LOOK, LOOK_GROUPS, LOOK_LABELS, type Look, type LookKey, NAME_MAX, type Raro, cleanName, randomLook, validLook } from '../../shared/look';
+import { LOOK, LOOK_GROUPS, LOOK_HIDDEN, LOOK_LABELS, type Look, type LookKey, NAME_MAX, type Raro, cleanName, randomLook, validLook } from '../../shared/look';
 import { saveRaro } from '../api';
 import type { BoilerRoom } from '../scenes/boiler';
-import { sfx } from '../style-kit';
+import { makeFaceTexture, makePrintTexture, sfx } from '../style-kit';
 import { mountTurnstile } from '../turnstile';
 import { el } from '../ui/dom';
 import { go, openPanel } from '../ui/shell';
+import { OUTFIT_NAMES, outfit } from './outfits';
 
 const DRAFT_KEY = 'dr-raro';
 
@@ -25,23 +26,53 @@ export interface CreadorOptions {
   onSaved: (raro: Raro, total: number) => void;
 }
 
+/** Las caras y las estampas se dibujan una sola vez y se copian a los botones del menú. */
+let faceArt: CanvasImageSource[] | null = null;
+let printArt: (CanvasImageSource | null)[] | null = null;
+
 /**
- * Menú de personalización: nombre + opciones en pestañas (cuerpo, pelo, ropa, baile), con el
- * personaje girando en vivo al lado. Los colores se eligen tocando la muestra; el resto, con
- * las flechitas. Con teclado: ↑↓ para moverse y ←→ para cambiar.
+ * Menú de personalización: nombre + pestañas (conjuntos, cuerpo, cabeza, ropa, extras, baile)
+ * con todas las opciones a la vista, y el personaje bailando en vivo al lado. La cámara se
+ * acerca a lo que se está eligiendo y el personaje se gira arrastrándolo.
+ * Con teclado: ↑↓ para moverse y ←→ para cambiar.
  */
 export function openCreador(o: CreadorOptions) {
   const mine = o.mine();
-  // Un guardado viejo puede no traer las opciones nuevas: ahí se arranca de uno al azar.
-  const start = (mine && validLook(mine.look) ? mine : null) ?? loadDraft();
+  // Un guardado viejo puede no traer las opciones nuevas: validLook las completa.
+  const saved = mine && validLook(mine.look);
+  const start = (mine && saved ? { name: mine.name, look: saved } : null) ?? loadDraft();
   const look: Look = { ...(start?.look ?? randomLook()) };
   let name = start?.name ?? '';
+
+  // Girar al personaje arrastrando afuera del menú.
+  let spin = 0;
+  let drag: { id: number; x: number; from: number } | null = null;
+  const onDown = (e: PointerEvent) => {
+    if ((e.target as Element).closest?.('.panel')) return;
+    drag = { id: e.pointerId, x: e.clientX, from: spin };
+  };
+  const onMove = (e: PointerEvent) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    spin = drag.from + (e.clientX - drag.x) * 0.012;
+    o.room.setSpin(spin);
+  };
+  const onUp = (e: PointerEvent) => {
+    if (drag?.id === e.pointerId) drag = null;
+  };
+  window.addEventListener('pointerdown', onDown);
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
 
   const p = openPanel({
     title: mine ? 'TU RARO' : 'CREA TU RARO',
     dock: true,
     hints: [['↑↓', 'MOVER'], ['←→', 'CAMBIAR'], ['ESC', 'VOLVER']],
     onClose: () => {
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       o.room.setDraft(null);
       o.room.setMode('pista');
     },
@@ -63,72 +94,119 @@ export function openCreador(o: CreadorOptions) {
   input.placeholder = 'TU NOMBRE';
   input.autocomplete = 'off';
   input.spellcheck = false;
+  input.setAttribute('aria-label', `Nombre (hasta ${NAME_MAX} letras)`);
   input.addEventListener('input', () => {
     name = input.value;
     preview();
   });
 
-  /** Repintan cada fila cuando cambia el look (al azar, o al tocar una opción). */
+  /** Repintan cada fila cuando cambia el look (al azar, un conjunto, o al tocar una opción). */
   const painters: (() => void)[] = [];
+  const repaint = () => painters.forEach((paint) => paint());
+
+  faceArt ??= LOOK.cara.map((_, i) => makeFaceTexture(i).image as CanvasImageSource);
+  printArt ??= LOOK.estampa.map((_, i) => (i ? (makePrintTexture(i - 1).image as CanvasImageSource) : null));
 
   const row = (key: LookKey) => {
     const options = LOOK[key] as readonly string[];
     const isColor = options[0].startsWith('#');
+    const shown = options.map((_, i) => i).filter((i) => !LOOK_HIDDEN[key]?.includes(i));
     const set = (i: number) => {
-      look[key] = (i + options.length) % options.length;
+      look[key] = i;
       sfx.move();
-      paint();
+      repaint();
       preview();
     };
-    const body = el('div', isColor ? 'muestras' : 'selector');
-    let paint: () => void;
-    if (isColor) {
-      // Paleta: se toca el color directo.
-      const swatches = options.map((hex, i) => {
-        const b = el('button', 'muestra');
-        b.type = 'button';
-        b.tabIndex = -1;
-        b.style.background = hex;
-        b.setAttribute('aria-label', `${LOOK_LABELS[key]} ${i + 1}`);
-        b.addEventListener('click', () => set(i));
-        return b;
-      });
-      body.append(...swatches);
-      paint = () => swatches.forEach((b, i) => b.classList.toggle('on', i === look[key]));
-    } else {
-      const prev = el('button', 'btn chico', '<');
-      const next = el('button', 'btn chico', '>');
-      const valor = el('span', 'valor');
-      prev.type = next.type = 'button';
+    /** Pasa a la opción de al lado (salteando las que no se ofrecen). */
+    const step = (d: number) => {
+      const at = shown.indexOf(look[key]);
+      set(shown[((at < 0 ? 0 : at + d) + shown.length) % shown.length]);
+    };
+
+    const valor = el('span', 'valor');
+    const body = el('div', isColor ? 'muestras' : key === 'cara' || key === 'estampa' ? 'fichas dibujos' : 'fichas');
+    /** Dibujitos de 16×16 (caras y estampas) con el color de piel o de remera de ahora. */
+    const icons: { i: number; ctx: CanvasRenderingContext2D }[] = [];
+    const buttons = shown.map((i) => {
+      const b = el('button', isColor ? 'muestra' : 'ficha');
+      b.type = 'button';
       // Con teclado se maneja la fila entera (← →); los botones son para mouse y dedo.
-      prev.tabIndex = next.tabIndex = -1;
-      prev.setAttribute('aria-label', `${LOOK_LABELS[key]} anterior`);
-      next.setAttribute('aria-label', `${LOOK_LABELS[key]} siguiente`);
-      prev.addEventListener('click', () => set(look[key] - 1));
-      next.addEventListener('click', () => set(look[key] + 1));
-      body.append(prev, valor, next);
-      paint = () => valor.replaceChildren(el('span', '', options[look[key]]), el('small', '', `${look[key] + 1}/${options.length}`));
-    }
-    const r = el('div', 'opcion', [el('span', 'etiqueta', LOOK_LABELS[key]), body]);
+      b.tabIndex = -1;
+      b.setAttribute('aria-label', isColor ? `${LOOK_LABELS[key]} ${i + 1}` : options[i]);
+      if (isColor) b.style.background = options[i];
+      else if (key === 'cara' || key === 'estampa') {
+        const c = el('canvas');
+        c.width = c.height = 16;
+        icons.push({ i, ctx: c.getContext('2d')! });
+        b.title = options[i];
+        b.append(c);
+      } else b.textContent = options[i];
+      b.addEventListener('click', () => set(i));
+      return b;
+    });
+    body.append(...buttons);
+
+    painters.push(() => {
+      buttons.forEach((b, j) => {
+        const on = shown[j] === look[key];
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
+      valor.textContent = isColor ? '' : options[look[key]];
+      for (const { i, ctx } of icons) {
+        ctx.globalCompositeOperation = 'source-over';
+        if (key === 'cara') {
+          // La cara es blanca y se multiplica por la piel, igual que en 3D.
+          ctx.drawImage(faceArt![i], 0, 0);
+          ctx.globalCompositeOperation = 'multiply';
+          ctx.fillStyle = LOOK.piel[look.piel];
+          ctx.fillRect(0, 0, 16, 16);
+        } else {
+          ctx.fillStyle = LOOK.remera[look.remera];
+          ctx.fillRect(0, 0, 16, 16);
+          const print = printArt![i];
+          if (print) ctx.drawImage(print, 0, 0);
+        }
+      }
+    });
+
+    const r = el('div', 'opcion', [el('div', 'opcion-titulo', [el('span', 'etiqueta', LOOK_LABELS[key]), valor]), body]);
     r.tabIndex = 0;
     r.setAttribute('role', 'group');
     r.setAttribute('aria-label', LOOK_LABELS[key]);
     r.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
       e.preventDefault();
-      set(look[key] + (e.key === 'ArrowLeft' ? -1 : 1));
+      step(e.key === 'ArrowLeft' ? -1 : 1);
+      buttons[shown.indexOf(look[key])]?.scrollIntoView({ block: 'nearest' });
     });
     r.addEventListener('focus', () => sfx.move());
-    painters.push(paint);
-    paint();
     return r;
   };
+
+  // Conjuntos: ropa y accesorios armados, para arrancar de algo y después tocar.
+  const outfits = el('div', 'fichas grandes');
+  for (const n of OUTFIT_NAMES) {
+    const b = el('button', 'ficha', n);
+    b.type = 'button';
+    b.addEventListener('click', () => {
+      Object.assign(look, outfit(n));
+      sfx.select();
+      repaint();
+      preview();
+    });
+    outfits.append(b);
+  }
+  const outfitsPage = el('div', 'opciones', [
+    el('p', 'aviso', 'ELEGI UN CONJUNTO Y DESPUES CAMBIALE LO QUE QUIERAS EN LAS OTRAS PESTAÑAS.'),
+    outfits,
+  ]);
 
   // Pestañas: un grupo de opciones a la vez, así el menú no es una lista eterna.
   const tabs = el('div', 'pestanas');
   tabs.setAttribute('role', 'tablist');
-  const pages = LOOK_GROUPS.map((g) => el('div', 'opciones', g.keys.map(row)));
-  const tabButtons = LOOK_GROUPS.map((g, i) => {
+  const sections = [{ name: 'CONJUNTOS', view: 'todo' as const, page: outfitsPage }, ...LOOK_GROUPS.map((g) => ({ name: g.name, view: g.view, page: el('div', 'opciones', g.keys.map(row)) }))];
+  const tabButtons = sections.map((g, i) => {
     const b = el('button', 'btn chico', g.name);
     b.type = 'button';
     b.setAttribute('role', 'tab');
@@ -140,20 +218,23 @@ export function openCreador(o: CreadorOptions) {
     return b;
   });
   const show = (i: number) => {
-    pages.forEach((pg, j) => (pg.hidden = j !== i));
+    sections.forEach((g, j) => (g.page.hidden = j !== i));
     tabButtons.forEach((b, j) => {
       b.classList.toggle('on', j === i);
       b.setAttribute('aria-selected', String(j === i));
     });
+    tabButtons[i].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    p.body.scrollTop = 0;
+    o.room.setView(sections[i].view);
   };
-  show(0);
 
   const random = el('button', 'btn', 'AL AZAR');
   random.type = 'button';
   random.addEventListener('click', () => {
-    Object.assign(look, randomLook());
+    // El baile no se sortea: es lo que más se elige a propósito.
+    Object.assign(look, randomLook(), { baile: look.baile });
     sfx.select();
-    painters.forEach((paint) => paint());
+    repaint();
     preview();
   });
   const save = el('button', 'btn rojo', mine ? 'GUARDAR CAMBIOS' : 'ENTRAR A LA PISTA');
@@ -164,12 +245,10 @@ export function openCreador(o: CreadorOptions) {
   const turnstile = mountTurnstile(captcha);
 
   const form = el('form', 'form creador', [
-    el('label', 'campo creador-nombre', [el('span', '', `NOMBRE (HASTA ${NAME_MAX})`), input]),
+    el('div', 'creador-nombre', [input, random]),
     tabs,
-    ...pages,
-    captcha,
-    el('div', 'fila', [random, save]),
-    status,
+    ...sections.map((g) => g.page),
+    el('div', 'creador-pie', [captcha, save, status]),
   ]);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -198,6 +277,9 @@ export function openCreador(o: CreadorOptions) {
   });
 
   p.body.append(form);
+  repaint();
+  // Quien ya tiene personaje viene a retocarlo; el que no, arranca por los conjuntos.
+  show(mine ? 1 : 0);
   preview();
   // En el celular no abrir el teclado de entrada: tapa al personaje.
   if (window.matchMedia('(pointer: fine)').matches) input.focus();
