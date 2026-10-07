@@ -329,3 +329,36 @@ export function makeHeartGlassesTexture(): THREE.CanvasTexture {
   art(ctx, ['.WW.WW....WW.WW.', 'WWWWWWW..WWWWWWW', 'WWKKWWWWWWWKKWWW', '.WWKWW....WWKWW.', '..WWW......WWW..', '...W........W...'], { W: '#ffffff', K: '#8a8a9a' });
   return toPSXTexture(canvas);
 }
+
+/**
+ * Casilleros de la paleta de detalle: [columna, fila]. Cada caja de un modelo apunta a uno.
+ * Fila 0: tonos del color de la pieza (del más claro al más oscuro). Fila 1: colores fijos.
+ */
+export const DETAIL = {
+  T0: [0, 0], T1: [1, 0], T2: [2, 0], T3: [3, 0],
+  W: [0, 1], K: [1, 1], G: [2, 1], Y: [3, 1], R: [4, 1], C: [5, 1], P: [6, 1], B: [7, 1],
+} as const;
+export type DetailCell = readonly [number, number];
+/** Punto de la textura (centro del casillero) para poner en los UV de una caja. */
+export const detailUv = (c: DetailCell): [number, number] => [(c[0] + 0.5) / 8, (c[1] + 0.5) / 2];
+
+/**
+ * Paleta de 8×2 para los materiales con `detail`: con una sola malla y un solo color por
+ * instancia, un modelo puede tener partes más oscuras y partes de color fijo.
+ */
+export function makeDetailTexture(): THREE.DataTexture {
+  const shades = [255, 205, 160, 115, 255, 255, 255, 255];
+  const fixed = [DR.crema, DR.negro, '#8a8a9a', DR.amarillo, DR.rojo, '#00e5ff', '#ff8ad8', '#2f6bb0'];
+  const data = new Uint8Array(8 * 2 * 4);
+  const c = new THREE.Color();
+  for (let i = 0; i < 8; i++) {
+    data.set([shades[i], shades[i], shades[i], 0], i * 4);
+    c.set(fixed[i]);
+    data.set([Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255), 255], (8 + i) * 4);
+  }
+  const tex = new THREE.DataTexture(data, 8, 2, THREE.RGBAFormat);
+  tex.magFilter = tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}

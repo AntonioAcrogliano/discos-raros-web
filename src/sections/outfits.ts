@@ -12,6 +12,8 @@ const OUTFITS: Record<string, Partial<Record<LookKey, string>>> = {
   GABBER: { pelo: 'PELADO', cara: 'ENOJADO', arriba: 'BUZO', remera: '#f9f2e8', estampa: 'BASTONES', abajo: 'LARGO', pantalon: '#1a1a1a', calzado: 'ZAPAS', zapas: '#f9f2e8', accesorio: 'NADA', anteojos: 'NADA', boca: 'NADA', encima: 'CADENA', mano: 'NADA' },
   'RAVER 90': { pelo: 'DOS COLITAS', arriba: 'REMERA', remera: '#b6ff00', estampa: 'CARITA', abajo: 'ANCHO', pantalon: '#ff7a3c', calzado: 'ZAPAS', zapas: '#f9f2e8', accesorio: 'VINCHA', anteojos: 'NADA', boca: 'CHUPETE', encima: 'MOCHILA', mano: 'GUANTES', neon: '#00e5ff' },
   ALIEN: { piel: '#7dff6a', cara: 'HIPNOTIZADO', pelo: 'PELADO', arriba: 'REMERA', remera: '#c8c8d0', estampa: 'ALIEN', abajo: 'LARGO', pantalon: '#c8c8d0', calzado: 'BOTAS', zapas: '#9a4dff', accesorio: 'ANTENITAS', anteojos: 'NADA', boca: 'NADA', encima: 'NADA', mano: 'PALITOS DE LUZ', neon: '#9a4dff' },
+  ELFA: { piel: '#f0d0b8', cara: 'GUIÑO', pelo: 'LARGO', peloColor: '#c09050', arriba: 'VESTIDO', remera: '#016239', estampa: 'LISA', abajo: 'SHORT', pantalon: '#6a4a2a', calzado: 'BOTAS', zapas: '#6a4a2a', accesorio: 'OREJAS DE ELFA', anteojos: 'NADA', boca: 'NADA', encima: 'CAPA', mano: 'PULSERAS', neon: '#016239' },
+  ANGEL: { cara: 'CONTENTO', pelo: 'RULOS', peloColor: '#c09050', arriba: 'VESTIDO', remera: '#f9f2e8', estampa: 'LISA', abajo: 'SHORT', pantalon: '#f9f2e8', calzado: 'DESCALZO', accesorio: 'AUREOLA', anteojos: 'NADA', boca: 'NADA', encima: 'ALAS DE ANGEL', mano: 'NADA', neon: '#ffe600' },
   DIABLO: { cara: 'VAMPIRO', arriba: 'EN CUERO', estampa: 'LLAMAS', abajo: 'LARGO', pantalon: '#7a0024', calzado: 'BOTAS', zapas: '#0f1217', accesorio: 'CUERNOS', anteojos: 'NADA', boca: 'NADA', encima: 'CAPA', mano: 'NADA', neon: '#ff004a' },
 };
 

@@ -117,8 +117,11 @@ void main() {
   vec4 base = vec4(uColor * vTint, 1.0);
   if (uHasMap > 0.5) {
     vec4 tex = texture2D(map, uv);
+    // Detalle: los píxeles opacos son colores fijos (suela blanca, lente negro) y los
+    // transparentes oscurecen el color de la pieza (mechones, pliegues).
+    if (uDecal > 1.5) base.rgb = tex.a > 0.5 ? tex.rgb : base.rgb * tex.rgb;
     // Estampa: la textura se pega arriba del color donde es opaca (no se tiñe ni recorta).
-    if (uDecal > 0.5) base.rgb = mix(base.rgb, tex.rgb, step(0.5, tex.a));
+    else if (uDecal > 0.5) base.rgb = mix(base.rgb, tex.rgb, step(0.5, tex.a));
     else base *= tex;
   }
   if (base.a < 0.5) discard;
@@ -141,6 +144,8 @@ export interface PSXMaterialOptions {
   map?: THREE.Texture | null;
   /** La textura es una estampa sobre el color (remeras): donde es transparente se ve el color. */
   decal?: boolean;
+  /** La textura es una paleta de detalle (ver makeDetailTexture): tonos del color y colores fijos. */
+  detail?: boolean;
   /** false = sin iluminación (sombras falsas, fondos, neones). */
   lit?: boolean;
   side?: THREE.Side;
@@ -172,7 +177,7 @@ export function makePSXMaterial(opts: PSXMaterialOptions = {}): PSXMaterial {
       uColor: { value: new THREE.Color(opts.color ?? 0xffffff) },
       map: { value: opts.map ?? null },
       uHasMap: { value: opts.map ? 1 : 0 },
-      uDecal: { value: opts.decal ? 1 : 0 },
+      uDecal: { value: opts.detail ? 2 : opts.decal ? 1 : 0 },
       uLit: { value: opts.lit === false ? 0 : 1 },
       uGlitch: opts.glitch ?? { value: 0 },
       uOpacity: { value: opts.opacity ?? 1 },

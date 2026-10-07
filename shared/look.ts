@@ -11,21 +11,21 @@ export const LOOK = {
   cara: ['CONTENTO', 'SERIO', 'ENOJADO', 'SORPRENDIDO', 'DORMIDO', 'BIGOTE', 'BARBA', 'LENGUA', 'GUIÑO', 'HIPNOTIZADO', 'PAYASO', 'CHICLE', 'VAMPIRO'],
   pelo: ['CORTO', 'LARGO', 'CRESTA', 'RULOS', 'PELADO', 'FLEQUILLO', 'COLITA', 'RODETES', 'DOS COLITAS', 'AFRO', 'RASTAS', 'PUAS'],
   peloColor: ['#141210', '#3e2a1e', '#6a4a2a', '#c09050', '#d8d8d8', '#ff004a', '#3f49ad', '#028a50', '#ff5ad0', '#00e5ff', '#b6ff00', '#ff8a00', '#9a4dff', '#f9f2e8'],
-  arriba: ['REMERA', 'MUSCULOSA', 'BUZO', 'TOP', 'EN CUERO', 'ARNES', 'CHALECO'],
+  arriba: ['REMERA', 'MUSCULOSA', 'BUZO', 'TOP', 'EN CUERO', 'ARNES', 'CHALECO', 'VESTIDO'],
   estampa: ['LISA', 'RAYAS', 'CARITA', 'DISCO', 'CALAVERA', 'BASTONES', 'DAMERO', 'TIE DYE', 'ALIEN', 'HONGO', 'CORAZON', 'RAYO', 'OJO', 'LLAMAS', 'DR'],
   remera: ['#ff004a', '#ffe600', '#016239', '#fee0ea', '#f9f2e8', '#0f1217', '#2f6bb0', '#8a3ab0', '#ff7a3c', '#2ab0b0', '#b6ff00', '#ff5ad0', '#00e5ff', '#9a4dff', '#c8c8d0'],
   abajo: ['LARGO', 'SHORT', 'POLLERA', 'ANCHO', 'TUTU'],
   pantalon: ['#22283a', '#1a1a1a', '#5a6a8a', '#6a4a2a', '#f9f2e8', '#7a0024', '#b6ff00', '#ff5ad0', '#c8c8d0', '#ff7a3c', '#8a3ab0', '#00e5ff'],
-  zapas: ['#f9f2e8', '#0f1217', '#ff004a', '#ffe600', '#2f6bb0', '#b6ff00', '#ff5ad0', '#00e5ff', '#9a4dff'],
-  accesorio: ['NADA', 'GORRA', 'PILUSO', 'LENTES', 'CUERNOS', 'AUREOLA', 'CAJA EN LA CABEZA', 'GORRO DE LANA', 'ANTENITAS', 'OREJITAS', 'AURICULARES', 'CORONA', 'VINCHA', 'CONO', 'CASCO'],
+  zapas: ['#f9f2e8', '#0f1217', '#ff004a', '#ffe600', '#2f6bb0', '#b6ff00', '#ff5ad0', '#00e5ff', '#9a4dff', '#6a4a2a'],
+  accesorio: ['NADA', 'GORRA', 'PILUSO', 'LENTES', 'CUERNOS', 'AUREOLA', 'CAJA EN LA CABEZA', 'GORRO DE LANA', 'ANTENITAS', 'OREJITAS', 'AURICULARES', 'CORONA', 'VINCHA', 'CONO', 'CASCO', 'OREJAS DE ELFA'],
   baile: ['SALTITO', 'MANOS ARRIBA', 'PUÑO', 'ROBOT', 'CABECEO', 'SHUFFLE', 'PASITO', 'MOLINO', 'TWIST', 'AVIONCITO', 'POGO', 'HELICOPTERO', 'SENTADILLA', 'TIESO', 'ZOMBIE', 'TRAVOLTA'],
   // De acá para abajo, campos que se agregaron después: la primera opción es "como estaba antes".
   anteojos: ['NADA', 'OSCUROS', 'RAVE', '3D', 'CORAZONES', 'ANTIPARRAS'],
   boca: ['NADA', 'CHUPETE', 'SILBATO', 'BARBIJO', 'CHUPETIN'],
-  encima: ['NADA', 'CADENA', 'RIÑONERA', 'MOCHILA', 'ALAS', 'CAPA'],
+  encima: ['NADA', 'CADENA', 'RIÑONERA', 'MOCHILA', 'ALAS', 'CAPA', 'ALAS DE ANGEL'],
   mano: ['NADA', 'PALITOS DE LUZ', 'ABANICO', 'AGUA', 'PULSERAS', 'GUANTES'],
   calzado: ['ZAPAS', 'PLATAFORMAS', 'BOTAS', 'DESCALZO'],
-  neon: ['#ff004a', '#ffe600', '#b6ff00', '#00e5ff', '#ff5ad0', '#9a4dff', '#ff8a00', '#f9f2e8', '#0f1217'],
+  neon: ['#ff004a', '#ffe600', '#b6ff00', '#00e5ff', '#ff5ad0', '#9a4dff', '#ff8a00', '#f9f2e8', '#0f1217', '#016239'],
 } as const;
 
 export type LookKey = keyof typeof LOOK;

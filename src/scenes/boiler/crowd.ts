@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LOOK, type Look, type Raro } from '../../../shared/look';
-import { make3DGlassesTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
+import { DETAIL, type DetailCell, detailUv, make3DGlassesTexture, makeDetailTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
 import { dance, makePose } from './dances';
 
 /**
@@ -47,18 +47,38 @@ const BUILDS: Build[] = [
 ];
 
 // Índices de las opciones que cambian cómo se arma el cuerpo (ver shared/look.ts).
-const MUSCULOSA = 1, BUZO = 2, TOP = 3, EN_CUERO = 4, ARNES = 5, CHALECO = 6;
+const MUSCULOSA = 1, BUZO = 2, TOP = 3, EN_CUERO = 4, ARNES = 5, CHALECO = 6, VESTIDO = 7;
 const SHORT = 1, POLLERA = 2, ANCHO = 3, TUTU = 4;
 const PLATAFORMAS = 1, BOTAS = 2, DESCALZO = 3;
-const CAJA = 6, GUANTES = 5;
+const CAJA = 6, OREJAS_ELFA = 15, GUANTES = 5;
 
-const hang = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d).translate(0, -h / 2, 0);
+// --- Piezas -------------------------------------------------------------------------------
+// Los modelos se arman con cajas. Cada caja apunta a un casillero de la paleta de detalle
+// (DETAIL): un tono del color de la pieza (T0 el más claro… T3) o un color fijo (W blanco,
+// K negro, G gris, Y amarillo, R rojo, C celeste, P rosa, B azul). Así un peinado tiene mechones
+// más oscuros y una zapatilla tiene suela blanca sin sumar mallas ni draw calls.
+const { T0, T1, T2, T3, W, K, G, Y, R, C, P, B } = DETAIL;
+
+/** Pinta toda la geometría con un casillero de la paleta. */
+function tint<T extends THREE.BufferGeometry>(g: T, cell: DetailCell): T {
+  const [u, v] = detailUv(cell);
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, u, v);
+  return g;
+}
 const at = (g: THREE.BufferGeometry, x: number, y: number, z: number) => g.translate(x, y, z);
 const merge = (...g: THREE.BufferGeometry[]) => mergeGeometries(g.map((x) => (x.index ? x.toNonIndexed() : x)))!;
-const bx = (w: number, h: number, d: number, x: number, y: number, z: number) => at(new THREE.BoxGeometry(w, h, d), x, y, z);
+const bx = (w: number, h: number, d: number, x: number, y: number, z: number, cell: DetailCell = T0) => tint(at(new THREE.BoxGeometry(w, h, d), x, y, z), cell);
 /** La misma caja de los dos lados (x y -x). */
-const pair = (w: number, h: number, d: number, x: number, y: number, z: number) => [bx(w, h, d, x, y, z), bx(w, h, d, -x, y, z)];
-const cone = (r: number, h: number, x: number, y: number, z: number) => at(new THREE.ConeGeometry(r, h, 4).rotateY(Math.PI / 4), x, y, z);
+const pair = (w: number, h: number, d: number, x: number, y: number, z: number, cell: DetailCell = T0) => [bx(w, h, d, x, y, z, cell), bx(w, h, d, -x, y, z, cell)];
+const hang = (w: number, h: number, d: number) => bx(w, h, d, 0, -h / 2, 0);
+/** Tronco de pirámide de base cuadrada (radios de arriba y de abajo); con `top` = 0 es una punta. */
+const taper = (top: number, bottom: number, h: number, x: number, y: number, z: number, cell: DetailCell = T0) =>
+  tint(at(new THREE.CylinderGeometry(top, bottom, h, 4, 1).rotateY(Math.PI / 4), x, y, z), cell);
+const cone = (r: number, h: number, x: number, y: number, z: number, cell: DetailCell = T0) => taper(0, r, h, x, y, z, cell);
+/** Una pieza girada (primero se gira sobre su centro y después se ubica). */
+const turned = (g: THREE.BufferGeometry, rx: number, ry: number, rz: number, x: number, y: number, z: number, cell: DetailCell = T0) =>
+  tint(at(g.rotateX(rx).rotateY(ry).rotateZ(rz), x, y, z), cell);
 
 /** Caja con la textura solo en la cara de adelante (+z); las otras caras muestrean un píxel liso. */
 function faceBox(w: number, h: number, d: number) {
@@ -67,48 +87,78 @@ function faceBox(w: number, h: number, d: number) {
   for (let i = 0; i < uv.count; i++) if (Math.floor(i / 4) !== 4) uv.setXY(i, 0.03, 0.97);
   return g;
 }
+/** Caja que toma un solo píxel de la textura de la cara (u, v). */
+function texel(w: number, h: number, d: number, x: number, y: number, z: number, u: number, v: number) {
+  const g = at(new THREE.BoxGeometry(w, h, d), x, y, z);
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, u, v);
+  return g;
+}
 
 // --- Cabeza -------------------------------------------------------------------------------
 // Todo es relativo a la base del cuello. La cabeza es una caja que va de y=0.02 a y=0.30, con
 // x y z entre -0.13 y 0.13; la cara mira a +z.
 // Todo pelo sobresale 1 cm de la cabeza (nunca queda al ras: parpadea) y deja la cara libre.
 
-/** Casco de pelo: tapa de arriba, nuca y patillas. `back` es hasta dónde baja atrás. */
-const helmet = (back = 0.1, sides = 0.15) =>
+/** Cabeza con cuello, orejas y nariz en relieve (la nariz toma su color del dibujo de la cara). */
+const headGeo = () =>
   merge(
-    bx(0.28, 0.07, 0.28, 0, 0.305, 0),
-    bx(0.28, 0.3 - back, 0.03, 0, (0.3 + back) / 2, -0.133),
-    bx(0.03, 0.29 - sides, 0.2, 0.132, (0.29 + sides) / 2, -0.03),
-    bx(0.03, 0.29 - sides, 0.2, -0.132, (0.29 + sides) / 2, -0.03),
+    at(faceBox(0.26, 0.28, 0.26), 0, 0.16, 0),
+    texel(0.11, 0.07, 0.11, 0, 0, 0, 0.03, 0.97),
+    texel(0.03, 0.075, 0.055, 0.142, 0.155, -0.005, 0.03, 0.97),
+    texel(0.03, 0.075, 0.055, -0.142, 0.155, -0.005, 0.03, 0.97),
+    texel(0.045, 0.055, 0.03, 0, 0.132, 0.142, 0.5, 0.41),
   );
+
+/** Casco de pelo: tapa de arriba, nuca y patillas. `back` es hasta dónde baja atrás. */
+const helmet = (back = 0.1, sides = 0.15) => [
+  bx(0.28, 0.07, 0.28, 0, 0.305, 0),
+  bx(0.28, 0.3 - back, 0.03, 0, (0.3 + back) / 2, -0.133),
+  bx(0.03, 0.29 - sides, 0.2, 0.132, (0.29 + sides) / 2, -0.03),
+  bx(0.03, 0.29 - sides, 0.2, -0.132, (0.29 + sides) / 2, -0.03),
+  // La nuca, un tono más oscura.
+  bx(0.24, 0.05, 0.035, 0, back + 0.035, -0.134, T1),
+];
 /** Rulos sin la parte de arriba (lo que asoma por debajo de un gorro). */
-const curlsSides = () => [bx(0.07, 0.17, 0.26, 0.17, 0.2, -0.03), bx(0.07, 0.17, 0.26, -0.17, 0.2, -0.03), bx(0.36, 0.26, 0.08, 0, 0.19, -0.17)];
+const curlsSides = () => [
+  ...pair(0.09, 0.12, 0.16, 0.17, 0.24, -0.01, T1),
+  ...pair(0.08, 0.12, 0.15, 0.165, 0.13, -0.06),
+  bx(0.3, 0.14, 0.09, 0, 0.23, -0.17, T1),
+  bx(0.26, 0.12, 0.08, 0, 0.11, -0.165),
+];
+const DREADS: [number, number, DetailCell][] = [[-0.11, 0.3, Y], [-0.055, 0.38, R], [0, 0.33, C], [0.055, 0.4, Y], [0.11, 0.28, R]];
+const SPIKES: [number, number, number][] = [[0, 0.02, 0.2], [-0.09, 0.08, 0.15], [0.09, 0.08, 0.15], [-0.09, -0.07, 0.16], [0.09, -0.07, 0.16], [0, -0.1, 0.18], [0, 0.115, 0.12]];
 /** Una malla por opción de LOOK.pelo, más las internas del final. */
 const HAIR_GEOS: (THREE.BufferGeometry | null)[] = [
-  // CORTO
-  helmet(),
-  // LARGO: la nuca y los costados bajan hasta los hombros.
-  helmet(0, 0.05),
-  // CRESTA
-  bx(0.06, 0.15, 0.3, 0, 0.375, 0),
-  // RULOS: un bloque arriba (deja la frente y los ojos a la vista) y los costados inflados.
-  merge(bx(0.36, 0.2, 0.34, 0, 0.34, -0.02), ...curlsSides()),
+  // CORTO: con dos mechones sobre la frente.
+  merge(...helmet(), bx(0.1, 0.035, 0.03, -0.07, 0.275, 0.137, T1), bx(0.08, 0.03, 0.03, 0.06, 0.28, 0.137, T1)),
+  // LARGO: la nuca y los costados bajan hasta los hombros, con dos mechones adelante.
+  merge(...helmet(0, 0.05), ...pair(0.05, 0.2, 0.03, 0.11, -0.05, 0.127, T1), bx(0.26, 0.14, 0.03, 0, -0.05, -0.14, T1)),
+  // CRESTA: los costados rapados y la cresta en escalones.
+  merge(bx(0.268, 0.02, 0.268, 0, 0.305, 0, T3), bx(0.06, 0.1, 0.1, 0, 0.35, 0.1), bx(0.06, 0.18, 0.12, 0, 0.39, 0, T1), bx(0.06, 0.12, 0.1, 0, 0.36, -0.1), bx(0.06, 0.1, 0.05, 0, 0.25, -0.15, T1)),
+  // RULOS: bochas de distinto tamaño (dejan la frente y los ojos a la vista).
+  merge(bx(0.2, 0.14, 0.2, -0.08, 0.36, 0.03), bx(0.2, 0.16, 0.2, 0.09, 0.37, -0.02, T1), bx(0.24, 0.14, 0.18, 0, 0.35, -0.12), bx(0.14, 0.08, 0.06, 0.03, 0.33, 0.13, T1), ...curlsSides()),
   // PELADO
   null,
-  // FLEQUILLO
-  merge(helmet(), bx(0.28, 0.06, 0.03, 0, 0.25, 0.145)),
-  // COLITA: gomita y cola atrás.
-  merge(helmet(), bx(0.07, 0.07, 0.07, 0, 0.26, -0.19), bx(0.08, 0.2, 0.07, 0, 0.14, -0.21)),
+  // FLEQUILLO: en tres mechones, de costado.
+  merge(...helmet(), bx(0.1, 0.09, 0.03, -0.09, 0.245, 0.145), bx(0.1, 0.07, 0.03, 0, 0.255, 0.147, T1), bx(0.09, 0.05, 0.03, 0.09, 0.265, 0.145)),
+  // COLITA: gomita roja y cola que se afina.
+  merge(...helmet(), bx(0.075, 0.05, 0.06, 0, 0.27, -0.175, R), bx(0.09, 0.12, 0.08, 0, 0.22, -0.215), bx(0.075, 0.12, 0.07, 0, 0.11, -0.225, T1), bx(0.05, 0.08, 0.05, 0, 0.02, -0.22)),
   // RODETES: dos bollitos arriba.
-  merge(helmet(), ...pair(0.11, 0.1, 0.11, 0.095, 0.385, -0.03)),
-  // DOS COLITAS: una a cada lado.
-  merge(helmet(), ...pair(0.07, 0.07, 0.07, 0.175, 0.25, -0.04), ...pair(0.07, 0.22, 0.07, 0.195, 0.11, -0.04)),
-  // AFRO
-  merge(bx(0.46, 0.27, 0.44, 0, 0.385, -0.03), ...pair(0.1, 0.2, 0.32, 0.18, 0.2, -0.05), bx(0.46, 0.3, 0.1, 0, 0.2, -0.2)),
-  // RASTAS: mechones que cuelgan por la espalda y los hombros.
-  merge(helmet(), ...[-0.11, -0.037, 0.037, 0.11].map((x) => bx(0.05, 0.32, 0.05, x, 0, -0.155)), ...pair(0.05, 0.26, 0.05, 0.158, 0.03, -0.06)),
+  merge(...helmet(), ...pair(0.07, 0.03, 0.07, 0.095, 0.345, -0.03, T2), ...pair(0.12, 0.1, 0.12, 0.095, 0.4, -0.03), ...pair(0.08, 0.03, 0.08, 0.095, 0.46, -0.03, T1)),
+  // DOS COLITAS: una a cada lado, con gomita.
+  merge(...helmet(), ...pair(0.05, 0.05, 0.06, 0.16, 0.25, -0.04, R), ...pair(0.08, 0.12, 0.08, 0.2, 0.2, -0.04), ...pair(0.07, 0.12, 0.07, 0.205, 0.09, -0.04, T1), ...pair(0.045, 0.07, 0.045, 0.205, 0, -0.04)),
+  // AFRO: en escalones, para que quede redondo.
+  merge(bx(0.34, 0.1, 0.34, 0, 0.51, -0.03, T1), bx(0.46, 0.2, 0.44, 0, 0.37, -0.03), bx(0.54, 0.1, 0.36, 0, 0.36, -0.05, T1), ...pair(0.1, 0.2, 0.3, 0.185, 0.18, -0.06), bx(0.4, 0.26, 0.1, 0, 0.16, -0.2, T1), bx(0.3, 0.1, 0.08, 0, 0.05, -0.19)),
+  // RASTAS: mechones de distinto largo con una cuenta de color en la punta.
+  merge(
+    ...helmet(),
+    ...DREADS.flatMap(([x, len, bead], i) => [bx(0.045, len, 0.045, x, 0.1 - len / 2, -0.155, i % 2 ? T1 : T0), bx(0.055, 0.035, 0.055, x, 0.1 - len, -0.155, bead)]),
+    ...pair(0.045, 0.3, 0.045, 0.158, 0.03, -0.04, T1),
+    ...pair(0.045, 0.22, 0.045, 0.158, 0.07, 0.02),
+  ),
   // PUAS
-  merge(helmet(), ...[[0, 0], [-0.09, 0.07], [0.09, 0.07], [-0.09, -0.08], [0.09, -0.08]].map(([x, z]) => cone(0.05, 0.16, x, 0.41, z))),
+  merge(...helmet(), ...SPIKES.map(([x, z, h], i) => cone(0.055, h, x, 0.33 + h / 2, z, i % 2 ? T1 : T0))),
   // (interno) costados de RULOS y AFRO con gorro puesto
   merge(...curlsSides()),
 ];
@@ -126,94 +176,135 @@ function hairIndex(l: Look): number {
   return l.pelo;
 }
 
+/** Oreja en punta, hacia afuera y hacia arriba. */
+const elfEar = (side: 1 | -1) => turned(new THREE.ConeGeometry(0.04, 0.22, 4), 0, 0, -side * 1.05, side * 0.2, 0.21, -0.02);
+const horn = (side: 1 | -1) => [taper(0.03, 0.05, 0.09, side * 0.09, 0.34, 0), turned(new THREE.ConeGeometry(0.032, 0.13, 4), 0, 0, -side * 0.55, side * 0.118, 0.43, 0, T1)];
 /** Una malla por opción de LOOK.accesorio. */
 const ACC_GEOS: (THREE.BufferGeometry | null)[] = [
   null,
-  // GORRA
-  merge(bx(0.3, 0.12, 0.3, 0, 0.33, 0), bx(0.26, 0.03, 0.16, 0, 0.285, 0.21)),
-  // PILUSO
-  merge(bx(0.3, 0.13, 0.3, 0, 0.34, 0), bx(0.46, 0.03, 0.46, 0, 0.28, 0)),
+  // GORRA: de camionero, con el frente blanco.
+  merge(bx(0.3, 0.08, 0.3, 0, 0.31, 0), bx(0.26, 0.05, 0.27, 0, 0.375, -0.005), bx(0.2, 0.09, 0.02, 0, 0.335, 0.152, W), bx(0.26, 0.025, 0.17, 0, 0.285, 0.225, T1), bx(0.04, 0.02, 0.04, 0, 0.41, 0, T2)),
+  // PILUSO: copa en dos escalones, cinta y ala caída.
+  merge(bx(0.29, 0.07, 0.29, 0, 0.325, 0), bx(0.25, 0.05, 0.25, 0, 0.385, 0), bx(0.3, 0.025, 0.3, 0, 0.3, 0, T2), taper(0.21, 0.33, 0.06, 0, 0.26, 0, T1)),
   // LENTES (viejos: ahora van en ANTEOJOS)
   bx(0.28, 0.06, 0.04, 0, 0.2, 0.125),
-  // CUERNOS
-  merge(at(new THREE.ConeGeometry(0.04, 0.16, 4), 0.09, 0.38, 0), at(new THREE.ConeGeometry(0.04, 0.16, 4), -0.09, 0.38, 0)),
+  // CUERNOS: con la punta torcida hacia afuera.
+  merge(...horn(1), ...horn(-1)),
   // AUREOLA
-  at(new THREE.TorusGeometry(0.12, 0.022, 4, 8).rotateX(Math.PI / 2), 0, 0.5, 0),
+  tint(at(new THREE.TorusGeometry(0.12, 0.022, 4, 8).rotateX(Math.PI / 2), 0, 0.5, 0), T0),
   // CAJA EN LA CABEZA
   at(faceBox(0.38, 0.36, 0.38), 0, 0.17, 0),
-  // GORRO DE LANA: con el doblez y el pompón.
-  merge(bx(0.3, 0.15, 0.3, 0, 0.345, 0), bx(0.315, 0.055, 0.315, 0, 0.275, 0), bx(0.09, 0.08, 0.09, 0, 0.455, 0)),
-  // ANTENITAS
-  merge(bx(0.275, 0.025, 0.05, 0, 0.35, 0), ...pair(0.02, 0.15, 0.02, 0.07, 0.42, 0), ...pair(0.065, 0.065, 0.065, 0.07, 0.51, 0)),
-  // OREJITAS
-  merge(cone(0.06, 0.12, 0.085, 0.395, 0), cone(0.06, 0.12, -0.085, 0.395, 0)),
+  // GORRO DE LANA: doblez, raya y pompón blanco.
+  merge(bx(0.315, 0.06, 0.315, 0, 0.275, 0, T1), bx(0.3, 0.05, 0.3, 0, 0.33, 0), bx(0.3, 0.04, 0.3, 0, 0.375, 0, T2), bx(0.26, 0.05, 0.26, 0, 0.42, 0), bx(0.1, 0.09, 0.1, 0, 0.49, 0, W)),
+  // ANTENITAS: vincha negra, resortes y bolitas.
+  merge(bx(0.275, 0.025, 0.05, 0, 0.35, 0, K), ...pair(0.02, 0.07, 0.02, 0.07, 0.39, 0, G), ...pair(0.02, 0.07, 0.02, 0.085, 0.45, 0, G), ...pair(0.075, 0.075, 0.075, 0.085, 0.52, 0)),
+  // OREJITAS: de gato, rosas por dentro.
+  merge(cone(0.065, 0.13, 0.085, 0.4, 0), cone(0.065, 0.13, -0.085, 0.4, 0), ...pair(0.04, 0.05, 0.02, 0.085, 0.385, 0.04, P)),
   // AURICULARES
-  merge(bx(0.33, 0.03, 0.05, 0, 0.36, 0), ...pair(0.03, 0.2, 0.05, 0.165, 0.27, 0), ...pair(0.05, 0.13, 0.13, 0.172, 0.17, 0)),
-  // CORONA
-  merge(bx(0.24, 0.05, 0.24, 0, 0.365, 0), ...pair(0.05, 0.06, 0.05, 0.095, 0.42, 0.095), ...pair(0.05, 0.06, 0.05, 0.095, 0.42, -0.095), bx(0.05, 0.09, 0.05, 0, 0.435, 0.095)),
-  // VINCHA
-  bx(0.3, 0.045, 0.3, 0, 0.245, 0),
-  // CONO
-  merge(cone(0.16, 0.4, 0, 0.5, 0), bx(0.36, 0.03, 0.36, 0, 0.3, 0)),
-  // CASCO
-  merge(bx(0.3, 0.12, 0.3, 0, 0.345, 0), bx(0.34, 0.025, 0.42, 0, 0.29, 0.03), bx(0.07, 0.03, 0.3, 0, 0.42, 0)),
+  merge(bx(0.33, 0.03, 0.05, 0, 0.36, 0, K), ...pair(0.03, 0.2, 0.05, 0.165, 0.27, 0, K), ...pair(0.05, 0.14, 0.14, 0.175, 0.17, 0), ...pair(0.02, 0.1, 0.1, 0.205, 0.17, 0, T2)),
+  // CORONA: con puntas y piedras.
+  merge(
+    bx(0.25, 0.05, 0.25, 0, 0.33, 0),
+    ...[1, -1].flatMap((sx) => [1, -1].map((sz) => cone(0.035, 0.09, sx * 0.1, 0.4, sz * 0.1))),
+    cone(0.04, 0.12, 0, 0.415, 0.105),
+    bx(0.04, 0.04, 0.02, 0, 0.33, 0.13, R),
+    ...pair(0.02, 0.04, 0.04, 0.13, 0.33, 0, C),
+  ),
+  // VINCHA: con una raya blanca.
+  merge(bx(0.3, 0.05, 0.3, 0, 0.245, 0), bx(0.305, 0.016, 0.305, 0, 0.245, 0, W)),
+  // CONO: de tránsito, con la banda blanca.
+  merge(bx(0.38, 0.03, 0.38, 0, 0.3, 0, T1), taper(0.115, 0.16, 0.12, 0, 0.375, 0), taper(0.075, 0.115, 0.1, 0, 0.485, 0, W), taper(0.02, 0.075, 0.14, 0, 0.605, 0)),
+  // CASCO: de obra.
+  merge(bx(0.3, 0.08, 0.3, 0, 0.325, 0), bx(0.26, 0.05, 0.26, 0, 0.39, 0), bx(0.06, 0.03, 0.3, 0, 0.425, 0, T1), bx(0.34, 0.025, 0.4, 0, 0.285, 0.03, T1), bx(0.08, 0.05, 0.02, 0, 0.34, 0.152, W)),
+  // OREJAS DE ELFA (del color de la piel)
+  merge(elfEar(1), elfEar(-1)),
 ];
 /** Accesorios con color propio; el resto toma el COLOR DE LOS ACCESORIOS del personaje. */
 const ACC_COLOR: Record<number, string> = { 3: '#0f1217', 5: '#ffe600', 6: '#b08a5a', 11: '#ffe600', 13: '#ff7a3c', 14: '#ffe600' };
 /** Cuánto sobresale de la cabeza (para colgar el nombre arriba). */
-const ACC_TOP: Record<number, number> = { 5: 0.26, 8: 0.26, 13: 0.42 };
+const ACC_TOP: Record<number, number> = { 5: 0.26, 8: 0.3, 13: 0.42, 15: 0.04 };
 
 const EYE_Y = 0.18, MOUTH_Y = 0.08;
 /** Una malla por opción de LOOK.anteojos. */
 const GLASSES_GEOS: (THREE.BufferGeometry | null)[] = [
   null,
-  // OSCUROS
-  bx(0.28, 0.07, 0.04, 0, EYE_Y, 0.125),
-  // RAVE: envolventes.
-  merge(bx(0.29, 0.055, 0.04, 0, EYE_Y, 0.13), ...pair(0.03, 0.04, 0.16, 0.14, EYE_Y, 0.05)),
+  // OSCUROS: dos vidrios, puente, patillas y un brillito.
+  merge(...pair(0.11, 0.07, 0.03, 0.068, EYE_Y, 0.137), bx(0.04, 0.02, 0.03, 0, EYE_Y + 0.015, 0.137), ...pair(0.015, 0.02, 0.15, 0.138, EYE_Y + 0.015, 0.06), ...pair(0.03, 0.015, 0.01, 0.085, EYE_Y + 0.015, 0.15, W)),
+  // RAVE: envolventes, con marco negro.
+  merge(bx(0.29, 0.055, 0.035, 0, EYE_Y, 0.137), bx(0.29, 0.015, 0.04, 0, EYE_Y + 0.035, 0.137, K), ...pair(0.02, 0.035, 0.16, 0.142, EYE_Y + 0.01, 0.055, K), bx(0.06, 0.012, 0.01, -0.07, EYE_Y + 0.012, 0.156, W)),
   // 3D
-  at(faceBox(0.29, 0.08, 0.03), 0, EYE_Y, 0.135),
+  at(faceBox(0.29, 0.08, 0.03), 0, EYE_Y, 0.14),
   // CORAZONES (recortados de una textura)
-  at(faceBox(0.32, 0.12, 0.012), 0, EYE_Y, 0.142),
-  // ANTIPARRAS
-  merge(...pair(0.115, 0.1, 0.07, 0.068, EYE_Y, 0.14), bx(0.275, 0.035, 0.275, 0, EYE_Y, 0)),
+  at(faceBox(0.32, 0.12, 0.012), 0, EYE_Y, 0.162),
+  // ANTIPARRAS: marco de color, vidrio celeste y correa negra.
+  merge(...pair(0.115, 0.1, 0.06, 0.068, EYE_Y, 0.145), ...pair(0.08, 0.065, 0.02, 0.068, EYE_Y, 0.18, C), bx(0.28, 0.04, 0.28, 0, EYE_Y, 0, K)),
 ];
 const GLASSES_COLOR: Record<number, string> = { 1: '#0f1217', 3: '#ffffff' };
 
 /** Una malla por opción de LOOK.boca. */
 const MOUTH_GEOS: (THREE.BufferGeometry | null)[] = [
   null,
-  // CHUPETE
-  merge(bx(0.11, 0.07, 0.02, 0, MOUTH_Y, 0.14), bx(0.045, 0.045, 0.045, 0, MOUTH_Y, 0.17)),
+  // CHUPETE: con la manija blanca.
+  merge(bx(0.12, 0.07, 0.02, 0, MOUTH_Y, 0.142), bx(0.05, 0.05, 0.03, 0, MOUTH_Y, 0.165, W), ...pair(0.012, 0.05, 0.012, 0.03, MOUTH_Y, 0.19, W), bx(0.07, 0.012, 0.012, 0, MOUTH_Y - 0.025, 0.19, W)),
   // SILBATO
-  merge(bx(0.06, 0.05, 0.1, 0, MOUTH_Y, 0.175), bx(0.03, 0.03, 0.03, 0, MOUTH_Y + 0.04, 0.2)),
-  // BARBIJO
-  merge(bx(0.275, 0.12, 0.03, 0, MOUTH_Y + 0.01, 0.125), bx(0.275, 0.02, 0.275, 0, MOUTH_Y + 0.04, 0)),
-  // CHUPETIN
-  merge(bx(0.02, 0.02, 0.1, 0.03, MOUTH_Y, 0.17), bx(0.08, 0.08, 0.03, 0.03, MOUTH_Y, 0.235)),
+  merge(bx(0.05, 0.04, 0.07, 0, MOUTH_Y, 0.165), bx(0.065, 0.065, 0.05, 0, MOUTH_Y + 0.005, 0.215), bx(0.025, 0.02, 0.025, 0, MOUTH_Y + 0.04, 0.215, K)),
+  // BARBIJO: con pliegues y elásticos.
+  merge(bx(0.275, 0.12, 0.04, 0, MOUTH_Y + 0.01, 0.145), bx(0.28, 0.012, 0.045, 0, MOUTH_Y + 0.035, 0.145, T1), bx(0.28, 0.012, 0.045, 0, MOUTH_Y - 0.01, 0.145, T1), ...pair(0.012, 0.02, 0.16, 0.14, MOUTH_Y + 0.04, 0.05, W)),
+  // CHUPETIN: palito blanco y caramelo con el centro blanco.
+  merge(bx(0.016, 0.016, 0.1, 0.03, MOUTH_Y, 0.17, W), bx(0.09, 0.09, 0.03, 0.03, MOUTH_Y, 0.235), bx(0.05, 0.05, 0.036, 0.03, MOUTH_Y, 0.235, W)),
 ];
 
 // --- Torso --------------------------------------------------------------------------------
 // Relativo al piso, con el personaje parado. El torso es una caja de 0.40 × 0.54 × 0.22 que
 // arranca en la cadera; estas mallas usan su misma matriz (se ensanchan con el cuerpo).
 
-const strap = (z: number) => at(new THREE.BoxGeometry(0.035, 0.66, 0.02).rotateZ(0.62), 0, HIP_Y + 0.29, z);
-const wing = (side: 1 | -1) => at(new THREE.BoxGeometry(0.38, 0.52, 0.015).translate(side * 0.19, 0, 0).rotateY(side * 0.5), side * 0.03, HIP_Y + 0.38, -0.125);
+const STRAP = 0.62;
+const strap = (z: number) => turned(new THREE.BoxGeometry(0.035, 0.66, 0.02), 0, 0, STRAP, 0, HIP_Y + 0.29, z, T2);
+/** Ala de hada: dos lóbulos y una punta. */
+const fairyWing = (side: 1 | -1) =>
+  [
+    tint(new THREE.BoxGeometry(0.34, 0.32, 0.015).translate(side * 0.19, 0.14, 0), T0),
+    tint(new THREE.BoxGeometry(0.14, 0.2, 0.015).translate(side * 0.42, 0.22, 0), T1),
+    tint(new THREE.BoxGeometry(0.24, 0.24, 0.015).translate(side * 0.14, -0.15, 0), T1),
+    tint(new THREE.BoxGeometry(0.1, 0.12, 0.015).translate(side * 0.3, -0.23, 0), T0),
+  ].map((g) => at(g.rotateY(side * 0.5), side * 0.03, HIP_Y + 0.36, -0.125));
+/** Ala de ángel: un hueso arriba y plumas de distinto largo colgando, en dos capas. */
+const FEATHERS = [0.3, 0.44, 0.54, 0.46, 0.34, 0.2];
+const angelWing = (side: 1 | -1) =>
+  [
+    tint(new THREE.BoxGeometry(0.62, 0.1, 0.04).translate(side * 0.31, 0.3, 0), T0),
+    ...FEATHERS.map((len, k) => tint(new THREE.BoxGeometry(0.1, len, 0.025).translate(side * (0.06 + k * 0.1), 0.26 - len / 2, 0), k % 2 ? T1 : T0)),
+    ...FEATHERS.slice(0, 5).map((len, k) => tint(new THREE.BoxGeometry(0.1, len * 0.5, 0.03).translate(side * (0.11 + k * 0.1), 0.26 - len * 0.25, 0.012), T2)),
+  ].map((g) => at(g.rotateZ(side * 0.3).rotateY(side * 0.45), side * 0.04, HIP_Y + 0.3, -0.13));
 /** Una malla por opción de LOOK.encima. */
 const OVER_GEOS: (THREE.BufferGeometry | null)[] = [
   null,
-  // CADENA
-  merge(...pair(0.03, 0.16, 0.02, 0.09, HIP_Y + 0.46, 0.118), bx(0.21, 0.03, 0.02, 0, HIP_Y + 0.37, 0.118), bx(0.08, 0.08, 0.03, 0, HIP_Y + 0.31, 0.122)),
-  // RIÑONERA cruzada
-  merge(strap(0.12), strap(-0.12), at(new THREE.BoxGeometry(0.22, 0.11, 0.07).rotateZ(0.62 - Math.PI / 2), 0, HIP_Y + 0.29, 0.155)),
-  // MOCHILA
-  merge(bx(0.3, 0.36, 0.13, 0, HIP_Y + 0.31, -0.18), ...pair(0.05, 0.36, 0.02, 0.13, HIP_Y + 0.37, 0.118), ...pair(0.05, 0.02, 0.24, 0.13, NECK_Y + 0.008, 0)),
-  // ALAS
-  merge(wing(1), wing(-1)),
-  // CAPA
-  merge(bx(0.44, 0.8, 0.02, 0, HIP_Y + 0.14, -0.135), bx(0.44, 0.04, 0.26, 0, NECK_Y - 0.02, 0)),
+  // CADENA: con medallón.
+  merge(...pair(0.03, 0.16, 0.02, 0.09, HIP_Y + 0.46, 0.118), bx(0.21, 0.03, 0.02, 0, HIP_Y + 0.37, 0.118, T1), bx(0.09, 0.09, 0.03, 0, HIP_Y + 0.3, 0.125), bx(0.04, 0.04, 0.035, 0, HIP_Y + 0.3, 0.127, R)),
+  // RIÑONERA cruzada: correa oscura, cierre y hebilla.
+  merge(
+    strap(0.12),
+    strap(-0.12),
+    turned(new THREE.BoxGeometry(0.22, 0.11, 0.07), 0, 0, STRAP - Math.PI / 2, 0, HIP_Y + 0.29, 0.155),
+    turned(new THREE.BoxGeometry(0.19, 0.014, 0.075), 0, 0, STRAP - Math.PI / 2, 0, HIP_Y + 0.29, 0.156, K),
+    turned(new THREE.BoxGeometry(0.04, 0.05, 0.03), 0, 0, STRAP, -0.13, HIP_Y + 0.47, 0.125, G),
+  ),
+  // MOCHILA: con bolsillo, cierre y correas oscuras.
+  merge(
+    bx(0.3, 0.36, 0.13, 0, HIP_Y + 0.31, -0.18),
+    bx(0.22, 0.14, 0.04, 0, HIP_Y + 0.22, -0.26, T1),
+    bx(0.305, 0.02, 0.135, 0, HIP_Y + 0.42, -0.18, K),
+    ...pair(0.05, 0.36, 0.02, 0.13, HIP_Y + 0.37, 0.118, T2),
+    ...pair(0.05, 0.02, 0.24, 0.13, NECK_Y + 0.008, 0, T2),
+  ),
+  // ALAS (de hada)
+  merge(...fairyWing(1), ...fairyWing(-1)),
+  // CAPA: con cuello levantado, ruedo más oscuro y broche.
+  merge(bx(0.44, 0.8, 0.02, 0, HIP_Y + 0.14, -0.135), bx(0.46, 0.06, 0.025, 0, HIP_Y - 0.23, -0.137, T1), bx(0.44, 0.04, 0.26, 0, NECK_Y - 0.02, 0), bx(0.3, 0.1, 0.03, 0, NECK_Y + 0.04, -0.13, T1), bx(0.05, 0.05, 0.02, 0, NECK_Y - 0.03, 0.135, Y)),
+  // ALAS DE ANGEL (blancas)
+  merge(...angelWing(1), ...angelWing(-1)),
 ];
-const OVER_COLOR: Record<number, string> = { 1: '#ffe600' };
+const OVER_COLOR: Record<number, string> = { 1: '#ffe600', 6: '#f9f2e8' };
 
 /** Lo que va arriba del torso según LOOK.arriba (el resto de las prendas son solo colores). */
 const TOP_GEOS: (THREE.BufferGeometry | null)[] = LOOK.arriba.map((_, i) =>
@@ -221,37 +312,65 @@ const TOP_GEOS: (THREE.BufferGeometry | null)[] = LOOK.arriba.map((_, i) =>
     ? // La panza al aire.
       bx(0.42, 0.2, 0.24, 0, HIP_Y + 0.115, 0)
     : i === ARNES
-      ? merge(bx(0.42, 0.045, 0.24, 0, HIP_Y + 0.35, 0), ...pair(0.045, 0.2, 0.24, 0.1, HIP_Y + 0.445, 0), bx(0.08, 0.08, 0.02, 0, HIP_Y + 0.35, 0.125))
+      ? merge(bx(0.42, 0.045, 0.24, 0, HIP_Y + 0.35, 0), ...pair(0.045, 0.2, 0.24, 0.1, HIP_Y + 0.445, 0), bx(0.09, 0.09, 0.02, 0, HIP_Y + 0.35, 0.127, G), bx(0.045, 0.045, 0.022, 0, HIP_Y + 0.35, 0.128, K))
       : i === CHALECO
-        ? merge(...pair(0.15, 0.46, 0.02, 0.13, HIP_Y + 0.3, 0.12), bx(0.42, 0.46, 0.02, 0, HIP_Y + 0.3, -0.12), ...pair(0.15, 0.02, 0.26, 0.13, NECK_Y, 0), ...pair(0.02, 0.3, 0.24, 0.21, HIP_Y + 0.22, 0))
-        : null,
+        ? // Con las bandas reflectivas grises.
+          merge(
+            ...pair(0.15, 0.46, 0.02, 0.13, HIP_Y + 0.3, 0.12),
+            bx(0.42, 0.46, 0.02, 0, HIP_Y + 0.3, -0.12),
+            ...pair(0.15, 0.02, 0.26, 0.13, NECK_Y, 0),
+            ...pair(0.02, 0.3, 0.24, 0.21, HIP_Y + 0.22, 0),
+            ...pair(0.152, 0.04, 0.022, 0.13, HIP_Y + 0.2, 0.121, G),
+            bx(0.425, 0.04, 0.022, 0, HIP_Y + 0.2, -0.121, G),
+            ...pair(0.04, 0.3, 0.022, 0.13, HIP_Y + 0.37, 0.121, G),
+          )
+        : i === VESTIDO
+          ? // La pollera del vestido, en dos tramos que se abren (va del color de la prenda).
+            merge(bx(0.44, 0.2, 0.27, 0, HIP_Y - 0.05, 0), bx(0.5, 0.2, 0.33, 0, HIP_Y - 0.23, 0, T1), bx(0.53, 0.04, 0.36, 0, HIP_Y - 0.35, 0, T2))
+          : null,
 );
 
 /** Polleras según LOOK.abajo. */
 const SKIRT_GEOS: (THREE.BufferGeometry | null)[] = LOOK.abajo.map((_, i) =>
-  i === POLLERA ? bx(0.47, 0.25, 0.31, 0, HIP_Y - 0.07, 0) : i === TUTU ? merge(bx(0.46, 0.07, 0.3, 0, HIP_Y, 0), bx(0.68, 0.05, 0.52, 0, HIP_Y - 0.06, 0)) : null,
+  i === POLLERA
+    ? merge(bx(0.44, 0.06, 0.27, 0, HIP_Y + 0.02, 0, T2), bx(0.46, 0.1, 0.3, 0, HIP_Y - 0.05, 0), bx(0.5, 0.12, 0.34, 0, HIP_Y - 0.15, 0, T1))
+    : i === TUTU
+      ? merge(bx(0.44, 0.05, 0.28, 0, HIP_Y + 0.02, 0, T2), bx(0.6, 0.04, 0.44, 0, HIP_Y - 0.02, 0), bx(0.72, 0.04, 0.56, 0, HIP_Y - 0.06, 0, T1), bx(0.6, 0.04, 0.44, 0, HIP_Y - 0.1, 0))
+      : null,
 );
 
-// --- Manos --------------------------------------------------------------------------------
-// Relativo al codo: el antebrazo cuelga hacia -y y la mano está en la punta.
+// --- Manos y pies -------------------------------------------------------------------------
+// Relativo al codo o a la rodilla: la parte de abajo cuelga hacia -y, con la mano o el pie en la punta.
 const HAND_Y = -FORE - 0.045;
 /** Una malla por opción de LOOK.mano. */
 const HAND_GEOS: (THREE.BufferGeometry | null)[] = [
   null,
   // PALITOS DE LUZ
   bx(0.03, 0.03, 0.36, 0, HAND_Y, 0.1),
-  // ABANICO
-  bx(0.34, 0.24, 0.02, 0, HAND_Y - 0.14, 0),
-  // AGUA
-  merge(bx(0.075, 0.2, 0.075, 0, HAND_Y + 0.02, 0.085), bx(0.04, 0.04, 0.04, 0, HAND_Y + 0.14, 0.085)),
-  // PULSERAS
-  merge(bx(0.11, 0.03, 0.11, 0, -FORE + 0.02, 0), bx(0.11, 0.03, 0.11, 0, -FORE + 0.075, 0)),
+  // ABANICO: cinco varillas abiertas.
+  merge(...[-2, -1, 0, 1, 2].map((k) => tint(at(new THREE.BoxGeometry(0.075, 0.3, 0.015).translate(0, -0.15, 0).rotateZ(k * 0.3), 0, HAND_Y - 0.02, k * 0.004), k % 2 ? T1 : T0))),
+  // AGUA: botellita con etiqueta y tapa azul.
+  merge(bx(0.075, 0.2, 0.075, 0, HAND_Y + 0.02, 0.085), bx(0.08, 0.06, 0.08, 0, HAND_Y + 0.02, 0.085, W), bx(0.04, 0.04, 0.04, 0, HAND_Y + 0.14, 0.085, B)),
+  // PULSERAS: de colores, una arriba de la otra.
+  merge(bx(0.11, 0.025, 0.11, 0, -FORE + 0.02, 0), bx(0.11, 0.025, 0.11, 0, -FORE + 0.05, 0, Y), bx(0.11, 0.025, 0.11, 0, -FORE + 0.08, 0, C), bx(0.11, 0.025, 0.11, 0, -FORE + 0.11, 0, P)),
   // GUANTES (es solo el color de la mano)
   null,
 ];
 /** Lo que va en las dos manos; el resto, solo en la derecha. */
 const BOTH_HANDS = new Set([1, 4]);
 const HAND_COLOR: Record<number, string> = { 3: '#9ad8ff' };
+
+/** Mano con el pulgar aparte. */
+const HAND_GEO = () => merge(bx(0.095, 0.095, 0.1, 0, HAND_Y, 0), bx(0.035, 0.05, 0.04, 0, HAND_Y + 0.015, 0.065, T1));
+/** Calzado: zapatilla (suela y puntera blancas), plataforma (suela negra con raya) y pie descalzo. */
+const SHOE_GEOS = [
+  merge(bx(0.14, 0.05, 0.25, 0, -SHIN - 0.025, 0.045), bx(0.15, 0.025, 0.26, 0, -SHIN - SHOE + 0.0125, 0.045, W), bx(0.142, 0.03, 0.06, 0, -SHIN - 0.03, 0.142, W)),
+  merge(bx(0.14, 0.06, 0.25, 0, -SHIN - 0.03, 0.045), bx(0.155, SHOE + PLATFORM - 0.06, 0.27, 0, -SHIN - 0.06 - (SHOE + PLATFORM - 0.06) / 2, 0.045, K), bx(0.158, 0.02, 0.273, 0, -SHIN - 0.1, 0.045, W)),
+  merge(bx(0.13, SHOE, 0.2, 0, -SHIN - SHOE / 2, 0.03), bx(0.13, 0.04, 0.06, 0, -SHIN - SHOE + 0.02, 0.155, T1)),
+];
+
+/** Qué malla de SHOE_GEOS usa cada opción de LOOK.calzado. */
+const SHOE_MESH = [0, 1, 0, 2];
 
 /** Un grupo de mallas instanciadas del que cada bailarín usa una (o ninguna). */
 class Parts {
@@ -337,7 +456,9 @@ export class Crowd {
   private all: THREE.InstancedMesh[] = [];
 
   constructor(readonly capacity = MAX_DANCERS) {
-    const plain = makePSXMaterial();
+    // Casi todo usa un solo material con la paleta de detalle (tonos del color + colores fijos).
+    const detail = makeDetailTexture();
+    const plain = makePSXMaterial({ map: detail, detail: true });
     const mesh = (geo: THREE.BufferGeometry, n: number, mat: THREE.Material = plain) => {
       const m = new THREE.InstancedMesh(geo, mat, n);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -357,17 +478,13 @@ export class Crowd {
     this.upperArms = mesh(hang(0.11, UPPER, 0.11), capacity * 2);
     this.foreArms = mesh(hang(0.09, FORE, 0.09), capacity * 2);
     // La mano y el calzado van pegados al antebrazo y a la canilla: usan su misma matriz.
-    this.hands = mesh(bx(0.095, 0.095, 0.1, 0, HAND_Y, 0), capacity * 2);
-    this.shoes = parts(
-      [bx(0.14, SHOE, 0.25, 0, -SHIN - SHOE / 2, 0.045), bx(0.15, SHOE + PLATFORM, 0.26, 0, -SHIN - (SHOE + PLATFORM) / 2, 0.045)],
-      undefined,
-      capacity * 2,
-    );
+    this.hands = mesh(HAND_GEO(), capacity * 2);
+    this.shoes = parts(SHOE_GEOS, undefined, capacity * 2);
 
     const torsoGeo = () => at(faceBox(0.4, TORSO, 0.22), 0, HIP_Y + TORSO / 2, 0);
-    this.torsos = parts(LOOK.estampa.map(torsoGeo), (i) => (i ? makePSXMaterial({ map: makePrintTexture(i - 1), decal: true }) : plain));
+    this.torsos = parts(LOOK.estampa.map(torsoGeo), (i) => makePSXMaterial(i ? { map: makePrintTexture(i - 1), decal: true } : {}));
     const faces = LOOK.cara.map((_, i) => makePSXMaterial({ map: makeFaceTexture(i) }));
-    this.heads = parts(LOOK.cara.map(() => at(faceBox(0.26, 0.28, 0.26), 0, 0.16, 0)), (i) => faces[i]);
+    this.heads = parts(LOOK.cara.map(headGeo), (i) => faces[i]);
     this.hair = parts(HAIR_GEOS);
     this.acc = parts(ACC_GEOS, (i) => (i === CAJA ? faces[3] : plain));
     this.glasses = parts(GLASSES_GEOS, (i) => (i === 3 ? makePSXMaterial({ map: make3DGlassesTexture() }) : i === 4 ? makePSXMaterial({ map: makeHeartGlassesTexture() }) : plain));
@@ -376,7 +493,7 @@ export class Crowd {
     this.tops = parts(TOP_GEOS);
     this.skirts = parts(SKIRT_GEOS);
     // Los palitos de luz no llevan sombra: brillan.
-    const glow = makePSXMaterial({ lit: false });
+    const glow = makePSXMaterial({ map: detail, detail: true, lit: false });
     this.held = parts(HAND_GEOS, (i) => (i === 1 ? glow : plain), capacity * 2);
     this.parts = [this.shoes, this.torsos, this.heads, this.hair, this.acc, this.glasses, this.mouth, this.over, this.tops, this.skirts, this.held];
   }
@@ -449,14 +566,14 @@ export class Crowd {
       const skin = LOOK.piel[l.piel], shirt = LOOK.remera[l.remera], pants = LOOK.pantalon[l.pantalon];
       const neon = LOOK.neon[l.neon];
       const bare = l.arriba === EN_CUERO || l.arriba === ARNES;
-      const sleeveless = bare || l.arriba === MUSCULOSA || l.arriba === TOP;
+      const sleeveless = bare || l.arriba === MUSCULOSA || l.arriba === TOP || l.arriba === VESTIDO;
       const legs = l.abajo === POLLERA || l.abajo === TUTU;
       const shoe = l.calzado === DESCALZO ? skin : LOOK.zapas[l.zapas];
       both(this.thighs, i, legs ? skin : pants);
       // Con short o pollera se ve la pierna; las botas la tapan.
       both(this.shins, i, l.calzado === BOTAS ? shoe : legs || l.abajo === SHORT ? skin : pants);
       c.set(shoe);
-      const shoeMesh = l.calzado === PLATAFORMAS ? 1 : 0;
+      const shoeMesh = SHOE_MESH[l.calzado] ?? 0;
       this.shoes.color(shoeMesh, c);
       this.shoes.color(shoeMesh, c);
       both(this.upperArms, i, sleeveless ? skin : shirt);
@@ -464,13 +581,13 @@ export class Crowd {
       both(this.hands, i, l.mano === GUANTES ? '#f9f2e8' : skin);
       // En cuero, la estampa queda de tatuaje.
       this.torsos.color(l.estampa, c.set(bare ? skin : shirt));
-      this.tops.color(l.arriba, c.set(l.arriba === TOP ? skin : neon));
+      this.tops.color(l.arriba, c.set(l.arriba === TOP ? skin : l.arriba === VESTIDO ? shirt : neon));
       this.skirts.color(l.abajo, c.set(pants));
       this.over.color(l.encima, c.set(OVER_COLOR[l.encima] ?? neon));
       this.heads.color(l.cara, c.set(skin));
       const hair = hairIndex(l);
       if (hair >= 0) this.hair.color(hair, c.set(LOOK.peloColor[l.peloColor]));
-      this.acc.color(l.accesorio, c.set(ACC_COLOR[l.accesorio] ?? neon));
+      this.acc.color(l.accesorio, c.set(l.accesorio === OREJAS_ELFA ? skin : (ACC_COLOR[l.accesorio] ?? neon)));
       if (l.accesorio !== CAJA) {
         this.glasses.color(l.anteojos, c.set(GLASSES_COLOR[l.anteojos] ?? neon));
         this.mouth.color(l.boca, c.set(neon));
@@ -548,7 +665,7 @@ export class Crowd {
 
       const hip = 0.1 * b.w, shoulder = 0.2 * b.w + 0.055 * b.limb;
       const leg = b.limb * (l.abajo === ANCHO ? 1.5 : 1);
-      const shoe = l.calzado === PLATAFORMAS ? 1 : 0;
+      const shoe = SHOE_MESH[l.calzado] ?? 0;
       this.shoes.matrix(shoe, this.limb(this.thighs, this.shins, i * 2, hip, HIP_Y, THIGH, p.tL, p.tLz, p.kL, leg));
       this.shoes.matrix(shoe, this.limb(this.thighs, this.shins, i * 2 + 1, -hip, HIP_Y, THIGH, p.tR, p.tRz, p.kR, leg));
       const both = BOTH_HANDS.has(l.mano);
