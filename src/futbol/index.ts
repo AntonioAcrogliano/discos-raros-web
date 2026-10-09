@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { loadGlbRig } from '../characters/glbRig';
 import { type Rig, buildBoxRig } from '../characters/rig';
-import { type Control, PauseMenu, banner, dim, drawSelect, resultBox, topBand } from '../juegos/hud';
+import { PadEdges } from '../juegos/gamepad';
+import { type Control, PauseMenu, type SelectView, banner, dim, drawSelect, resultBox, selectClicks, topBand } from '../juegos/hud';
 import type { BoilerRoom } from '../scenes/boiler';
 import { DISCOS_COLORS, RAROS_COLORS } from '../scenes/boiler/djs';
 import { DR, DR_CYCLE, type PSXMaterial, type PSXStage, blip, box, fitSize, makeCanvas, makeCheckerTexture, makePSXMaterial, makeRecordTexture, outlined, titleUnit, toPSXTexture } from '../style-kit';
@@ -20,15 +21,15 @@ type Phase = 'select' | 'ready' | 'play' | 'goal' | 'end';
 
 /** Controles, para la pantalla de selección y el menú de pausa. */
 const CONTROLS: Control[] = [
-  ['A / D', 'MOVER'],
-  ['W', 'SALTAR'],
-  ['J o ESPACIO', 'PATEAR'],
-  ['K', 'TIRO VINILO'],
-  ['', 'BARRA LLENA'],
-  ['', 'Y PELOTA CERCA'],
-  ['RIVAL ADELANTE', 'GLOBITO'],
-  ['PELOTA ALTA', 'VOLEA'],
-  ['EMPATE', 'GOL DE ORO'],
+  { action: 'MOVER', keys: ['A', 'D'], pad: ['@LR'] },
+  { action: 'SALTAR', keys: ['W'], pad: ['A'] },
+  { action: 'PATEAR', keys: ['J', 'ESPACIO'], pad: ['X'] },
+  { action: 'RASANTE', keys: ['S', '+', 'J'], pad: ['@DOWN', '+', 'X'] },
+  { action: 'TIRO VINILO', keys: ['K'], pad: ['B'] },
+  { action: 'VINILO', note: 'BARRA LLENA Y PELOTA CERCA' },
+  { action: 'CABEZAZO', note: 'SALTA HACIA LA PELOTA' },
+  { action: 'GLOBITO', note: 'PATEA CON EL RIVAL ADELANTE' },
+  { action: 'VOLEA', note: 'PATEA LA PELOTA ALTA' },
 ];
 
 async function loadRig(file: string, fallback: Parameters<typeof buildBoxRig>[0]): Promise<Rig> {
@@ -66,18 +67,23 @@ class Pad {
   private up = (e: KeyboardEvent) => this.held.delete(e.code);
   private blur = () => this.held.clear();
 
+  private pad = new PadEdges();
+  get connected() {
+    return this.pad.state.connected;
+  }
+
   /** Pasar los botones del joystick a "teclas" equivalentes. Llamar una vez por frame. */
   poll() {
-    const p = [...(navigator.getGamepads?.() ?? [])].find((g) => g?.connected);
-    if (!p) return;
+    const p = this.pad.poll();
     const map: [boolean, string][] = [
-      [Boolean(p.buttons[14]?.pressed) || p.axes[0] < -0.45, 'ArrowLeft'],
-      [Boolean(p.buttons[15]?.pressed) || p.axes[0] > 0.45, 'ArrowRight'],
-      [Boolean(p.buttons[12]?.pressed) || Boolean(p.buttons[0]?.pressed) || p.axes[1] < -0.6, 'ArrowUp'],
-      [Boolean(p.buttons[13]?.pressed) || p.axes[1] > 0.6, 'ArrowDown'],
-      [Boolean(p.buttons[2]?.pressed), 'KeyJ'],
-      [Boolean(p.buttons[1]?.pressed) || Boolean(p.buttons[3]?.pressed), 'KeyK'],
-      [Boolean(p.buttons[9]?.pressed), 'Enter'],
+      [p.left, 'ArrowLeft'],
+      [p.right, 'ArrowRight'],
+      [p.up, 'ArrowUp'],
+      [p.down, 'ArrowDown'],
+      [p.a, 'PadA'],
+      [p.x, 'KeyJ'],
+      [p.b || p.y, 'KeyK'],
+      [p.start, 'Enter'],
     ];
     map.forEach(([on, code], i) => {
       if (on && !this.padHeld.has(i)) {
@@ -107,7 +113,8 @@ class Pad {
   controls(): Controls {
     const c: Controls = {
       move: (this.any('KeyD', 'ArrowRight') ? 1 : 0) - (this.any('KeyA', 'ArrowLeft') ? 1 : 0),
-      jump: this.any('KeyW', 'ArrowUp'),
+      jump: this.any('KeyW', 'ArrowUp', 'PadA'),
+      low: this.any('KeyS', 'ArrowDown'),
       kick: this.took('KeyJ', 'Space'),
       special: this.took('KeyK'),
     };
@@ -215,6 +222,11 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
   /** Segundos jugados en esta partida (la ayuda de teclas se muestra solo al principio). */
   let played = 0;
 
+  const setDifficulty = (step: number) => {
+    const d = Math.max(0, Math.min(SOCCER_DIFFICULTIES.length - 1, difficulty + step));
+    if (d !== difficulty) blip(1100, 0.03, 'square', 0.04);
+    difficulty = d;
+  };
   const setPhase = (p: Phase) => {
     phase = p;
     phaseT = 0;
@@ -237,16 +249,18 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
   kickoff(players, ball);
 
   const update = (t: number, dt: number) => {
+    pause.poll();
     input.poll();
+    if (pause.busy) input.flush();
     phaseT += dt;
 
     const logic = () => {
     if (phase === 'select') {
       if (input.took('ArrowLeft', 'KeyA')) me = 0;
       if (input.took('ArrowRight', 'KeyD')) me = 1;
-      if (input.took('ArrowUp', 'KeyW')) difficulty = Math.max(0, difficulty - 1);
-      if (input.took('ArrowDown', 'KeyS')) difficulty = Math.min(SOCCER_DIFFICULTIES.length - 1, difficulty + 1);
-      if (phaseT > 0.3 && input.took('Enter', 'KeyJ', 'Space')) {
+      if (input.took('ArrowUp', 'KeyW')) setDifficulty(-1);
+      if (input.took('ArrowDown', 'KeyS')) setDifficulty(1);
+      if (phaseT > 0.3 && input.took('Enter', 'KeyJ', 'Space', 'PadA')) {
         blip(880, 0.1);
         newMatch();
       }
@@ -256,10 +270,12 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
         blip(990, 0.25, 'square', 0.07);
       }
     } else if (phase === 'play') {
-      const controls = players.map((p, i) => (i === me ? input.controls() : cpu.think(dt, p, ball)));
+      const controls = players.map((p, i) => (i === me ? input.controls() : cpu.think(dt, p, ball, players[1 - i])));
       const ev = simulate(players, ball, controls, dt);
       if (ev.kick) blip(240, 0.07, 'square', 0.1);
+      else if (ev.header) blip(330, 0.08, 'square', 0.1);
       else if (ev.bounce > 3) blip(160 + ev.bounce * 8, 0.04, 'square', Math.min(0.08, ev.bounce * 0.008));
+      if (ev.header) say('CABEZAZO!', DR.verdeClaro);
       if (ev.special) {
         say('TIRO VINILO!', DR.rojo);
         blip(900, 0.25, 'sawtooth', 0.09);
@@ -303,7 +319,7 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
         }
       }
     } else if (phase === 'end') {
-      if (phaseT > 0.8 && input.took('Enter', 'KeyJ', 'Space')) newMatch();
+      if (phaseT > 0.8 && input.took('Enter', 'KeyJ', 'Space', 'PadA')) newMatch();
       else if (phaseT > 10) onExit();
     }
 
@@ -373,26 +389,31 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
   const v = new THREE.Vector3();
   const screenX = (x: number) => (v.set(x, 1, ARENA_Z).project(stage.camera).x + 1) / 2;
 
+  const selectView = (): SelectView => ({
+    title: 'CABEZAZOS',
+    prompt: 'ELEGI CON QUIEN JUGAS',
+    players: players.map((p) => ({ name: p.name, cx: screenX(p.x) })),
+    me,
+    difficulty,
+    difficulties: SOCCER_DIFFICULTIES.map((d) => d.name),
+    controls: CONTROLS,
+    cardTop: 0.27,
+    cardBottom: 0.8,
+    go: 'JUGAR',
+    pad: input.connected,
+  });
+  // Con el mouse: las flechas de la dificultad y el personaje.
+  const stopClicks = selectClicks(stage.overlayCanvas, () => (phase === 'select' ? selectView() : null), (hit) => {
+    if ('difficulty' in hit) setDifficulty(hit.difficulty);
+    else me = hit.player;
+  });
+
   const drawOverlay = (ctx: CanvasRenderingContext2D, w: number, h: number, t: number) => {
     const unit = titleUnit(w, h);
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
 
-    if (phase === 'select') {
-      drawSelect(ctx, w, h, t, {
-        title: 'CABEZAZOS',
-        prompt: 'ELEGI CON QUIEN JUGAS',
-        players: players.map((p) => ({ name: p.name, cx: screenX(p.x) })),
-        me,
-        difficulty,
-        difficulties: SOCCER_DIFFICULTIES.map((d) => d.name),
-        controls: CONTROLS,
-        cardTop: 0.25,
-        cardBottom: 0.8,
-        go: 'JUGAR',
-      });
-      return;
-    }
+    if (phase === 'select') return drawSelect(ctx, w, h, t, selectView());
 
     // --- Marcador: nombres, barra del tiro especial, goles y reloj ---
     topBand(ctx, w, unit * 4.6);
@@ -445,12 +466,12 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
     }
     if (phase === 'play' || phase === 'ready') {
       if (played < 8) {
-        const keys = 'A/D MOVER   W SALTAR   J O ESPACIO PATEAR   K TIRO VINILO';
+        const keys = input.connected ? 'STICK MOVER   A SALTAR   X PATEAR   STICK ABAJO+X RASANTE   B TIRO VINILO' : 'A/D MOVER   W SALTAR   J O ESPACIO PATEAR   S+J RASANTE   K TIRO VINILO';
         dim(ctx, 0, h - unit * 2.2, w, unit * 2.2);
         outlined(ctx, keys, w / 2, h - unit * 1.1, fitSize(keys, Math.floor(unit * 0.75), w), DR.crema);
       } else {
         ctx.textAlign = 'right';
-        outlined(ctx, 'ESC: PAUSA Y CONTROLES', w - unit, h - unit, Math.floor(unit * 0.6), DR.rosa);
+        outlined(ctx, 'ESC O START: PAUSA Y CONTROLES', w - unit, h - unit, Math.floor(unit * 0.6), DR.rosa);
       }
     }
     pause.draw(ctx, w, h, t, CONTROLS);
@@ -469,6 +490,7 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
   return {
     stop() {
       pause.dispose();
+      stopClicks();
       input.dispose();
       room.takeover = null;
       room.setMode('pista');

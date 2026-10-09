@@ -1,14 +1,15 @@
+import { PadEdges } from '../juegos/gamepad';
 import { type AttackName, type Dir, type Intent, SPECIAL_INPUTS, type SpecialName } from './fighter';
 
 /**
- * Entrada del jugador: teclado o joystick (Gamepad API, layout estándar).
+ * Entrada del jugador: teclado o joystick (ver juegos/gamepad.ts).
  * Los golpes se guardan un instante (buffer), así no se pierden si se aprietan
  * un pelito antes de que termine el golpe anterior.
  * También recuerda las últimas direcciones marcadas: dos direcciones + patada = habilidad.
  */
 
 const KEY_ATTACK: Record<string, AttackName> = { KeyJ: 'alto', KeyK: 'bajo', KeyL: 'patada', KeyI: 'agarre' };
-const PAD_ATTACK: Record<number, AttackName> = { 2: 'alto', 0: 'bajo', 1: 'patada', 3: 'agarre' };
+const PAD_ATTACK = { x: 'alto', a: 'bajo', b: 'patada', y: 'agarre' } as const;
 const BUFFER = 0.16;
 /** Direcciones absolutas (el "adelante" se resuelve según hacia dónde mira el luchador). */
 type AbsDir = 'L' | 'R' | 'D';
@@ -20,7 +21,7 @@ export class PlayerInput {
   private held = new Set<string>();
   private queued: AttackName | null = null;
   private queuedFor = 0;
-  private padHeld = new Set<number>();
+  private pad = new PadEdges();
   /** Enter / Start apretado desde la última vez que se consultó. */
   private confirmed = false;
   private stepped = 0;
@@ -82,9 +83,8 @@ export class PlayerInput {
     this.queuedFor = BUFFER;
   }
 
-  private pad() {
-    for (const p of navigator.getGamepads?.() ?? []) if (p?.connected) return p;
-    return null;
+  get connected() {
+    return this.pad.state.connected;
   }
 
   /** Leer el joystick una vez por frame (los botones no avisan solos). */
@@ -92,29 +92,25 @@ export class PlayerInput {
     this.clock += dt;
     this.queuedFor -= dt;
     if (this.queuedFor <= 0) this.queued = null;
-    const p = this.pad();
-    if (!p) return;
-    const now: Record<AbsDir, boolean> = {
-      L: Boolean(p.buttons[14]?.pressed) || p.axes[0] < -0.5,
-      R: Boolean(p.buttons[15]?.pressed) || p.axes[0] > 0.5,
-      D: Boolean(p.buttons[13]?.pressed) || p.axes[1] > 0.5,
-    };
+    const p = this.pad.poll();
+    const now: Record<AbsDir, boolean> = { L: p.left, R: p.right, D: p.down };
     for (const d of ['L', 'R', 'D'] as const) {
       if (now[d] && !this.padDirs[d]) this.mark(d);
       this.padDirs[d] = now[d];
     }
-    p.buttons.forEach((b, i) => {
-      if (b.pressed && !this.padHeld.has(i)) {
-        this.padHeld.add(i);
-        const a = PAD_ATTACK[i];
-        if (a) this.queue(a);
-        if (i === 9 || i === 0) this.confirmed = true;
-        if (i === 14) this.stepped = -1;
-        if (i === 15) this.stepped = 1;
-        if (i === 12) this.steppedY = -1;
-        if (i === 13) this.steppedY = 1;
-      } else if (!b.pressed) this.padHeld.delete(i);
-    });
+    for (const b of ['x', 'a', 'b', 'y'] as const) if (this.pad.pressed(b)) this.queue(PAD_ATTACK[b]);
+    if (this.pad.pressed('start') || this.pad.pressed('a')) this.confirmed = true;
+    if (this.pad.pressed('left')) this.stepped = -1;
+    if (this.pad.pressed('right')) this.stepped = 1;
+    if (this.pad.pressed('up')) this.steppedY = -1;
+    if (this.pad.pressed('down')) this.steppedY = 1;
+  }
+
+  /** Tirar lo que se haya apretado (mientras el menú de pausa tiene el joystick). */
+  flush() {
+    this.confirmed = false;
+    this.queued = null;
+    this.stepped = this.steppedY = 0;
   }
 
   /** ¿Se apretó Enter / Start / un golpe? (para pasar pantallas). Se consume al leerlo. */
@@ -144,12 +140,8 @@ export class PlayerInput {
    * @param canAttack si puede empezar un golpe ya; si no, el golpe queda en el buffer.
    */
   intent(dir: number, canAttack: boolean): Intent {
-    const p = this.pad();
-    const ax = p?.axes[0] ?? 0, ay = p?.axes[1] ?? 0;
-    const pb = (i: number) => Boolean(p?.buttons[i]?.pressed);
-    const left = this.held.has('ArrowLeft') || this.held.has('KeyA') || pb(14) || ax < -0.45;
-    const right = this.held.has('ArrowRight') || this.held.has('KeyD') || pb(15) || ax > 0.45;
-    const x = (right ? 1 : 0) - (left ? 1 : 0);
+    const p = this.pad.state;
+    const x = (this.held.has('ArrowRight') || this.held.has('KeyD') || p.right ? 1 : 0) - (this.held.has('ArrowLeft') || this.held.has('KeyA') || p.left ? 1 : 0);
     let attack: AttackName | null = null;
     if (canAttack && this.queued) {
       attack = this.queued;
@@ -164,9 +156,9 @@ export class PlayerInput {
     }
     return {
       move: x * dir,
-      down: this.held.has('ArrowDown') || this.held.has('KeyS') || pb(13) || ay > 0.5,
-      up: this.held.has('ArrowUp') || this.held.has('KeyW') || pb(12) || ay < -0.6,
-      block: this.held.has('Space') || this.held.has('ShiftLeft') || this.held.has('ShiftRight') || pb(4) || pb(5) || pb(6) || pb(7),
+      down: this.held.has('ArrowDown') || this.held.has('KeyS') || p.down,
+      up: this.held.has('ArrowUp') || this.held.has('KeyW') || p.up,
+      block: this.held.has('Space') || this.held.has('ShiftLeft') || this.held.has('ShiftRight') || p.shoulder,
       attack,
     };
   }

@@ -4,7 +4,7 @@ import { type Rig, buildBoxRig } from '../characters/rig';
 import type { BoilerRoom } from '../scenes/boiler';
 import { DISCOS_COLORS, RAROS_COLORS } from '../scenes/boiler/djs';
 import { DR, type PSXMaterial, type PSXStage, blip, box, fitSize, makePSXMaterial, makeRecordTexture, outlined, titleUnit } from '../style-kit';
-import { type Control, PauseMenu, banner, dim, drawSelect, resultBox, topBand } from '../juegos/hud';
+import { type Control, PauseMenu, type SelectView, banner, dim, drawSelect, resultBox, selectClicks, topBand } from '../juegos/hud';
 import { Cpu, DIFFICULTIES } from './cpu';
 import { ARENA_HALF, ATTACKS, type Attack, type AttackName, Fighter, MAX_HP, NO_INTENT, SMOKE_EVERY, SMOKE_RINGS } from './fighter';
 import { PlayerInput } from './input';
@@ -23,17 +23,17 @@ type Phase = 'select' | 'intro' | 'fight' | 'ko' | 'end';
 
 /** Controles, para la pantalla de selección y el menú de pausa. */
 const CONTROLS: Control[] = [
-  ['A / D', 'MOVER'],
-  ['W', 'SALTAR'],
-  ['S', 'AGACHARSE'],
-  ['J', 'GOLPE ALTO'],
-  ['K', 'GOLPE BAJO'],
-  ['L', 'PATADA'],
-  ['I', 'AGARRE'],
-  ['ESPACIO', 'BLOQUEO'],
-  ['ATRAS, ADELANTE + L', 'VINILO'],
-  ['ABAJO, ADELANTE + L', 'HUMO'],
-  ['ABAJO, ABAJO + L', 'BIRRA'],
+  { action: 'MOVER', keys: ['A', 'D'], pad: ['@LR'] },
+  { action: 'SALTAR', keys: ['W'], pad: ['@UP'] },
+  { action: 'AGACHARSE', keys: ['S'], pad: ['@DOWN'] },
+  { action: 'GOLPE ALTO', keys: ['J'], pad: ['X'] },
+  { action: 'GOLPE BAJO', keys: ['K'], pad: ['A'] },
+  { action: 'PATADA', keys: ['L'], pad: ['B'] },
+  { action: 'AGARRE', keys: ['I'], pad: ['Y'] },
+  { action: 'BLOQUEO', keys: ['ESPACIO'], pad: ['L1', 'R1'] },
+  { action: 'VINILO', note: 'ATRAS, ADELANTE + PATADA' },
+  { action: 'HUMO', note: 'ABAJO, ADELANTE + PATADA' },
+  { action: 'BIRRA', note: 'ABAJO, ABAJO + PATADA' },
 ];
 /** Cartelito que salta cuando conecta algo especial. */
 const SHOUTS: Partial<Record<AttackName, string>> = { vinilo: 'VINILAZO!', humo: 'HUMO!', vomito: 'VOMITO!', voladora: 'VOLADORA!', patada: 'PATADON!' };
@@ -298,8 +298,16 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     }
   };
 
+  const setDifficulty = (step: number) => {
+    const d = Math.max(0, Math.min(DIFFICULTIES.length - 1, difficulty + step));
+    if (d !== difficulty) blip(1100, 0.03, 'square', 0.04);
+    difficulty = d;
+  };
+
   const update = (t: number, dt: number) => {
+    pause.poll();
     input.poll(dt);
+    if (pause.busy) input.flush();
     phaseT += dt;
     const [a, b] = fighters;
     const me = fighters[player], foe = fighters[1 - player];
@@ -312,10 +320,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
         blip(1320, 0.03, 'square', 0.04);
       }
       const stepY = input.takeStepY();
-      if (stepY) {
-        difficulty = Math.max(0, Math.min(DIFFICULTIES.length - 1, difficulty + stepY));
-        blip(1100, 0.03, 'square', 0.04);
-      }
+      if (stepY) setDifficulty(stepY);
       if (phaseT > 0.3 && input.takeConfirm()) {
         blip(880, 0.1);
         newMatch();
@@ -430,26 +435,31 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   /** Dónde cae en la pantalla (0–1 a lo ancho) un punto de la pista. */
   const screenX = (x: number) => (v.set(x, 1, ARENA_Z).project(stage.camera).x + 1) / 2;
 
+  const selectView = (): SelectView => ({
+    title: 'DISCOS VS RAROS',
+    prompt: 'ELEGI TU PELEADOR',
+    players: fighters.map((f) => ({ name: f.name, cx: screenX(f.x) })),
+    me: player,
+    difficulty,
+    difficulties: DIFFICULTIES.map((d) => d.name),
+    controls: CONTROLS,
+    cardTop: 0.27,
+    cardBottom: 0.8,
+    go: 'PELEAR',
+    pad: input.connected,
+  });
+  // Con el mouse: las flechas de la dificultad y el peleador.
+  const stopClicks = selectClicks(stage.overlayCanvas, () => (phase === 'select' ? selectView() : null), (hit) => {
+    if ('difficulty' in hit) setDifficulty(hit.difficulty);
+    else player = hit.player;
+  });
+
   const drawOverlay = (ctx: CanvasRenderingContext2D, w: number, h: number, t: number) => {
     const unit = titleUnit(w, h);
     ctx.textBaseline = 'middle';
     const [a, b] = fighters;
 
-    if (phase === 'select') {
-      drawSelect(ctx, w, h, t, {
-        title: 'DISCOS VS RAROS',
-        prompt: 'ELEGI TU PELEADOR',
-        players: fighters.map((f) => ({ name: f.name, cx: screenX(f.x) })),
-        me: player,
-        difficulty,
-        difficulties: DIFFICULTIES.map((d) => d.name),
-        controls: CONTROLS,
-        cardTop: 0.25,
-        cardBottom: 0.8,
-        go: 'PELEAR',
-      });
-      return;
-    }
+    if (phase === 'select') return drawSelect(ctx, w, h, t, selectView());
 
     // --- Marcador: barras de vida, reloj y rounds ganados ---
     topBand(ctx, w, unit * 4.6);
@@ -519,12 +529,12 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
       ctx.textAlign = 'center';
       if (round === 1 && played < 8) {
         // Al principio de la partida, un repaso corto; después no molesta.
-        const keys = 'A/D MOVER  W SALTAR  S AGACHAR  J ALTO  K BAJO  L PATADA  I AGARRE  ESPACIO BLOQUEO';
+        const keys = input.connected ? 'STICK MOVER  STICK ARRIBA SALTAR  STICK ABAJO AGACHAR  X ALTO  A BAJO  B PATADA  Y AGARRE  L1/R1 BLOQUEO' : 'A/D MOVER  W SALTAR  S AGACHAR  J ALTO  K BAJO  L PATADA  I AGARRE  ESPACIO BLOQUEO';
         dim(ctx, 0, h - unit * 2.2, w, unit * 2.2);
         outlined(ctx, keys, w / 2, h - unit * 1.1, fitSize(keys, Math.floor(unit * 0.75), w), DR.crema);
       } else {
         ctx.textAlign = 'right';
-        outlined(ctx, 'ESC: PAUSA Y CONTROLES', w - unit, h - unit, Math.floor(unit * 0.6), DR.rosa);
+        outlined(ctx, 'ESC O START: PAUSA Y CONTROLES', w - unit, h - unit, Math.floor(unit * 0.6), DR.rosa);
       }
     }
     pause.draw(ctx, w, h, t, CONTROLS);
@@ -543,6 +553,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   return {
     stop() {
       pause.dispose();
+      stopClicks();
       input.dispose();
       room.takeover = null;
       room.setMode('pista');
