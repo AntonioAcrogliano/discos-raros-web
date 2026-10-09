@@ -194,7 +194,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (!crowd.headTop(i, v) || (!name && !arrow)) return;
     v.project(stage.camera);
     if (v.z > 1 || v.z < -1) return;
-    const unit = titleUnit(w, h);
+    // Chicos, para que no tapen a la gente: el propio un poco más grande que los demás.
+    const unit = Math.max(6, Math.round(titleUnit(w, h) * (arrow ? 0.7 : 0.5)));
     const x = Math.round((v.x * 0.5 + 0.5) * w);
     let y = Math.round((-v.y * 0.5 + 0.5) * h) - unit;
     if (arrow) {

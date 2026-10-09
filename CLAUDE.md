@@ -30,13 +30,13 @@ Redes: YouTube @discosraros · Instagram @discosraros.arg · Kick discosRaros.
 - **Audio desde YouTube**: se usa el YouTube IFrame API. No se puede leer el audio, así que no hay audio-reactividad real: el baile se sincroniza a un BPM fijo o aproximado por set. El player tiene que quedar visible. Idea: mostrarlo como la "tele" o pantalla del club con CSS3DRenderer.
 - **Autoplay**: los navegadores bloquean el sonido hasta que haya un click, así que la pantalla de entrada tiene un botón tipo "PRESS START".
 - **Último set automático**: sale del feed RSS público del canal (`server/sets.ts`, sin clave de API, cacheado 15 min). Solo entran los títulos tipo `DISCOS RAROS #57 - NOMBRE [GÉNERO]`; el género entre corchetes define el BPM aproximado del baile.
-- **Pista infinita**: nunca se renderizan todos los personajes. Se usa instancing y se muestran como máximo unos 150 a la vez (el tuyo siempre, más los recientes y una muestra aleatoria), con contador total ("1.234 raros en la pista").
+- **Pista infinita**: nunca se renderizan todos los personajes. Se usa instancing y se muestran como máximo unos 120 a la vez, que es lo que entra sin que se pisen (el tuyo siempre, más los recientes y una muestra aleatoria), con contador total ("1.234 raros en la pista").
 - **Personaje del visitante**: menú de personalización (cuerpo, colores, ropa, accesorios) + nombre visible. **Sin foto de cara** (se descartó: mucho quilombo de moderación). Lo único a moderar es el nombre.
 - **Mobile**: el boiler room tiene que andar en celular (con menos personajes y menos resolución). El juego de pelea es solo para desktop.
 
 ## Modelos 3D
 
-- Discos y Raros ya existen en la app de PCX (`psx-viewer/characters/characters.json`), armados por código: **`persona1` = Discos**, **`persona2` = Raros**. Para el MVP van con los outfits que tienen ahí (más adelante pueden cambiar).
+- Discos y Raros ya existen en la app de PCX (`psx-viewer/characters/characters.json`), armados por código: **`persona1` = Discos**, **`persona2` = Raros**. Van con outfits del guardarropa de la app (`src/wardrobe.ts`): Discos con `deportivo` y Raros con `rockero`, más sus accesorios de siempre (piluso, anteojos).
 - Discos y Raros son el mismo modelo low-poly en la cabina y en el juego de pelea: se hacen una vez y se reutilizan.
 - Están en `public/models/discos.glb` y `raros.glb`, exportados de la app de PCX con GLTFExporter (cabeza desde las fotos ya horneada en texturas de 64×64). No tienen skinning: son grupos anidados con nombre (`body`, `head`, `armL`, `foreL`, `legL`, `kneeL`…), los carga `src/characters/glbRig.ts` y se animan por código.
 - Para re-exportarlos (outfit nuevo, etc.): trabajar sobre una **copia** de `psx-viewer` (nunca sobre la carpeta original), construir `Character` con la entrada de `characters.json`, `await loadPhotos()`, nombrar las articulaciones del rig, pasar los materiales a `MeshBasicMaterial` y exportar con `GLTFExporter` en binario.

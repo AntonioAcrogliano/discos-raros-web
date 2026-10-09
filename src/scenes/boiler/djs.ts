@@ -12,8 +12,8 @@ export interface Djs {
 }
 
 /** Colores de los outfits que tienen en la app de PCX (persona1 = Discos, persona2 = Raros). */
-export const DISCOS_COLORS = { skin: '#9c7358', shirt: '#0a7963', pants: '#2a3346', hair: '#141210' };
-export const RAROS_COLORS = { skin: '#c0a194', shirt: '#b5a660', pants: '#2a3346', hair: '#3e342e' };
+export const DISCOS_COLORS = { skin: '#9c7358', shirt: '#1f3e8c', pants: '#1f3e8c', hair: '#141210' };
+export const RAROS_COLORS = { skin: '#c0a194', shirt: '#161618', pants: '#1e1f24', hair: '#3e342e' };
 
 export function buildPlaceholderDjs(): { discos: Rig; raros: Rig } {
   return { discos: buildBoxRig(DISCOS_COLORS), raros: buildBoxRig(RAROS_COLORS) };
