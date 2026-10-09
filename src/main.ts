@@ -75,7 +75,7 @@ async function main() {
   const openFutbol = openGame(() => import('./futbol').then((m) => m.startFutbol(stage, room, exit)));
 
   mountUi([
-    { path: 'sets', label: 'SETS', open: () => openSets({ playing: () => room.playing()?.id ?? null, play: (s) => void sets.then((list) => room.play(s, list)) }) },
+    { path: 'sets', label: 'DISCOS', open: () => openSets({ playing: () => room.playing()?.id ?? null, play: (s) => void sets.then((list) => room.play(s, list)) }) },
     {
       path: 'crear',
       label: 'CREA TU RARO',

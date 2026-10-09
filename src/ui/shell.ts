@@ -28,7 +28,7 @@ const next = ctrl('>>', 'Set siguiente');
 const verYt = el('a', 'btn chico', 'VER EN YT');
 verYt.target = '_blank';
 verYt.rel = 'noopener';
-const todos = el('a', 'btn chico', 'MAS SETS');
+const todos = el('a', 'btn chico', 'MAS DISCOS');
 todos.href = '#/sets';
 todos.setAttribute('aria-label', 'Todos los sets');
 suena.append(titulo, el('div', 'controles', [prev, toggle, next, verYt, todos]));

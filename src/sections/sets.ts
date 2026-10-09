@@ -28,7 +28,7 @@ export interface SetsOptions {
 }
 
 export async function openSets(o: SetsOptions) {
-  const p = openPanel({ title: 'SETS', hints: [['↑↓', 'MOVER'], ['ENTER', 'PONER EN LA TELE'], ['ESC', 'VOLVER']] });
+  const p = openPanel({ title: 'DISCOS', hints: [['↑↓', 'MOVER'], ['ENTER', 'PONER EN LA TELE'], ['ESC', 'VOLVER']] });
   const status = el('p', 'aviso', 'NOW LOADING...');
   p.body.append(status);
   let sets: SetInfo[];
