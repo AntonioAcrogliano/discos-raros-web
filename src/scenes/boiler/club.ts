@@ -173,11 +173,12 @@ export function buildClub(): Club {
 
   // Bandejas con discos girando, mixer con perillas y LEDs.
   const deck = makePSXMaterial({ color: '#2a2a32' });
-  const vinyl = makePSXMaterial({ map: makeRecordTexture('#15101c', DR.rojo) });
+  const vinyl = makePSXMaterial({ map: makeRecordTexture(DR.negro, DR.rojo) });
+  const rim = makePSXMaterial({ color: DR.negro });
   const discs: THREE.Mesh[] = [];
   for (const x of [-1.1, 1.1]) {
     booth.add(box(0.78, 0.07, 0.7, deck, x, boothH + 0.035, boothZ - 0.06));
-    const disc = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.02, 0.58), [deck, deck, vinyl, deck, deck, deck]);
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.02, 12), [rim, vinyl, rim]);
     disc.position.set(x, boothH + 0.085, boothZ - 0.06);
     booth.add(disc);
     discs.push(disc);

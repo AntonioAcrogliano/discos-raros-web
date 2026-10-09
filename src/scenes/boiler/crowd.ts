@@ -408,25 +408,69 @@ interface Dancer {
   headY: number;
 }
 
+/** Separación entre lugares: a lo ancho y entre filas (van intercaladas). */
+const SLOT_X = 0.88, SLOT_Z = 0.72;
+
 /** Lugares de la pista, del más visible (centro, adelante) al menos. */
 function makeSlots(): { x: number; z: number }[] {
   let seed = 11;
   const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
   const slots: { x: number; z: number; score: number }[] = [];
-  for (let row = 0; row < 8; row++) {
-    const z = -0.55 - row * 0.58;
-    for (let x = -5.61 + (row % 2) * 0.33; x <= 5.7; x += 0.66) {
-      const first = row === 0 && Math.abs(x) < 0.34;
-      slots.push({ x: first ? 0 : x + (r() - 0.5) * 0.18, z: first ? z : z + (r() - 0.5) * 0.16, score: Math.abs(x) * 0.55 + row * 0.62 });
+  for (let row = 0; row < 7; row++) {
+    const z = -0.55 - row * SLOT_Z;
+    const n = row % 2 ? 6.5 : 7;
+    for (let i = -n; i <= n; i++) {
+      const x = i * SLOT_X;
+      const first = row === 0 && i === 0;
+      slots.push({ x: first ? 0 : x + (r() - 0.5) * 0.12, z: first ? z : z + (r() - 0.5) * 0.1, score: Math.abs(x) * 0.55 + row * 0.62 });
     }
   }
   // A los costados de la cabina.
-  for (const z of [1.25, 1.95, 2.65]) {
-    for (let i = 0; i < 3; i++) {
-      for (const side of [1, -1]) slots.push({ x: side * (4.5 + i * 0.66 + (r() - 0.5) * 0.15), z: z + (r() - 0.5) * 0.15, score: 3 + i * 0.6 + z * 0.3 });
+  for (const z of [0.35, 1.2, 2.05, 2.9]) {
+    for (let i = 0; i < 2; i++) {
+      for (const side of [1, -1]) slots.push({ x: side * (4.55 + i * SLOT_X + (r() - 0.5) * 0.1), z: z + (r() - 0.5) * 0.1, score: 3 + i * 0.6 + z * 0.3 });
     }
   }
   return slots.sort((a, b) => a.score - b.score);
+}
+
+/** Pasos que se bailan con los brazos abiertos: necesitan más lugar. */
+const WIDE_DANCES = new Set([9, 11]);
+
+/** Medio ancho que ocupa un raro en la pista (hombros y brazos, según el cuerpo y el paso). */
+function reach(l: Look) {
+  const b = BUILDS[l.cuerpo] ?? BUILDS[0];
+  return (0.2 * b.w + 0.11 * b.limb + 0.04 + (WIDE_DANCES.has(l.baile) ? 0.2 : 0)) * b.h;
+}
+
+/**
+ * Separa a los que quedaron encimados (los anchos, los de brazos abiertos): se empujan de a
+ * pares, sin alejarse mucho de su lugar. El primero no se mueve: es el del visitante.
+ */
+function spread(dancers: Dancer[], slots: { x: number; z: number }[]) {
+  const MAX = 0.26;
+  const radius = dancers.map((d) => reach(d.look));
+  for (let pass = 0; pass < 10; pass++) {
+    for (let i = 0; i < dancers.length; i++) {
+      for (let j = i + 1; j < dancers.length; j++) {
+        const a = dancers[i], b = dancers[j];
+        const dx = b.x - a.x, dz = b.z - a.z;
+        const min = radius[i] + radius[j];
+        const dist = Math.hypot(dx, dz);
+        if (dist >= min || dist === 0) continue;
+        // Los cuerpos son chatos: adelante y atrás alcanza con menos lugar que a los costados.
+        const push = (min - dist) / dist, ka = i === 0 ? 0 : 0.5, kb = i === 0 ? 1 : 0.5;
+        a.x -= dx * push * ka;
+        a.z -= dz * push * ka * 0.5;
+        b.x += dx * push * kb;
+        b.z += dz * push * kb * 0.5;
+      }
+    }
+    dancers.forEach((d, i) => {
+      d.x = Math.max(slots[i].x - MAX, Math.min(slots[i].x + MAX, d.x));
+      d.z = Math.max(slots[i].z - MAX, Math.min(slots[i].z + MAX, d.z));
+    });
+  }
 }
 
 export class Crowd {
@@ -516,6 +560,7 @@ export class Crowd {
       name: raro.name,
       headY: 1.7,
     }));
+    spread(this.dancers, this.slots);
     this.paint();
   }
 
