@@ -8,7 +8,7 @@ Redes: YouTube @discosraros · Instagram @discosraros.arg · Kick discosRaros.
 
 1. **Home = Boiler Room 3D**: una pista low-poly estilo PS1 con Discos y Raros en la cabina. Suena el último set de YouTube. Los visitantes crean un personaje y queda bailando en la pista para siempre.
 2. **Sets**: links a los sets (YouTube).
-3. **Contacto**: formulario de contacto/booking.
+3. **Contacto**: por ahora manda al Instagram (mensaje directo). El formulario con aviso por mail queda para más adelante; la API `/api/contact` y los mensajes del admin siguen estando.
 4. **Discos vs Raros** (fase posterior): juego de pelea 3D estilo PS1 / Tekken 1, 1 jugador vs CPU, **solo PC** (teclado o joystick).
 
 ## Estética (regla de oro)
