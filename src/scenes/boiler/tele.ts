@@ -88,6 +88,11 @@ export class Tele {
     if (this.object.visible) this.css.render(this.stage.scene, this.stage.camera);
   }
 
+  /** En los juegos y en el creador la tele no recibe toques: si no, se comería los de los menús que le pasan por delante. */
+  set interactive(on: boolean) {
+    this.holder.style.pointerEvents = on ? 'auto' : 'none';
+  }
+
   /** Pausa o reanuda lo que está puesto. */
   toggle() {
     if (!this.player) return;

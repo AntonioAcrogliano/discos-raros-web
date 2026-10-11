@@ -9,7 +9,7 @@ Redes: YouTube @discosraros · Instagram @discosraros.arg · Kick discosRaros.
 1. **Home = Boiler Room 3D**: una pista low-poly estilo PS1 con Discos y Raros en la cabina. Suena el último set de YouTube. Los visitantes crean un personaje y queda bailando en la pista para siempre.
 2. **Sets**: links a los sets (YouTube).
 3. **Contacto**: por ahora manda al Instagram (mensaje directo). El formulario con aviso por mail queda para más adelante; la API `/api/contact` y los mensajes del admin siguen estando.
-4. **Discos vs Raros** (fase posterior): juego de pelea 3D estilo PS1 / Tekken 1, 1 jugador vs CPU, **solo PC** (teclado o joystick).
+4. **Juegos** (Discos vs Raros: pelea 3D estilo PS1 / Tekken 1; Cabezazos: fútbol de cabezones), 1 jugador vs CPU. En la compu con teclado o joystick; en el celular con controles táctiles, acostado.
 
 ## Estética (regla de oro)
 
@@ -32,7 +32,7 @@ Redes: YouTube @discosraros · Instagram @discosraros.arg · Kick discosRaros.
 - **Último set automático**: sale del feed RSS público del canal (`server/sets.ts`, sin clave de API, cacheado 15 min). Solo entran los títulos tipo `DISCOS RAROS #57 - NOMBRE [GÉNERO]`; el género entre corchetes define el BPM aproximado del baile.
 - **Pista infinita**: nunca se renderizan todos los personajes. Se usa instancing y se muestran como máximo unos 120 a la vez, que es lo que entra sin que se pisen (el tuyo siempre, más los recientes y una muestra aleatoria), con contador total ("1.234 raros en la pista").
 - **Personaje del visitante**: menú de personalización (cuerpo, colores, ropa, accesorios) + nombre visible. **Sin foto de cara** (se descartó: mucho quilombo de moderación). Lo único a moderar es el nombre.
-- **Mobile**: el boiler room tiene que andar en celular (con menos personajes y menos resolución). El juego de pelea es solo para desktop.
+- **Mobile**: el boiler room tiene que andar en celular (con menos personajes y menos resolución). Los juegos también: stick y botones en pantalla (`src/juegos/touch.ts`), que "aprietan teclas" de mentira, así usan los mismos controles que el teclado. Se juega acostado; parado aparece un cartel pidiendo girar el celu.
 
 ## Modelos 3D
 
@@ -53,7 +53,7 @@ Redes: YouTube @discosraros · Instagram @discosraros.arg · Kick discosRaros.
 - `npm run dev` → http://localhost:5180 (el 5173 es del visor de PCX). `npm run build` chequea tipos y compila.
 - `src/style-kit/`: paleta, material PSX, post-procesado, texturas, títulos, sonidos y `PSXStage` (renderer + post + capa de textos + loop). Todas las escenas pasan por ahí.
 - `src/scenes/boiler/`: club, pista instanciada (`crowd.ts`: una malla instanciada por prenda/accesorio), pasos de baile (`dances.ts`: funciones del beat, sin animaciones guardadas), DJs, tele de YouTube.
-- Juegos (solo PC, se cargan recién al entrar y usan el club de escenario con `room.takeover`): `src/pelea/` (Discos vs Raros) y `src/futbol/` (Cabezazos; la física y la CPU están en `game.ts`, sin Three.js, así se pueden simular partidos con Node para ajustar la dificultad).
+- Juegos (se cargan recién al entrar y usan el club de escenario con `room.takeover`): `src/pelea/` (Discos vs Raros) y `src/futbol/` (Cabezazos; la física y la CPU están en `game.ts`, sin Three.js, así se pueden simular partidos con Node para ajustar la dificultad).
 - `src/ui/` y `src/sections/`: barra, ventanas y secciones (Sets, Crear tu raro, Contacto). Rutas por hash (`#/sets`…).
 - `shared/look.ts`: opciones del personaje del visitante y validación de nombres; lo usan cliente y servidor. Agregar opciones **al final** de cada lista (los guardados usan el índice). Un campo nuevo va al final, con "nada" de primera opción, y se anota en `OPTIONAL` para que los guardados viejos sigan valiendo. Los conjuntos armados del creador están en `src/sections/outfits.ts`.
 - `server/`: toda la API (`router.ts`). La corre Vite en desarrollo y las funciones de `api/` en Vercel. Sin las variables de Supabase guarda en `.data/db.json`.

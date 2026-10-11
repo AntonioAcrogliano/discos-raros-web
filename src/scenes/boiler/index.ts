@@ -240,6 +240,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       club.booth.visible = m !== 'creador';
       for (const b of club.beams) b.visible = m !== 'creador';
       djGroup.visible = m === 'pista';
+      tele.interactive = m === 'pista';
       crowd.setSolo(m === 'creador');
       view = 'todo';
       crowd.spin = null;

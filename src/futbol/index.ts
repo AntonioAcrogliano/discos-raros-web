@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import { loadGlbRig } from '../characters/glbRig';
 import { type Rig, buildBoxRig } from '../characters/rig';
 import { PadEdges } from '../juegos/gamepad';
-import { type Control, PauseMenu, type SelectView, banner, dim, drawSelect, resultBox, selectClicks, topBand } from '../juegos/hud';
+import { type Control, PauseMenu, type SelectView, banner, dim, drawSelect, hudTouch, resultBox, selectClicks, topBand } from '../juegos/hud';
+import { mountTouchPad, onTouchUi } from '../juegos/touch';
 import type { BoilerRoom } from '../scenes/boiler';
 import { DISCOS_COLORS, RAROS_COLORS } from '../scenes/boiler/djs';
+import { isTouch } from '../ui/dom';
 import { DR, DR_CYCLE, type PSXMaterial, type PSXStage, blip, box, fitSize, makeCanvas, makeCheckerTexture, makePSXMaterial, makeRecordTexture, outlined, titleUnit, toPSXTexture } from '../style-kit';
 import { BALL_R, type Controls, FIELD, KICK_SECONDS, MATCH_SECONDS, NO_CONTROLS, SOCCER_DIFFICULTIES, SoccerCpu, kickoff, newBall, newPlayer, simulate } from './game';
 
@@ -231,6 +233,7 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
     phase = p;
     phaseT = 0;
     input.flush();
+    touch?.setMode(p === 'select' || p === 'end' ? 'menu' : 'play');
   };
   const newMatch = () => {
     for (const p of players) {
@@ -405,8 +408,17 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
   // Con el mouse: las flechas de la dificultad y el personaje.
   const stopClicks = selectClicks(stage.overlayCanvas, () => (phase === 'select' ? selectView() : null), (hit) => {
     if ('difficulty' in hit) setDifficulty(hit.difficulty);
-    else me = hit.player;
+    else if ('player' in hit) me = hit.player;
+    else if (phaseT > 0.3) {
+      blip(880, 0.1);
+      newMatch();
+    }
   });
+  // En el celular: en el resultado, tocar la pantalla es la revancha.
+  const tapEnd = (e: PointerEvent) => {
+    if (touch && phase === 'end' && phaseT > 0.8 && !onTouchUi(e)) newMatch();
+  };
+  window.addEventListener('pointerdown', tapEnd);
 
   const drawOverlay = (ctx: CanvasRenderingContext2D, w: number, h: number, t: number) => {
     const unit = titleUnit(w, h);
@@ -465,7 +477,9 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
       banner(ctx, w, h * 0.3, shout.text, unit, 1.4 + Math.max(0, 0.12 - shout.t) * 6, Math.floor(shout.t * 20) % 2 ? shout.color : DR.crema, DR.negro);
     }
     if (phase === 'play' || phase === 'ready') {
-      if (played < 8) {
+      if (touch) {
+        // Los botones ya dicen qué hacen.
+      } else if (played < 8) {
         const keys = input.connected ? 'STICK MOVER   A SALTAR   X PATEAR   STICK ABAJO+X RASANTE   B TIRO VINILO' : 'A/D MOVER   W SALTAR   J O ESPACIO PATEAR   S+J RASANTE   K TIRO VINILO';
         dim(ctx, 0, h - unit * 2.2, w, unit * 2.2);
         outlined(ctx, keys, w / 2, h - unit * 1.1, fitSize(keys, Math.floor(unit * 0.75), w), DR.crema);
@@ -481,7 +495,20 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
     canPause: () => phase === 'ready' || phase === 'play' || phase === 'goal',
     onRestart: () => newMatch(),
     onExit,
+    layer: stage.overlayCanvas,
   });
+  // Celular: stick y botones en pantalla (aprietan las mismas teclas). Si se gira parado, pausa.
+  hudTouch.on = isTouch();
+  const touch = hudTouch.on
+    ? mountTouchPad(
+        [
+          { code: 'KeyJ', label: 'PATEAR', big: true },
+          { code: 'KeyW', label: 'SALTAR' },
+          { code: 'KeyK', label: 'TIRO VINILO' },
+        ],
+        (portrait) => portrait && pause.pauseNow(),
+      )
+    : null;
 
   if (import.meta.env.DEV) (window as unknown as { drFutbol: unknown }).drFutbol = { players, ball, phase: () => phase, end: () => setPhase('end') };
   room.setMode('pelea');
@@ -490,6 +517,8 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
   return {
     stop() {
       pause.dispose();
+      touch?.dispose();
+      window.removeEventListener('pointerdown', tapEnd);
       stopClicks();
       input.dispose();
       room.takeover = null;

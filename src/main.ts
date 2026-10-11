@@ -83,13 +83,9 @@ async function main() {
     },
     { path: 'jugar', label: 'JUGAR', open: openJugar },
     { path: 'contacto', label: 'CONTACTO', open: openContacto },
-    // Los juegos se abren desde JUGAR y son solo para PC (teclado o joystick).
-    ...(isTouch()
-      ? []
-      : [
-          { path: 'pelea', label: 'PELEA', nav: false, open: openPelea },
-          { path: 'futbol', label: 'CABEZAZOS', nav: false, open: openFutbol },
-        ]),
+    // Los juegos se abren desde JUGAR (teclado o joystick en la compu; controles táctiles en el celular).
+    { path: 'pelea', label: 'PELEA', nav: false, open: openPelea },
+    { path: 'futbol', label: 'CABEZAZOS', nav: false, open: openFutbol },
   ]);
 }
 

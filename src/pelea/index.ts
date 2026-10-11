@@ -4,7 +4,9 @@ import { type Rig, buildBoxRig } from '../characters/rig';
 import type { BoilerRoom } from '../scenes/boiler';
 import { DISCOS_COLORS, RAROS_COLORS } from '../scenes/boiler/djs';
 import { DR, type PSXMaterial, type PSXStage, blip, box, fitSize, makePSXMaterial, makeRecordTexture, outlined, titleUnit } from '../style-kit';
-import { type Control, PauseMenu, type SelectView, banner, dim, drawSelect, resultBox, selectClicks, topBand } from '../juegos/hud';
+import { type Control, PauseMenu, type SelectView, banner, dim, drawSelect, hudTouch, resultBox, selectClicks, topBand } from '../juegos/hud';
+import { mountTouchPad, onTouchUi } from '../juegos/touch';
+import { isTouch } from '../ui/dom';
 import { Cpu, DIFFICULTIES } from './cpu';
 import { ARENA_HALF, ATTACKS, type Attack, type AttackName, Fighter, MAX_HP, NO_INTENT, SMOKE_EVERY, SMOKE_RINGS } from './fighter';
 import { PlayerInput } from './input';
@@ -136,6 +138,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   const setPhase = (p: Phase) => {
     phase = p;
     phaseT = 0;
+    touch?.setMode(p === 'select' || p === 'end' ? 'menu' : 'play');
   };
   const placeFighters = () => {
     clearShots();
@@ -451,8 +454,17 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   // Con el mouse: las flechas de la dificultad y el peleador.
   const stopClicks = selectClicks(stage.overlayCanvas, () => (phase === 'select' ? selectView() : null), (hit) => {
     if ('difficulty' in hit) setDifficulty(hit.difficulty);
-    else player = hit.player;
+    else if ('player' in hit) player = hit.player;
+    else if (phaseT > 0.3) {
+      blip(880, 0.1);
+      newMatch();
+    }
   });
+  // En el celular: en el resultado, tocar la pantalla es la revancha.
+  const tapEnd = (e: PointerEvent) => {
+    if (touch && phase === 'end' && phaseT > 0.8 && !onTouchUi(e)) newMatch();
+  };
+  window.addEventListener('pointerdown', tapEnd);
 
   const drawOverlay = (ctx: CanvasRenderingContext2D, w: number, h: number, t: number) => {
     const unit = titleUnit(w, h);
@@ -527,7 +539,9 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     }
     if (phase === 'fight' || phase === 'intro') {
       ctx.textAlign = 'center';
-      if (round === 1 && played < 8) {
+      if (touch) {
+        // Los botones ya dicen qué hacen.
+      } else if (round === 1 && played < 8) {
         // Al principio de la partida, un repaso corto; después no molesta.
         const keys = input.connected ? 'STICK MOVER  STICK ARRIBA SALTAR  STICK ABAJO AGACHAR  X ALTO  A BAJO  B PATADA  Y AGARRE  L1/R1 BLOQUEO' : 'A/D MOVER  W SALTAR  S AGACHAR  J ALTO  K BAJO  L PATADA  I AGARRE  ESPACIO BLOQUEO';
         dim(ctx, 0, h - unit * 2.2, w, unit * 2.2);
@@ -544,7 +558,22 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     canPause: () => phase === 'fight' || phase === 'intro' || phase === 'ko',
     onRestart: () => newMatch(),
     onExit,
+    layer: stage.overlayCanvas,
   });
+  // Celular: stick y botones en pantalla (aprietan las mismas teclas). Si se gira parado, pausa.
+  hudTouch.on = isTouch();
+  const touch = hudTouch.on
+    ? mountTouchPad(
+        [
+          { code: 'KeyJ', label: 'GOLPE ALTO' },
+          { code: 'KeyK', label: 'GOLPE BAJO' },
+          { code: 'KeyL', label: 'PATADA' },
+          { code: 'KeyI', label: 'AGARRE' },
+          { code: 'Space', label: 'BLOQUEO' },
+        ],
+        (portrait) => portrait && pause.pauseNow(),
+      )
+    : null;
 
   if (import.meta.env.DEV) (window as unknown as { drPelea: unknown }).drPelea = { fighters, shots: () => shots };
   room.setMode('pelea');
@@ -553,6 +582,8 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
   return {
     stop() {
       pause.dispose();
+      touch?.dispose();
+      window.removeEventListener('pointerdown', tapEnd);
       stopClicks();
       input.dispose();
       room.takeover = null;

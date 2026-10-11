@@ -1,0 +1,103 @@
+/* Controles táctiles de los juegos (ver touch.ts). Arriba de la capa de textos, abajo de la interfaz. */
+.touch-ui {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  font: 10px/1 var(--pix-font);
+  text-transform: uppercase;
+  color: var(--dr-crema);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.touch-ui > * { pointer-events: auto; touch-action: none; }
+
+/* Stick: una base cuadrada con la perilla al medio. */
+.touch-stick {
+  position: absolute;
+  left: calc(14px + env(safe-area-inset-left));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  width: min(34vh, 150px);
+  height: min(34vh, 150px);
+  border: 3px solid var(--dr-crema);
+  border-radius: 50%;
+  background: #0f1217aa;
+  box-shadow: 3px 3px 0 #000;
+}
+.touch-knob {
+  position: absolute;
+  inset: 28%;
+  border-radius: 50%;
+  background: var(--dr-crema);
+  box-shadow: 0 4px 0 #0008 inset, 2px 2px 0 #000;
+  opacity: 0.9;
+}
+
+.touch-buttons {
+  position: absolute;
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  width: min(46vh, 210px);
+  display: flex;
+  flex-wrap: wrap-reverse;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.touch-btn {
+  display: grid;
+  place-items: center;
+  width: min(18vh, 78px);
+  height: min(18vh, 78px);
+  padding: 2px;
+  border: 3px solid var(--dr-crema);
+  background: #016239cc;
+  box-shadow: 3px 3px 0 #000;
+  font-size: 8px;
+  line-height: 1.3;
+  text-align: center;
+}
+.touch-btn.big { width: min(24vh, 104px); height: min(24vh, 104px); background: #ff004acc; font-size: 10px; }
+.touch-btn.on { transform: translate(3px, 3px); box-shadow: none; background: var(--dr-amarillo); color: var(--dr-negro); }
+
+.touch-menu {
+  position: absolute;
+  left: 50%;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  padding: 9px 12px;
+  border: 2px solid var(--dr-crema);
+  background: #0f1217cc;
+  box-shadow: 2px 2px 0 #000;
+}
+
+/* En la selección y en el resultado se toca la pantalla: no hacen falta stick ni botones. */
+.touch-ui[data-mode='menu'] .touch-stick,
+.touch-ui[data-mode='menu'] .touch-buttons { display: none; }
+
+/* Con el celu parado: cartel a pantalla completa. */
+.touch-rotate {
+  display: none;
+  position: absolute;
+  inset: 0;
+  place-content: center;
+  gap: 14px;
+  text-align: center;
+  background: var(--dr-negro);
+  color: var(--dr-amarillo);
+  font-size: 16px;
+}
+.touch-rotate p { margin: 0; }
+.touch-rotate .chico { font-size: 8px; color: var(--dr-rosa); line-height: 1.6; }
+@media (orientation: portrait) {
+  .touch-rotate { display: grid; }
+}
+
+/* Fuera de la partida, SALIR va arriba a la izquierda (abajo está el pie de ayuda del menú). */
+.touch-ui[data-mode='menu'] .touch-menu {
+  left: calc(10px + env(safe-area-inset-left));
+  top: calc(10px + env(safe-area-inset-top));
+  bottom: auto;
+  transform: none;
+}

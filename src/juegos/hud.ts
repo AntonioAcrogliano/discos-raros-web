@@ -22,6 +22,9 @@ export interface Control {
 
 const GRIS = '#5a5666';
 
+/** En el celular los carteles hablan de tocar la pantalla en vez de teclas. Lo prende cada juego al arrancar. */
+export const hudTouch = { on: false };
+
 interface Rect {
   x: number;
   y: number;
@@ -218,6 +221,9 @@ export interface SelectView {
   pad: boolean;
 }
 
+/** Alto del pie de ayuda de los menús. */
+const footH = (u: number) => Math.round(u * 1.9);
+
 /** Dónde va cada cosa de la pantalla de selección (lo usan el dibujo y los clics). */
 function selectLayout(w: number, h: number, v: SelectView) {
   const u = Math.max(6, Math.round((Math.min(w, h) / 240) * 8));
@@ -232,11 +238,14 @@ function selectLayout(w: number, h: number, v: SelectView) {
   const ab = Math.round(u * 1.7), ay = Math.round(y0 + u * 2.3 - ab / 2);
   const prev: Rect = { x: mx + Math.round(u * 0.5), y: ay, w: ab, h: ab };
   const next: Rect = { x: mx + mw - Math.round(u * 0.5) - ab, y: ay, w: ab, h: ab };
-  return { u, cards, y0, mx, mw, prev, next };
+  // En el celular, en lugar de la ventana de controles hay un botón grande para arrancar.
+  const top = y0 + u * 4.4;
+  const go: Rect = { x: mx, y: top, w: mw, h: Math.min(u * 4, h - footH(u) - u - top) };
+  return { u, cards, y0, mx, mw, prev, next, go };
 }
 
 /** Qué se tocó con el mouse en la pantalla de selección. */
-export type SelectHit = { player: number } | { difficulty: number } | null;
+export type SelectHit = { player: number } | { difficulty: number } | { go: true } | null;
 
 export function selectHit(w: number, h: number, v: SelectView, px: number, py: number): SelectHit {
   const l = selectLayout(w, h, v);
@@ -244,6 +253,7 @@ export function selectHit(w: number, h: number, v: SelectView, px: number, py: n
   const inside = (r: Rect, m = 0) => px >= r.x - m && px < r.x + r.w + m && py >= r.y - m && py < r.y + r.h + m;
   if (inside(l.prev, 4)) return { difficulty: -1 };
   if (inside(l.next, 4)) return { difficulty: 1 };
+  if (hudTouch.on && inside(l.go)) return { go: true };
   const player = l.cards.findIndex((c) => inside({ ...c, h: c.h + l.u * 2.6 }));
   return player >= 0 ? { player } : null;
 }
@@ -275,7 +285,8 @@ export function selectClicks(layer: HTMLCanvasElement, view: () => SelectView | 
 
 /** Pantalla de selección: una ventana por personaje (se lo ve en 3D adentro), dificultad y controles al medio. */
 export function drawSelect(ctx: CanvasRenderingContext2D, w: number, h: number, t: number, v: SelectView) {
-  const { u, cards, y0, mx, mw, prev, next } = selectLayout(w, h, v);
+  const { u, cards, y0, mx, mw, prev, next, go } = selectLayout(w, h, v);
+  const touch = hudTouch.on;
   const blink = Math.floor(t * 4) % 2 === 0;
   dim(ctx, 0, 0, w, h, cards.map((c) => ({ x: c.x + 3, y: c.y + 3, w: c.w - 6, h: c.h - 6 })));
 
@@ -285,7 +296,7 @@ export function drawSelect(ctx: CanvasRenderingContext2D, w: number, h: number, 
   outlined(ctx, v.prompt, w / 2, u * 4.5, fitSize(v.prompt, u, w), DR.crema);
   // El navegador muestra el joystick recién cuando se le aprieta un botón.
   const padMsg = v.pad ? 'JOYSTICK CONECTADO' : 'JOYSTICK: APRETA UN BOTON PARA ACTIVARLO';
-  outlined(ctx, padMsg, w / 2, u * 6, fitSize(padMsg, Math.round(u * 0.6), w), v.pad ? DR.verdeClaro : GRIS);
+  if (!touch) outlined(ctx, padMsg, w / 2, u * 6, fitSize(padMsg, Math.round(u * 0.6), w), v.pad ? DR.verdeClaro : GRIS);
 
   cards.forEach((c, i) => {
     const on = i === v.me;
@@ -321,12 +332,19 @@ export function drawSelect(ctx: CanvasRenderingContext2D, w: number, h: number, 
   arrow(next, '>', v.difficulty < v.difficulties.length - 1);
 
   // Pie: cómo se maneja este menú (con joystick se alterna con sus botones).
-  const fh = Math.round(u * 1.9);
-  const top = y0 + u * 4.2;
-  controlsBox(ctx, mx, top, mw, u, v.controls, 'CONTROLES', h - fh - u - top);
-  const keys = `IZQ/DER: ELEGIR   ARRIBA/ABAJO O CLIC EN < >: DIFICULTAD   ENTER: ${v.go}   ESC: SALIR`;
-  const pad = `JOYSTICK   STICK A LOS LADOS: ELEGIR   STICK ARRIBA/ABAJO: DIFICULTAD   A O START: ${v.go}`;
-  const help = v.pad && Math.floor(t / 3) % 2 ? pad : keys;
+  const fh = footH(u);
+  let help: string;
+  if (touch) {
+    frame(ctx, go.x, go.y, go.w, go.h, blink ? DR.amarillo : DR.crema, DR.rojo);
+    text(ctx, v.go, go.x + go.w / 2, go.y + go.h / 2 + 1, fitSize(v.go, Math.round(u * 1.6), go.w), DR.crema, 'center');
+    help = `TOCA TU JUGADOR Y LA DIFICULTAD, Y DESPUES ${v.go}`;
+  } else {
+    const top = y0 + u * 4.2;
+    controlsBox(ctx, mx, top, mw, u, v.controls, 'CONTROLES', h - fh - u - top);
+    const keys = `IZQ/DER: ELEGIR   ARRIBA/ABAJO O CLIC EN < >: DIFICULTAD   ENTER: ${v.go}   ESC: SALIR`;
+    const pad = `JOYSTICK   STICK A LOS LADOS: ELEGIR   STICK ARRIBA/ABAJO: DIFICULTAD   A O START: ${v.go}`;
+    help = v.pad && Math.floor(t / 3) % 2 ? pad : keys;
+  }
   frame(ctx, u * 0.5, h - fh - u * 0.5, w - u, fh);
   text(ctx, help, w / 2, h - u * 0.5 - fh / 2, fitSize(help, Math.round(u * 0.75), w - u * 2), blink ? DR.crema : DR.amarillo, 'center');
 }
@@ -354,8 +372,9 @@ export function resultBox(ctx: CanvasRenderingContext2D, w: number, h: number, t
   outlined(ctx, o.title, w / 2, y + u * 2.4 + Math.round(Math.sin(t * 6) * 2), fitSize(o.title, u * 2, bw), o.color, DR.rojoOscuro);
   o.lines.forEach((l, i) => text(ctx, l, w / 2, y + u * (4.8 + i * 1.6), fitSize(l, u, bw - u * 2), DR.crema, 'center'));
   const yy = y + bh - u * 3;
-  text(ctx, 'ENTER O START: REVANCHA', w / 2, yy, u, Math.floor(t * 3) % 2 ? DR.amarillo : DR.crema, 'center');
-  text(ctx, `ESC: SALIR (${Math.max(0, Math.ceil(o.seconds))})`, w / 2, yy + u * 1.6, Math.round(u * 0.75), DR.rosa, 'center');
+  const again = hudTouch.on ? 'TOCA LA PANTALLA: REVANCHA' : 'ENTER O START: REVANCHA';
+  text(ctx, again, w / 2, yy, fitSize(again, u, bw - u * 2), Math.floor(t * 3) % 2 ? DR.amarillo : DR.crema, 'center');
+  text(ctx, `${hudTouch.on ? 'BOTON SALIR' : 'ESC: SALIR'} (${Math.max(0, Math.ceil(o.seconds))})`, w / 2, yy + u * 1.6, Math.round(u * 0.75), DR.rosa, 'center');
 }
 
 const PAUSE_OPTIONS = ['SEGUIR', 'REINICIAR', 'SALIR'] as const;
@@ -370,15 +389,38 @@ export class PauseMenu {
   busy = false;
   private index = 0;
   private pad = new PadEdges();
+  /** Dónde quedó dibujada cada opción (para tocarlas con el dedo o el mouse). */
+  private rects: Rect[] = [];
 
-  constructor(private o: { canPause(): boolean; onRestart(): void; onExit(): void }) {
+  /** @param o.layer la capa de textos: con ella las opciones se pueden tocar. */
+  constructor(private o: { canPause(): boolean; onRestart(): void; onExit(): void; layer?: HTMLCanvasElement }) {
     // En la fase de captura: llega antes que los controles del juego.
     window.addEventListener('keydown', this.key, true);
+    window.addEventListener('pointerdown', this.tap);
   }
 
   dispose() {
     window.removeEventListener('keydown', this.key, true);
+    window.removeEventListener('pointerdown', this.tap);
   }
+
+  /** Pausar ya, si se puede (el celular se giró, se fue el foco…). */
+  pauseNow() {
+    if (this.open || !this.o.canPause()) return;
+    this.open = true;
+    this.index = 0;
+  }
+
+  private tap = (e: PointerEvent) => {
+    const layer = this.o.layer;
+    if (!this.open || !layer) return;
+    const r = layer.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * layer.width, y = ((e.clientY - r.top) / r.height) * layer.height;
+    const i = this.rects.findIndex((q) => x >= q.x && x < q.x + q.w && y >= q.y && y < q.y + q.h);
+    if (i < 0) return;
+    this.index = i;
+    this.choose();
+  };
 
   private key = (e: KeyboardEvent) => {
     if (e.code === 'Escape') {
@@ -435,8 +477,11 @@ export class PauseMenu {
     if (!this.open) return;
     const u = Math.max(6, Math.round((Math.min(w, h) / 240) * 8));
     dim(ctx, 0, 0, w, h);
-    const lw = u * 13, gap = u, cw = Math.min(u * 30, w - lw - gap - u * 2);
+    const touch = hudTouch.on;
+    // En el celular no se muestran los controles de teclado: queda solo el menú, al medio.
+    const lw = u * 13, gap = u, cw = touch ? -gap : Math.min(u * 30, w - lw - gap - u * 2);
     const x = Math.round((w - lw - gap - cw) / 2), y = Math.round(h * 0.2);
+    this.rects = PAUSE_OPTIONS.map((_, i) => ({ x, y: y + u * (2.8 + i * 2), w: lw, h: u * 2 }));
     frame(ctx, x, y, lw, u * (4 + PAUSE_OPTIONS.length * 2));
     text(ctx, 'PAUSA', x + lw / 2, y + u * 1.5, Math.round(u * 1.3), DR.amarillo, 'center');
     PAUSE_OPTIONS.forEach((opt, i) => {
@@ -449,7 +494,8 @@ export class PauseMenu {
       }
       text(ctx, opt, x + u * 2.4, oy, u, on ? DR.amarillo : DR.crema);
     });
-    const fh = Math.round(u * 1.9);
+    const fh = footH(u);
+    if (touch) return;
     controlsBox(ctx, x + lw + gap, y, cw, u, controls, 'CONTROLES', h - fh - u - y);
     const help = 'ARRIBA/ABAJO O STICK: MOVER   ENTER O A: ELEGIR   ESC O START: SEGUIR';
     frame(ctx, u * 0.5, h - fh - u * 0.5, w - u, fh);

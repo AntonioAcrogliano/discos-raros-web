@@ -7,17 +7,9 @@ const JUEGOS = [
   { path: 'futbol', name: 'CABEZAZOS', what: 'FUTBOL DE CABEZONES. 60 SEGUNDOS, TIRO VINILO Y GOL DE ORO.' },
 ];
 
-/** Menú de juegos. En el celular se avisa que son para la compu (teclado o joystick). */
+/** Menú de juegos. */
 export function openJugar() {
   const p = openPanel({ title: 'JUGAR', narrow: true });
-  if (isTouch()) {
-    p.body.append(
-      el('p', 'aviso', 'LOS JUEGOS SE JUEGAN EN LA COMPU, CON TECLADO O JOYSTICK.'),
-      el('p', '', 'ENTRA DESDE UNA PC A DISCOSRAROS.COM.AR Y ELEGI:'),
-      ...JUEGOS.map((j) => el('p', 'ok', `- ${j.name}`)),
-    );
-    return;
-  }
   const list = el('div', 'juegos');
   for (const j of JUEGOS) {
     const a = el('a', 'btn juego', [el('span', 'nombre', j.name), el('span', 'meta', j.what)]);
@@ -26,6 +18,6 @@ export function openJugar() {
     a.addEventListener('click', () => sfx.start());
     list.append(a);
   }
-  p.body.append(list, el('p', 'aviso', 'TECLADO O JOYSTICK. ESC PARA SALIR DE UN JUEGO.'));
+  p.body.append(list, el('p', 'aviso', isTouch() ? 'SE JUEGA CON EL CELU ACOSTADO.' : 'TECLADO O JOYSTICK. ESC PARA SALIR DE UN JUEGO.'));
   p.focusFirst();
 }
