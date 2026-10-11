@@ -53,7 +53,8 @@ const PLATAFORMAS = 1, BOTAS = 2, DESCALZO = 3;
 const CAJA = 6, OREJAS_ELFA = 15, GUANTES = 5;
 
 // --- Piezas -------------------------------------------------------------------------------
-// Los modelos se arman con cajas. Cada caja apunta a un casillero de la paleta de detalle
+// El cuerpo (cabeza, torso, brazos y piernas) son piezas de 8 lados que se afinan; la ropa y
+// los accesorios se arman con cajas alrededor. Cada pieza apunta a un casillero de la paleta de detalle
 // (DETAIL): un tono del color de la pieza (T0 el más claro… T3) o un color fijo (W blanco,
 // K negro, G gris, Y amarillo, R rojo, C celeste, P rosa, B azul). Así un peinado tiene mechones
 // más oscuros y una zapatilla tiene suela blanca sin sumar mallas ni draw calls.
@@ -71,7 +72,61 @@ const merge = (...g: THREE.BufferGeometry[]) => mergeGeometries(g.map((x) => (x.
 const bx = (w: number, h: number, d: number, x: number, y: number, z: number, cell: DetailCell = T0) => tint(at(new THREE.BoxGeometry(w, h, d), x, y, z), cell);
 /** La misma caja de los dos lados (x y -x). */
 const pair = (w: number, h: number, d: number, x: number, y: number, z: number, cell: DetailCell = T0) => [bx(w, h, d, x, y, z, cell), bx(w, h, d, -x, y, z, cell)];
-const hang = (w: number, h: number, d: number) => bx(w, h, d, 0, -h / 2, 0);
+/** Caras planas (cada triángulo con su propia normal): se ven las facetas, como en la Play. */
+const faceted = (g: THREE.BufferGeometry) => {
+  const out = g.index ? g.toNonIndexed() : g;
+  out.computeVertexNormals();
+  return out;
+};
+/** Brazo o pierna: un prisma de 8 lados que cuelga del origen y se afina hacia abajo (`taper` = cuánto queda del grosor). */
+const hang = (w: number, h: number, d: number, taper = 1) => {
+  const r = 0.5 / Math.cos(Math.PI / 8);
+  return tint(faceted(new THREE.CylinderGeometry(r, r * taper, h, 8, 1).rotateY(Math.PI / 8).scale(w, 1, d).translate(0, -h / 2, 0)), T0);
+};
+
+/** Un corte del cuerpo a cierta altura: medio ancho, hasta dónde llega adelante y atrás, y el chanfle de las esquinas. */
+type Ring = [y: number, halfW: number, front: number, back: number, chamfer: number];
+/**
+ * Cuerpo "torneado": une cortes de 8 lados, uno arriba del otro, y lo tapa arriba y abajo.
+ * En las caras que miran adelante la textura va proyectada de frente sobre el rectángulo
+ * `face` (x, y, ancho, alto); las demás toman un píxel liso, como en faceBox.
+ */
+function loft(rings: Ring[], face: [number, number, number, number]) {
+  const cut = ([y, hw, zf, zb, c]: Ring) =>
+    [[-hw + c, zf], [hw - c, zf], [hw, zf - c], [hw, zb + c], [hw - c, zb], [-hw + c, zb], [-hw, zb + c], [-hw, zf - c]].map(([x, z]) => new THREE.Vector3(x, y, z));
+  const cuts = rings.map(cut);
+  const tris: THREE.Vector3[][] = [];
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const a = cuts[i], b = cuts[i + 1];
+    for (let k = 0; k < 8; k++) {
+      const n = (k + 1) % 8;
+      tris.push([a[k], a[n], b[n]], [a[k], b[n], b[k]]);
+    }
+  }
+  for (const cap of [cuts[0], cuts[cuts.length - 1]]) for (let k = 1; k < 7; k++) tris.push([cap[0], cap[k], cap[k + 1]]);
+  const mid = new THREE.Vector3(0, (rings[0][0] + rings[rings.length - 1][0]) / 2, 0);
+  const pos: number[] = [], uv: number[] = [];
+  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3(), c = new THREE.Vector3();
+  for (const t of tris) {
+    n.crossVectors(e1.subVectors(t[1], t[0]), e2.subVectors(t[2], t[0])).normalize();
+    // Que todas las caras miren para afuera.
+    c.copy(t[0]).add(t[1]).add(t[2]).divideScalar(3).sub(mid);
+    if (n.dot(c) < 0) {
+      [t[1], t[2]] = [t[2], t[1]];
+      n.negate();
+    }
+    for (const p of t) {
+      pos.push(p.x, p.y, p.z);
+      if (n.z > 0.6) uv.push((p.x - face[0]) / face[2], (p.y - face[1]) / face[3]);
+      else uv.push(0.03, 0.97);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
 /** Tronco de pirámide de base cuadrada (radios de arriba y de abajo); con `top` = 0 es una punta. */
 const taper = (top: number, bottom: number, h: number, x: number, y: number, z: number, cell: DetailCell = T0) =>
   tint(at(new THREE.CylinderGeometry(top, bottom, h, 4, 1).rotateY(Math.PI / 4), x, y, z), cell);
@@ -96,14 +151,23 @@ function texel(w: number, h: number, d: number, x: number, y: number, z: number,
 }
 
 // --- Cabeza -------------------------------------------------------------------------------
-// Todo es relativo a la base del cuello. La cabeza es una caja que va de y=0.02 a y=0.30, con
-// x y z entre -0.13 y 0.13; la cara mira a +z.
+// Todo es relativo a la base del cuello. La cabeza va de y=0.02 a y=0.30 y entra justo en una
+// caja con x y z entre -0.13 y 0.13 (por eso el pelo y los gorros, que son cajas, le calzan):
+// esquinas chanfleadas, la pera más angosta y la coronilla redondeada. La cara mira a +z.
 // Todo pelo sobresale 1 cm de la cabeza (nunca queda al ras: parpadea) y deja la cara libre.
 
 /** Cabeza con cuello, orejas y nariz en relieve (la nariz toma su color del dibujo de la cara). */
 const headGeo = () =>
   merge(
-    at(faceBox(0.26, 0.28, 0.26), 0, 0.16, 0),
+    loft(
+      [
+        [0.02, 0.085, 0.112, -0.09, 0.03],
+        [0.085, 0.125, 0.13, -0.122, 0.04],
+        [0.24, 0.13, 0.13, -0.13, 0.04],
+        [0.3, 0.1, 0.105, -0.1, 0.035],
+      ],
+      [-0.13, 0.02, 0.26, 0.28],
+    ),
     texel(0.11, 0.07, 0.11, 0, 0, 0, 0.03, 0.97),
     texel(0.03, 0.075, 0.055, 0.142, 0.155, -0.005, 0.03, 0.97),
     texel(0.03, 0.075, 0.055, -0.142, 0.155, -0.005, 0.03, 0.97),
@@ -255,8 +319,10 @@ const MOUTH_GEOS: (THREE.BufferGeometry | null)[] = [
 ];
 
 // --- Torso --------------------------------------------------------------------------------
-// Relativo al piso, con el personaje parado. El torso es una caja de 0.40 × 0.54 × 0.22 que
-// arranca en la cadera; estas mallas usan su misma matriz (se ensanchan con el cuerpo).
+// Relativo al piso, con el personaje parado. El torso arranca en la cadera y entra en una caja
+// de 0.40 × 0.54 × 0.22 (la ropa, que son cajas, se arma alrededor de esa medida): cintura un
+// poco más angosta, esquinas chanfleadas y hombros caídos. El frente es plano: ahí va la estampa.
+// Estas mallas usan su misma matriz (se ensanchan con el cuerpo).
 
 const STRAP = 0.62;
 const strap = (z: number) => turned(new THREE.BoxGeometry(0.035, 0.66, 0.02), 0, 0, STRAP, 0, HIP_Y + 0.29, z, T2);
@@ -517,15 +583,30 @@ export class Crowd {
     const parts = (geos: (THREE.BufferGeometry | null)[], mat: (i: number) => THREE.Material = () => plain, n = capacity) =>
       new Parts(geos.map((g, i) => (g ? mesh(g, n, mat(i)) : null)));
 
-    this.thighs = mesh(hang(0.15, THIGH, 0.17), capacity * 2);
-    this.shins = mesh(hang(0.125, SHIN, 0.14), capacity * 2);
-    this.upperArms = mesh(hang(0.11, UPPER, 0.11), capacity * 2);
-    this.foreArms = mesh(hang(0.09, FORE, 0.09), capacity * 2);
+    this.thighs = mesh(hang(0.155, THIGH, 0.175, 0.84), capacity * 2);
+    this.shins = mesh(hang(0.13, SHIN, 0.15, 0.78), capacity * 2);
+    this.upperArms = mesh(hang(0.115, UPPER, 0.115, 0.86), capacity * 2);
+    this.foreArms = mesh(hang(0.1, FORE, 0.1, 0.8), capacity * 2);
     // La mano y el calzado van pegados al antebrazo y a la canilla: usan su misma matriz.
     this.hands = mesh(HAND_GEO(), capacity * 2);
     this.shoes = parts(SHOE_GEOS, undefined, capacity * 2);
 
-    const torsoGeo = () => at(faceBox(0.4, TORSO, 0.22), 0, HIP_Y + TORSO / 2, 0);
+    const torsoGeo = () =>
+      at(
+        loft(
+          [
+            [0, 0.195, 0.11, -0.105, 0.04],
+            [0.2, 0.183, 0.11, -0.1, 0.04],
+            [0.4, 0.2, 0.11, -0.11, 0.045],
+            [TORSO - 0.045, 0.2, 0.11, -0.11, 0.045],
+            [TORSO, 0.165, 0.095, -0.095, 0.04],
+          ],
+          [-0.2, 0, 0.4, TORSO],
+        ),
+        0,
+        HIP_Y,
+        0,
+      );
     this.torsos = parts(LOOK.estampa.map(torsoGeo), (i) => makePSXMaterial(i ? { map: makePrintTexture(i - 1), decal: true } : {}));
     const faces = LOOK.cara.map((_, i) => makePSXMaterial({ map: makeFaceTexture(i) }));
     this.heads = parts(LOOK.cara.map(headGeo), (i) => faces[i]);
