@@ -81,7 +81,7 @@ async function main() {
       label: 'CREA TU RARO',
       open: () => openCreador({ room, mine: () => data.mine, onSaved: (raro, total) => setPista({ ...data, mine: raro, total }) }),
     },
-    { path: 'jugar', label: 'JUGAR', open: openJugar },
+    { path: 'jugar', label: 'PATIO DE JUEGOS', open: openJugar },
     { path: 'contacto', label: 'CONTACTO', open: openContacto },
     // Los juegos se abren desde JUGAR (teclado o joystick en la compu; controles táctiles en el celular).
     { path: 'pelea', label: 'PELEA', nav: false, open: openPelea },

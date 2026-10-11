@@ -9,7 +9,7 @@ const JUEGOS = [
 
 /** Menú de juegos. */
 export function openJugar() {
-  const p = openPanel({ title: 'JUGAR', narrow: true });
+  const p = openPanel({ title: 'PATIO DE JUEGOS', narrow: true });
   const list = el('div', 'juegos');
   for (const j of JUEGOS) {
     const a = el('a', 'btn juego', [el('span', 'nombre', j.name), el('span', 'meta', j.what)]);
