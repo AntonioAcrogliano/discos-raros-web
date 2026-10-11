@@ -104,10 +104,12 @@ void main() {
     col *= vec3(1.0, 0.97, 1.02);
   }
 
-  vec4 c = vec4(clamp(col, 0.0, 1.0), 1.0);
+  // El alfa viene de la escena: 0 donde está el agujero de la tele (se ve el video de atrás).
+  // Lo que pasa por delante del agujero ya llega premultiplicado.
+  vec4 c = vec4(clamp(col, 0.0, 1.0), base.a);
   if (uOverlayOn > 0.5) {
     vec4 ov = texture2D(tOverlay, screenUv);
-    c.rgb = mix(c.rgb, ov.rgb, ov.a);
+    c = mix(c, vec4(ov.rgb, 1.0), ov.a);
   }
   ivec2 p = ivec2(floor(uv * uRes));
   if (uDepth > 0.5) {

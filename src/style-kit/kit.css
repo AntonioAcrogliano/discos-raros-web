@@ -35,6 +35,10 @@ html, body {
   display: block;
   image-rendering: pixelated;
   touch-action: none;
+  /* Arriba de la tele de YouTube, que se ve por un agujero del canvas; los clics pasan de
+     largo y le llegan al player. */
+  z-index: 1;
+  pointer-events: none;
 }
 
 /* Botón invisible que ocupa toda la pantalla: el texto se dibuja en el canvas, pero el

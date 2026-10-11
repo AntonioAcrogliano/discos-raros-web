@@ -24,8 +24,8 @@ export class PSXStage {
 
   /**
    * La capa de textos es un canvas aparte, a la resolución interna y agrandado sin suavizar.
-   * Va por encima de todo lo que no sea interfaz (incluida la tele de YouTube, que es un iframe
-   * arriba del canvas 3D): así las barras de vida y los carteles nunca quedan tapados.
+   * Va por encima de todo lo que no sea interfaz: así las barras de vida y los carteles nunca
+   * quedan tapados.
    */
   readonly overlayCanvas = document.createElement('canvas');
   private overlayCtx = this.overlayCanvas.getContext('2d', { willReadFrequently: true })!;
@@ -35,7 +35,8 @@ export class PSXStage {
   private running = false;
 
   constructor(readonly canvas: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
+    // Con transparencia: la tele de YouTube va DETRÁS del canvas y se ve por un agujero (ver tele.ts).
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: 'high-performance' });
     // La imagen se arma a baja resolución y se agranda: no hace falta más que 1 píxel por píxel CSS.
     this.renderer.setPixelRatio(1);
     this.post = new PSXPost(this.renderer);

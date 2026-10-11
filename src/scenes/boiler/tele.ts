@@ -1,11 +1,15 @@
+import * as THREE from 'three';
 import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 import type { PSXStage } from '../../style-kit';
 import { CLUB } from './club';
 
 /**
- * La tele del club: el player de YouTube (IFrame API) ubicado en 3D con CSS3DRenderer, encima
- * del canvas. YouTube exige que el player se vea y no deja leer el audio, así que la tele es
- * el player de verdad: se puede pausar, adelantar o cambiar el volumen desde ahí.
+ * La tele del club: el player de YouTube (IFrame API) ubicado en 3D con CSS3DRenderer, DETRÁS
+ * del canvas. En la escena hay un rectángulo que no pinta nada (alfa 0) justo donde va la
+ * pantalla: por ese agujero se ve el video, y todo lo que pasa por delante (luces, la bola de
+ * espejos, la pelota, un cabezón que salta) lo tapa como corresponde.
+ * YouTube exige que el player se vea y no deja leer el audio, así que la tele es el player
+ * de verdad: se puede pausar, adelantar o cambiar el volumen desde ahí.
  */
 
 interface YTPlayer {
@@ -50,7 +54,7 @@ export class Tele {
   constructor(private stage: PSXStage) {
     const dom = this.css.domElement;
     dom.className = 'tele-layer';
-    Object.assign(dom.style, { position: 'fixed', inset: '0', zIndex: '5', pointerEvents: 'none' });
+    Object.assign(dom.style, { position: 'fixed', inset: '0', zIndex: '0', pointerEvents: 'none' });
     document.body.append(dom);
 
     this.holder.style.cssText = `width:${PX_W}px;height:${PX_H}px;background:#000;pointer-events:auto;`;
@@ -59,6 +63,16 @@ export class Tele {
     obj.position.set(tele.x, tele.y, tele.z + 0.06);
     obj.scale.setScalar(tele.w / PX_W);
     obj.visible = false;
+    // El agujero: escribe color y alfa en cero sin mezclar, y tapa lo que tiene atrás.
+    const hole = new THREE.Mesh(
+      new THREE.PlaneGeometry(PX_W, PX_H),
+      new THREE.ShaderMaterial({
+        vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
+        blending: THREE.NoBlending,
+      }),
+    );
+    obj.add(hole);
     this.object = obj;
     this.setSize(window.innerWidth, window.innerHeight);
   }
