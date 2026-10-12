@@ -31,7 +31,7 @@ async function main() {
 
   // Solo en desarrollo: ?autostart saltea el PRESS START (para sacar capturas automáticas).
   if (import.meta.env.DEV && location.search.includes('autostart')) setTimeout(() => document.querySelector<HTMLElement>('.press-start')?.click(), 300);
-  await showStartScreen(stage);
+  await showStartScreen(stage, () => room.unlockSound());
   stage.onOverlay = (ctx, w, h, t) => room.drawOverlay(ctx, w, h, t);
   // Se abren las puertas y se entra caminando; la interfaz aparece recién adentro.
   setChrome(false);

@@ -50,6 +50,8 @@ export interface BoilerRoom {
   playing(): SetInfo | null;
   /** ¿Está sonando? */
   isPlaying(): boolean;
+  /** Prende el sonido del set. Hay que llamarlo adentro del primer click (PRESS START): en iPhone, después ya no deja. */
+  unlockSound(): void;
   /** Pausa o reanuda el set. */
   toggle(): void;
   /** Pasa al set siguiente (1) o al anterior (-1) de la lista. */
@@ -135,8 +137,6 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
 
   /** Arriba de 150 BPM (drum and bass) se baila a medio tiempo, si no es un flipper. */
   const danceBpmOf = (b: number) => (b > 150 ? b / 2 : b);
-  /** El set que espera al primer click (solo donde no se puede manejar el volumen). */
-  let pendingPlay: (() => void) | null = null;
 
   // --- Cámara ----------------------------------------------------------------------------
   let mode: BoilerMode = 'afuera';
@@ -157,7 +157,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let welcome = 'ESTAS. PASA.';
   /** El creador está abierto en la puerta: la cámara se acerca al raro que se está armando (0–1). */
   let dressing = false, dressK = 0, doorSpin: number | null = null;
-  // En iPhone el volumen del player no se puede manejar: ahí el set arranca al apretar, a volumen normal.
+  // En iPhone el volumen del player no se puede manejar: ahí el set suena a volumen normal desde que se aprieta.
   const fixedVolume = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
   /** Cuánto se escucha el set desde la vereda (0–1). El audio de YouTube no se puede filtrar: "de afuera" es bajito, con el ambiente de la calle encima. */
   const OUTSIDE = 0.12;
@@ -411,10 +411,6 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       ask = skip ? null : (question ?? null);
       // Este es el primer click: recién ahora el navegador deja sonar.
       tele.enableSound();
-      if (pendingPlay) {
-        pendingPlay();
-        pendingPlay = null;
-      }
       if (skip) {
         entering = ENTER_SECONDS;
         return Promise.resolve();
@@ -441,10 +437,9 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       current = set;
       bpm = set.bpm;
       room.onNowPlaying?.(set);
-      // En iPhone no conviene arrancarlo mudo antes del click (después no deja darle sonido): espera a que se entre.
-      if (fixedVolume && mode === 'afuera' && entering < 0) pendingPlay = () => void tele.play(set.id);
-      else void tele.play(set.id);
+      void tele.play(set.id);
     },
+    unlockSound: () => tele.enableSound(),
     isPlaying: () => tele.playing,
     playing: () => current,
     drawOverlay(ctx, w, h, t) {

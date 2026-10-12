@@ -4,9 +4,10 @@ import { DR, type PSXStage, drawPressStart, outlined, sfx, titleUnit, unlockAudi
 /**
  * Pantalla de entrada: PRESS START titilando sobre la vereda del boliche.
  * El click (o Enter / Espacio / tocar la pantalla) desbloquea el audio del navegador,
- * que es lo que después deja sonar el set. Resuelve cuando el visitante entra.
+ * que es lo que después deja sonar el set (`onPress` corre adentro de ese mismo click).
+ * Resuelve cuando el visitante entra.
  */
-export function showStartScreen(stage: PSXStage): Promise<void> {
+export function showStartScreen(stage: PSXStage, onPress?: () => void): Promise<void> {
   return new Promise((resolve) => {
     const button = document.createElement('button');
     button.className = 'press-start';
@@ -29,6 +30,8 @@ export function showStartScreen(stage: PSXStage): Promise<void> {
     const press = () => {
       if (pressedAt >= 0) return;
       unlockAudio();
+      // Dentro del mismo toque: en iPhone el sonido del set solo se puede prender desde acá.
+      onPress?.();
       sfx.start();
       window.removeEventListener('keydown', onKey);
       button.remove();
