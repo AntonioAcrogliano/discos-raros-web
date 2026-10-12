@@ -24,6 +24,9 @@ async function main() {
   void makeLogoCanvas(160).then(setLogoSprite);
   await fontsReady();
   stage.start();
+  // El último set se pone apenas llega la lista, en silencio (el navegador no deja otra cosa
+  // antes del primer click): así al apretar PRESS START ya se lo escucha desde la vereda.
+  void sets.then((list) => list[0] && room.play(list[0], list));
 
   // Solo en desarrollo: ?autostart saltea el PRESS START (para sacar capturas automáticas).
   if (import.meta.env.DEV && location.search.includes('autostart')) setTimeout(() => document.querySelector<HTMLElement>('.press-start')?.click(), 300);
@@ -55,8 +58,10 @@ async function main() {
   };
   void pista.then((d) => d && setPista(d));
   contador(0);
-  // El último set arranca solo (el click de PRESS START es lo que habilita el sonido).
-  void sets.then((list) => list[0] && room.play(list[0], list));
+  // El set ya puede estar puesto desde antes de entrar: se actualiza el cartel.
+  const now = room.playing();
+  if (now) room.onNowPlaying(now);
+  room.onPlayState(room.isPlaying());
 
   /** Entra a un juego (el código se baja recién acá) y devuelve cómo salir. */
   const openGame = (load: () => Promise<{ stop(): void }>) => () => {

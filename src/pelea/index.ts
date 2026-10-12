@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { loadGlbRig } from '../characters/glbRig';
 import { type Rig, buildBoxRig } from '../characters/rig';
 import type { BoilerRoom } from '../scenes/boiler';
+import { PATIO } from '../scenes/boiler/afuera';
 import { DISCOS_COLORS, RAROS_COLORS } from '../scenes/boiler/djs';
 import { DR, type PSXMaterial, type PSXStage, blip, box, fitSize, makePSXMaterial, makeRecordTexture, outlined, titleUnit } from '../style-kit';
 import { type Control, PauseMenu, type SelectView, banner, dim, drawSelect, hudTouch, resultBox, selectClicks, topBand } from '../juegos/hud';
@@ -12,7 +13,7 @@ import { ARENA_HALF, ATTACKS, type Attack, type AttackName, Fighter, MAX_HP, NO_
 import { PlayerInput } from './input';
 
 /**
- * DISCOS VS RAROS: pelea 1 contra la CPU, estilo Tekken 1, en la pista del boiler room
+ * DISCOS VS RAROS: pelea 1 contra la CPU, estilo Tekken 1, en el patio del boliche
  * (la gente y la tele quedan de fondo). Al mejor de 3 rounds de 60 segundos.
  */
 
@@ -111,6 +112,8 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     f.rig.foreR.add(mug);
     return mug;
   });
+  // Se juega en el patio: todo el juego está armado alrededor del origen y se muda entero.
+  group.position.set(PATIO.x, 0, PATIO.gameZ - ARENA_Z);
   room.scene.add(group);
 
   const input = new PlayerInput();
@@ -426,8 +429,8 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
     const air = Math.max(a.y, b.y);
     camPos.lerp(new THREE.Vector3(mid * 0.85 + Math.sin(t * 0.3) * 0.25, (select ? 1.35 : 1.5) + air * 0.4, ARENA_Z + (select ? 3.4 : 2.9 + gap * 0.5) + air * 0.9), k);
     camTarget.lerp(new THREE.Vector3(mid, 1.1 + air * 0.4, ARENA_Z), k);
-    stage.camera.position.set(camPos.x + sx, camPos.y + sy, camPos.z);
-    stage.camera.lookAt(camTarget);
+    stage.camera.position.set(camPos.x + sx, camPos.y + sy, camPos.z).add(group.position);
+    stage.camera.lookAt(v.copy(camTarget).add(group.position));
     if (stage.camera.fov !== 46) {
       stage.camera.fov = 46;
       stage.camera.updateProjectionMatrix();
@@ -436,7 +439,7 @@ export async function startPelea(stage: PSXStage, room: BoilerRoom, onExit: () =
 
   const v = new THREE.Vector3();
   /** Dónde cae en la pantalla (0–1 a lo ancho) un punto de la pista. */
-  const screenX = (x: number) => (v.set(x, 1, ARENA_Z).project(stage.camera).x + 1) / 2;
+  const screenX = (x: number) => (v.set(x, 1, ARENA_Z).add(group.position).project(stage.camera).x + 1) / 2;
 
   const selectView = (): SelectView => ({
     title: 'DISCOS VS RAROS',

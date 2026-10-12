@@ -17,6 +17,7 @@ interface YTPlayer {
   playVideo(): void;
   pauseVideo(): void;
   setVolume(v: number): void;
+  unMute(): void;
   getPlayerState(): number;
 }
 interface YTNamespace {
@@ -89,6 +90,20 @@ export class Tele {
     if (this.object.visible) this.css.render(this.stage.scene, this.stage.camera);
   }
 
+  /**
+   * Hasta el primer click el navegador solo deja reproducir en silencio: el set arranca mudo
+   * (así ya está cargado y andando) y con enableSound() se le da sonido.
+   */
+  private sound = false;
+  enableSound() {
+    if (this.sound) return;
+    this.sound = true;
+    if (!this.player) return;
+    this.player.unMute();
+    this.player.setVolume(Math.round(this.vol * 100));
+    this.player.playVideo();
+  }
+
   private vol = 1;
   /** Volumen del set (0–1): bajito desde afuera y en el patio. En iPhone no hace nada: ahí manda el botón del teléfono. */
   get volume() {
@@ -137,11 +152,12 @@ export class Tele {
       width: String(PX_W),
       height: String(PX_H),
       videoId: this.pending,
-      playerVars: { autoplay: 1, playsinline: 1, rel: 0 },
+      playerVars: { autoplay: 1, playsinline: 1, rel: 0, mute: this.sound ? 0 : 1 },
       events: {
         onReady: (e: { target: YTPlayer }) => {
           this.player = e.target;
           e.target.setVolume(Math.round(this.vol * 100));
+          if (this.sound) e.target.unMute();
           if (this.pending && this.pending !== videoId) e.target.loadVideoById(this.pending);
           else e.target.playVideo();
           this.pending = null;

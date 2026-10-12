@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type Look, type LookView, type Raro, type SetInfo, validLook } from '../../../shared/look';
 import type { PistaData } from '../../api';
-import { DR, type PSXStage, audioLive, muffled, outlined, psxUniforms, titleUnit } from '../../style-kit';
+import { DR, type PSXStage, outlined, psxUniforms, titleUnit } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
 import { CLUB, buildClub } from './club';
@@ -32,8 +32,8 @@ export interface BoilerRoom {
   /** 'creador' acerca la cámara al personaje del visitante y esconde la cabina; 'pelea' saca a los DJs de la cabina. */
   setMode(mode: BoilerMode): void;
   /**
-   * La entrada: desde la vereda se camina a la puerta (se escucha el bombo a través de la
-   * pared), se abren las hojas, el sonido se aclara y la cámara termina en la pista.
+   * La entrada: desde la vereda se camina a la puerta (el set se escucha bajito, de afuera),
+   * se abren las hojas, el sonido sube y la cámara termina en la pista.
    * @param skip entrar de una, sin la animación.
    */
   enter(skip?: boolean): Promise<void>;
@@ -44,6 +44,8 @@ export interface BoilerRoom {
   /** Pone un set en la tele y la pista baila a su BPM. */
   play(set: SetInfo, playlist?: SetInfo[]): void;
   playing(): SetInfo | null;
+  /** ¿Está sonando? */
+  isPlaying(): boolean;
   /** Pausa o reanuda el set. */
   toggle(): void;
   /** Pasa al set siguiente (1) o al anterior (-1) de la lista. */
@@ -129,7 +131,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
 
   /** Arriba de 150 BPM (drum and bass) se baila a medio tiempo, si no es un flipper. */
   const danceBpmOf = (b: number) => (b > 150 ? b / 2 : b);
-  /** El set que espera a que se abra la puerta (solo donde no se puede manejar el volumen). */
+  /** El set que espera al primer click (solo donde no se puede manejar el volumen). */
   let pendingPlay: (() => void) | null = null;
 
   // --- Cámara ----------------------------------------------------------------------------
@@ -141,12 +143,14 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   /** Segundos desde que se apretó entrar (-1 = todavía en la vereda). */
   let entering = -1;
   let entered: (() => void) | null = null;
-  const ENTER_SECONDS = 4.4;
-  // En iPhone el volumen del player no se puede manejar: el set arranca cuando se abre la puerta.
+  const ENTER_SECONDS = 5;
+  // En iPhone el volumen del player no se puede manejar: ahí el set arranca al apretar, a volumen normal.
   const fixedVolume = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
-  /** Volumen del set al que hay que llegar (0–1). Afuera no se escucha: suena el bombo de la calle. */
-  let wantVolume = 0;
-  tele.volume = fixedVolume ? 1 : 0;
+  /** Cuánto se escucha el set desde la vereda (0–1). El audio de YouTube no se puede filtrar: "de afuera" es bajito. */
+  const OUTSIDE = 0.12;
+  /** Volumen del set al que hay que llegar (0–1). */
+  let wantVolume = OUTSIDE;
+  tele.volume = fixedVolume ? 1 : OUTSIDE;
   const ease = (x: number) => {
     const k = Math.max(0, Math.min(1, x));
     return k * k * (3 - 2 * k);
@@ -186,17 +190,12 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     let wantFov: number;
     if (mode === 'afuera') {
       // En la vereda la cámara no persigue nada: va por un camino fijo hasta adentro.
-      // Si el navegador ya deja sonar, el bombo se escucha desde antes de apretar nada.
-      if (!muffled.playing && audioLive()) {
-        muffled.bpm = bpm;
-        muffled.start(entering < 0 ? 0.8 : 1);
-      }
       const e = Math.max(0, entering);
       if (entering >= 0) entering += dt;
       const back = portrait ? 11.5 : 8.2, z = PUERTA.z;
       // 1) Caminar hasta la puerta. 2) Se abren las hojas. 3) Entrar hasta el lugar de siempre.
-      const walk = ease(e / 2.1), open = ease((e - 1.5) / 1.0), inside = ease((e - 2.4) / 1.9);
-      const moving = e > 0 && e < 4.1 ? 1 : 0;
+      const walk = ease(e / 2.5), open = ease((e - 2.0) / 1.0), inside = ease((e - 2.9) / 1.9);
+      const moving = e > 0 && e < 4.6 ? 1 : 0;
       a0.set(Math.sin(t * 0.2) * 0.3 * (1 - walk), 1.75 + Math.abs(Math.sin(e * 6.5)) * 0.045 * moving, z + back + (2.7 - back) * walk);
       a1.set(0, portrait ? 2.7 : 2.2, portrait ? 9.6 : 6.7);
       camPos.lerpVectors(a0, a1, inside);
@@ -204,14 +203,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       a1.set(0, portrait ? 2.35 : 1.75, 0.4);
       camTarget.lerpVectors(a0, a1, inside);
       afuera.setDoors(open);
-      // Al abrirse la puerta el set sube y el bombo de la calle se va.
-      const clear = ease((e - 1.5) / 1.6);
-      wantVolume = clear;
-      muffled.level((entering < 0 ? 0.8 : 1) * (1 - clear));
-      if (fixedVolume && clear > 0 && pendingPlay) {
-        pendingPlay();
-        pendingPlay = null;
-      }
+      // Al abrirse la puerta el set pasa de escucharse de afuera a sonar a pleno.
+      wantVolume = OUTSIDE + (1 - OUTSIDE) * ease((e - 2.0) / 1.6);
       fov = portrait ? 66 : 52;
       stage.camera.position.copy(camPos);
       stage.camera.lookAt(camTarget);
@@ -220,7 +213,6 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         stage.camera.updateProjectionMatrix();
       }
       if (e >= ENTER_SECONDS) {
-        muffled.stop();
         room.setMode('pista');
         entered?.();
         entered = null;
@@ -228,8 +220,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       return;
     }
     if (mode === 'patio') {
-      wantPos.set(PATIO.x + Math.sin(t * 0.13) * 0.5, portrait ? 2.6 : 2.0, PATIO.z + (portrait ? 9.5 : 4.4));
-      wantTarget.set(PATIO.x, portrait ? 1.9 : 1.45, PATIO.z - PATIO.halfD);
+      wantPos.set(PATIO.x + Math.sin(t * 0.13) * 0.5, portrait ? 2.6 : 2.0, PATIO.back + (portrait ? 14.5 : 9.4));
+      wantTarget.set(PATIO.x, portrait ? 1.9 : 1.45, PATIO.back);
       wantFov = portrait ? 66 : 54;
     } else if (mode === 'creador') {
       // El menú va a la izquierda (o abajo en el celular): el personaje queda del otro lado.
@@ -323,9 +315,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       djGroup.visible = m === 'pista' || m === 'afuera';
       tele.interactive = m === 'pista';
       afuera.group.visible = m === 'afuera';
-      patio.group.visible = m === 'patio';
+      // Los juegos ('pelea') se juegan en el patio.
+      patio.group.visible = m === 'patio' || m === 'pelea';
       // En el patio la música llega más baja.
-      if (m !== 'afuera') wantVolume = m === 'patio' ? 0.4 : 1;
+      if (m !== 'afuera') wantVolume = m === 'patio' || m === 'pelea' ? 0.4 : 1;
       crowd.setSolo(m === 'creador');
       view = 'todo';
       crowd.spin = null;
@@ -338,6 +331,12 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     },
     enter(skip) {
       if (mode !== 'afuera') return Promise.resolve();
+      // Este es el primer click: recién ahora el navegador deja sonar.
+      tele.enableSound();
+      if (pendingPlay) {
+        pendingPlay();
+        pendingPlay = null;
+      }
       if (skip) {
         entering = ENTER_SECONDS;
         return Promise.resolve();
@@ -351,12 +350,12 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       if (list) playlist = list;
       current = set;
       bpm = set.bpm;
-      muffled.bpm = danceBpmOf(bpm);
       room.onNowPlaying?.(set);
-      // Donde el volumen no se puede manejar, el set espera a que se abra la puerta.
-      if (fixedVolume && mode === 'afuera' && wantVolume === 0) pendingPlay = () => void tele.play(set.id);
+      // En iPhone no conviene arrancarlo mudo antes del click (después no deja darle sonido): espera a que se entre.
+      if (fixedVolume && mode === 'afuera' && entering < 0) pendingPlay = () => void tele.play(set.id);
       else void tele.play(set.id);
     },
+    isPlaying: () => tele.playing,
     playing: () => current,
     drawOverlay(ctx, w, h, t) {
       if (mode === 'pelea') return room.takeover?.drawOverlay(ctx, w, h, t);

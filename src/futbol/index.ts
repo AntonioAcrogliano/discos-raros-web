@@ -5,6 +5,7 @@ import { PadEdges } from '../juegos/gamepad';
 import { type Control, PauseMenu, type SelectView, banner, dim, drawSelect, hudTouch, resultBox, selectClicks, topBand } from '../juegos/hud';
 import { mountTouchPad, onTouchUi } from '../juegos/touch';
 import type { BoilerRoom } from '../scenes/boiler';
+import { PATIO } from '../scenes/boiler/afuera';
 import { DISCOS_COLORS, RAROS_COLORS } from '../scenes/boiler/djs';
 import { isTouch } from '../ui/dom';
 import { DR, DR_CYCLE, type PSXMaterial, type PSXStage, blip, box, fitSize, makeCanvas, makeCheckerTexture, makePSXMaterial, makeRecordTexture, outlined, titleUnit, toPSXTexture } from '../style-kit';
@@ -12,7 +13,7 @@ import { BALL_R, type Controls, FIELD, KICK_SECONDS, MATCH_SECONDS, NO_CONTROLS,
 
 /**
  * CABEZAZOS: fútbol de cabezones, Discos contra Raros, 1 contra la CPU. Se juega de costado
- * en la pista del boiler room, con la gente y la tele de fondo. La física vive en game.ts.
+ * en el patio del boliche, con los fichines y las guirnaldas de fondo. La física vive en game.ts.
  */
 
 const ARENA_Z = 4.35;
@@ -204,6 +205,8 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
   // Línea del medio y de los arcos, pintadas en la pista.
   const line = makePSXMaterial({ color: DR.crema, lit: false });
   for (const x of [0, -FIELD.half, FIELD.half]) group.add(box(0.06, 0.012, DEPTH + 0.6, line, x, 0.012, ARENA_Z));
+  // Se juega en el patio: todo el juego está armado alrededor del origen y se muda entero.
+  group.position.set(PATIO.x, 0, PATIO.gameZ - ARENA_Z);
   room.scene.add(group);
 
   const input = new Pad();
@@ -381,8 +384,8 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
     camDist += (want - camDist) * Math.min(1, dt * 4);
     camY += ((select ? 0.95 : 1.6) - camY) * Math.min(1, dt * 4);
     const cx = select ? 0 : ball.x * 0.08;
-    stage.camera.position.set(cx + sx, camY + 0.35, ARENA_Z + camDist);
-    stage.camera.lookAt(cx, camY, ARENA_Z);
+    stage.camera.position.set(cx + sx, camY + 0.35, ARENA_Z + camDist).add(group.position);
+    stage.camera.lookAt(v.set(cx, camY, ARENA_Z).add(group.position));
     if (stage.camera.fov !== 46) {
       stage.camera.fov = 46;
       stage.camera.updateProjectionMatrix();
@@ -390,7 +393,7 @@ export async function startFutbol(stage: PSXStage, room: BoilerRoom, onExit: () 
   };
 
   const v = new THREE.Vector3();
-  const screenX = (x: number) => (v.set(x, 1, ARENA_Z).project(stage.camera).x + 1) / 2;
+  const screenX = (x: number) => (v.set(x, 1, ARENA_Z).add(group.position).project(stage.camera).x + 1) / 2;
 
   const selectView = (): SelectView => ({
     title: 'CABEZAZOS',
