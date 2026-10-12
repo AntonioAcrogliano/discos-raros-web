@@ -143,7 +143,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   /** Segundos desde que se apretó entrar (-1 = todavía en la vereda). */
   let entering = -1;
   let entered: (() => void) | null = null;
-  const ENTER_SECONDS = 5;
+  /** La entrada: llegar (0–1.7), el patova mira y revisa la lista (hasta 3.3), abre (3.3–4.3) y se entra. */
+  const ENTER_SECONDS = 6.6, DOOR_AT = 3.3;
   // En iPhone el volumen del player no se puede manejar: ahí el set arranca al apretar, a volumen normal.
   const fixedVolume = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
   /** Cuánto se escucha el set desde la vereda (0–1). El audio de YouTube no se puede filtrar: "de afuera" es bajito, con el ambiente de la calle encima. */
@@ -196,19 +197,27 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       // Parado en la calle, del otro lado del carril por donde pasan los autos.
       const back = portrait ? 12.5 : 9.8, z = PUERTA.z;
       afuera.traffic = entering < 0;
-      // 1) Caminar hasta la puerta. 2) Se abren las hojas. 3) Entrar hasta el lugar de siempre.
-      const walk = ease(e / 2.5), open = ease((e - 2.0) / 1.0), inside = ease((e - 2.9) / 1.9);
-      const moving = e > 0 && e < 4.6 ? 1 : 0;
-      a0.set(Math.sin(t * 0.2) * 0.3 * (1 - walk), 1.75 + Math.abs(Math.sin(e * 6.5)) * 0.045 * moving, z + back + (2.7 - back) * walk);
+      // 1) Caminar hasta la puerta. 2) El patova te mira, revisa la lista y te abre.
+      // 3) Entrar hasta el lugar de siempre.
+      const walk = ease(e / 1.9), open = ease((e - DOOR_AT) / 1.0), inside = ease((e - DOOR_AT - 0.8) / 2.1);
+      const moving = (e > 0 && e < 1.8) || (e > DOOR_AT + 0.8 && e < ENTER_SECONDS - 0.4) ? 1 : 0;
+      // Frena a unos pasos de la puerta, con el patova en cuadro (en vertical entra menos a lo ancho).
+      const stop = portrait ? 6.6 : 4;
+      a0.set(Math.sin(t * 0.2) * 0.3 * (1 - walk), 1.75 + Math.abs(Math.sin(e * 6.5)) * 0.045 * moving, z + back + (stop - back) * walk);
       a1.set(0, portrait ? 2.7 : 2.2, portrait ? 9.6 : 6.7);
       camPos.lerpVectors(a0, a1, inside);
-      a0.set(0, portrait ? 3.4 : 2.6 - 0.5 * walk, z);
+      // Mientras revisa la lista, la mirada se va un poco hacia él.
+      const chat = ease((e - 1.2) / 0.7) * (1 - ease((e - DOOR_AT - 0.2) / 0.7));
+      a0.set((portrait ? 1.5 : 1.25) * chat, (portrait ? 3.4 : 2.6 - 0.5 * walk) * (1 - chat) + 1.75 * chat, z);
       a1.set(0, portrait ? 2.35 : 1.75, 0.4);
       camTarget.lerpVectors(a0, a1, inside);
       afuera.setDoors(open);
+      // El patova: te mira cuando llegás, baja la vista a la lista, te vuelve a mirar y abre.
+      const list = ease((e - 1.5) / 0.5) * (1 - ease((e - DOOR_AT + 0.45) / 0.35));
+      afuera.bouncer(ease((e - 0.4) / 0.8) * (1 - ease((e - DOOR_AT - 0.9) / 0.6)), list, ease((e - DOOR_AT + 0.1) / 0.6) * (1 - ease((e - DOOR_AT - 1.6) / 0.8)), camPos.x, camPos.z);
       // Al abrirse la puerta el set pasa de escucharse bajito a sonar a pleno, y el ambiente
       // de la vereda (la calle, la gente de la fila) queda atrás.
-      const clear = ease((e - 2.0) / 1.6);
+      const clear = ease((e - DOOR_AT) / 1.6);
       wantVolume = OUTSIDE + (1 - OUTSIDE) * clear;
       // Si el navegador ya deja sonar, la vereda se escucha desde antes de apretar nada.
       if (!street.playing && e < ENTER_SECONDS - 1 && audioLive()) street.start(0.6);
@@ -353,6 +362,17 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       return new Promise((resolve) => {
         entered = resolve;
         if (entering < 0) entering = 0;
+        // Un segundo toque (o tecla) saltea la espera de la lista: la puerta se abre ya.
+        const hurry = () => {
+          if (mode !== 'afuera') return stopHurry();
+          if (entering > 0.4 && entering < DOOR_AT) entering = DOOR_AT;
+        };
+        const stopHurry = () => {
+          window.removeEventListener('pointerdown', hurry);
+          window.removeEventListener('keydown', hurry);
+        };
+        window.addEventListener('pointerdown', hurry);
+        window.addEventListener('keydown', hurry);
       });
     },
     play(set, list) {
@@ -370,6 +390,12 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       if (mode === 'pelea') return room.takeover?.drawOverlay(ctx, w, h, t);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      if (mode === 'afuera' && entering > 1.6 && entering < DOOR_AT + 1.2) {
+        // Lo que dice el patova, abajo, como subtítulo.
+        const says = entering < DOOR_AT - 0.5 ? 'A VER SI ESTAS EN LA LISTA...' : 'ESTAS. PASA.';
+        const unit = titleUnit(w, h);
+        outlined(ctx, says, w / 2, Math.round(h * 0.84), Math.min(unit, Math.floor((w * 0.9) / says.length)), entering < DOOR_AT - 0.5 ? DR.crema : DR.amarillo);
+      }
       if (mode === 'pista') for (const i of showcase) label(ctx, w, h, i, DR.crema, false, t);
       if (hasFirst && (mode === 'pista' || mode === 'creador')) label(ctx, w, h, 0, DR.amarillo, mode === 'pista', t);
     },

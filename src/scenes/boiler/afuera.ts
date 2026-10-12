@@ -34,6 +34,11 @@ export interface Afuera {
   setDoors(open: number): void;
   /** ¿Siguen pasando autos? Se corta mientras el visitante cruza la calle para entrar. */
   traffic: boolean;
+  /**
+   * Lo que hace el patova cuando alguien llega (cada valor de 0 a 1): mirarlo, revisar la
+   * lista y estirarse a abrir la puerta. `camX`/`camZ` es dónde está parado el que llega.
+   */
+  bouncer(look: number, list: number, reach: number, camX: number, camZ: number): void;
   update(beats: number, energy: number, t: number): void;
 }
 
@@ -294,16 +299,34 @@ export function buildAfuera(): Afuera {
   const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
   for (let i = 0; i < 26; i++) group.add(box(0.07, 0.07, 0.02, star, (r() - 0.5) * 30, H + 0.6 + r() * 5, z - 2));
 
-  // El patovica: grandote, de negro, con los brazos cruzados. Cabecea con el bombo.
+  // El patovica: grandote, de negro, con los brazos cruzados. Cabecea con el bombo, y cuando
+  // llega alguien lo mira, revisa la lista y le abre la puerta.
   const pato = buildPatova();
-  pato.root.position.set(2.2, 0.1, z + 0.8);
-  pato.root.rotation.y = -0.22;
+  const PATO = { x: 2.2, z: z + 0.8, yaw: -0.22 };
+  pato.root.position.set(PATO.x, 0.1, PATO.z);
   group.add(pato.root);
+  const act = { look: 0, list: 0, reach: 0, camX: 0, camZ: z + 9 };
   updaters.push((beats, energy, t) => {
-    pato.head.rotation.x = 0.04 + 0.13 * Math.max(0, Math.sin(TAU * beats)) * energy;
-    pato.head.rotation.y = 0.4 * Math.sin(t * 0.35);
+    const { look, list, reach } = act;
+    const busy = Math.max(list, reach) > 0.01;
+    // Parado mira para los costados; cuando llega alguien, a él; con la lista, a la lista.
+    const yaw = PATO.yaw - 0.5 * reach;
+    pato.root.rotation.y = yaw;
+    const toCam = Math.atan2(act.camX - PATO.x, act.camZ - PATO.z) - yaw;
+    const idleY = 0.4 * Math.sin(t * 0.35);
+    const nod = 0.13 * Math.max(0, Math.sin(TAU * beats)) * energy * (1 - Math.max(look, list));
+    pato.head.rotation.y = (idleY + (toCam - idleY) * look) * (1 - list) + 0.3 * list;
+    pato.head.rotation.x = 0.04 + nod + 0.5 * list + 0.03 * list * Math.sin(t * 9);
     // Respira: el pecho y los brazos suben apenas.
     pato.chest.position.y = Math.sin(t * 1.6) * 0.012;
+    // Brazos: cruzados mientras espera; sueltos para la lista (izquierdo) y la puerta (derecho).
+    pato.crossed.visible = !busy;
+    pato.armL.shoulder.visible = pato.armR.shoulder.visible = busy;
+    // La lista va adelante del pecho, no al costado: el brazo se cierra hacia adentro.
+    pato.armL.shoulder.rotation.set(-0.7 * list, 0, 0.06 - 0.5 * list);
+    pato.armL.elbow.rotation.set(-0.1 - 1.35 * list, 0, 0.25 * list);
+    pato.armR.shoulder.rotation.set(-0.35 * reach, 0, -0.06 - 1.2 * reach);
+    pato.armR.elbow.rotation.set(-0.15 - 0.25 * reach, 0, 0);
   });
 
   return {
@@ -313,6 +336,9 @@ export function buildAfuera(): Afuera {
     },
     set traffic(on: boolean) {
       traffic = on;
+    },
+    bouncer(look, list, reach, camX, camZ) {
+      Object.assign(act, { look, list, reach, camX, camZ });
     },
     setDoors(open) {
       hinges[0].rotation.y = -open * 1.85;
@@ -364,14 +390,37 @@ function buildPatova() {
   for (const s of [-1, 1]) part(chest, 0.26, 0.26, 0.34, black, s * 0.52, 1.7, 0);
   // El cartel de la espalda (se ve cuando la cámara le pasa por al lado al entrar).
   part(chest, 0.5, 0.09, 0.02, white, 0, 1.6, -0.225);
-  // Brazos: del hombro bajan hacia adelante hasta el codo…
-  for (const s of [-1, 1]) part(chest, 0.23, 0.48, 0.25, black, s * 0.53, 1.47, 0.1, -0.5, 0, s * 0.1);
+  // Los brazos cruzados van aparte: se esconden cuando los descruza para atender a alguien.
+  const crossed = new THREE.Group();
+  chest.add(crossed);
+  // Del hombro bajan hacia adelante hasta el codo…
+  for (const s of [-1, 1]) part(crossed, 0.23, 0.48, 0.25, black, s * 0.53, 1.47, 0.1, -0.5, 0, s * 0.1);
   // …y los antebrazos se cruzan por delante del pecho, uno arriba del otro.
-  part(chest, 0.66, 0.19, 0.2, skin, 0.1, 1.39, 0.33, 0, 0, 0.2);
-  part(chest, 0.66, 0.19, 0.2, skin, -0.1, 1.31, 0.4, 0, 0, -0.16);
+  part(crossed, 0.66, 0.19, 0.2, skin, 0.1, 1.39, 0.33, 0, 0, 0.2);
+  part(crossed, 0.66, 0.19, 0.2, skin, -0.1, 1.31, 0.4, 0, 0, -0.16);
   // Las manos: una asoma sobre el brazo de enfrente y la otra queda abrazándolo por abajo.
-  part(chest, 0.15, 0.17, 0.16, skinDark, 0.4, 1.47, 0.36, 0, 0, 0.2);
-  part(chest, 0.15, 0.17, 0.16, skinDark, -0.42, 1.26, 0.42, 0, 0, -0.16);
+  part(crossed, 0.15, 0.17, 0.16, skinDark, 0.4, 1.47, 0.36, 0, 0, 0.2);
+  part(crossed, 0.15, 0.17, 0.16, skinDark, -0.42, 1.26, 0.42, 0, 0, -0.16);
+  // Los brazos sueltos, con hombro y codo: el izquierdo sostiene la lista, el derecho abre la puerta.
+  const limb = (s: 1 | -1) => {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(s * 0.54, 1.74, 0);
+    shoulder.visible = false;
+    chest.add(shoulder);
+    part(shoulder, 0.23, 0.46, 0.25, black, 0, -0.2, 0);
+    const elbow = new THREE.Group();
+    elbow.position.set(0, -0.42, 0);
+    shoulder.add(elbow);
+    part(elbow, 0.19, 0.4, 0.2, skin, 0, -0.2, 0);
+    part(elbow, 0.16, 0.16, 0.17, skinDark, 0, -0.46, 0);
+    return { shoulder, elbow };
+  };
+  const armL = limb(1), armR = limb(-1);
+  // La lista: una tabla con la hoja y los renglones, del lado de la cara cuando levanta el brazo.
+  part(armL.elbow, 0.27, 0.36, 0.025, makePSXMaterial({ color: '#8a5a2a' }), 0, -0.52, 0.1);
+  part(armL.elbow, 0.23, 0.3, 0.01, white, 0, -0.53, 0.118);
+  part(armL.elbow, 0.1, 0.035, 0.03, makePSXMaterial({ color: '#8f97a8' }), 0, -0.36, 0.115);
+  for (let i = 0; i < 5; i++) part(armL.elbow, 0.17, 0.014, 0.004, dark, -0.01, -0.44 - i * 0.045, 0.125);
   // Cuello de toro.
   part(chest, 0.3, 0.14, 0.28, skin, 0, 1.87, 0.01);
 
@@ -392,7 +441,7 @@ function buildPatova() {
   part(chest, 0.015, 0.2, 0.015, white, 0.2, 1.97, -0.02);
 
   root.scale.setScalar(1.06);
-  return { root, chest, head };
+  return { root, chest, head, crossed, armL, armR };
 }
 
 // --- Patio ---------------------------------------------------------------------------------
