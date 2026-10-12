@@ -14,81 +14,120 @@ export function unlockAudio() {
   }
 }
 
-/**
- * El set escuchado desde la vereda, de verdad tapado: un archivo de audio propio (los primeros
- * minutos del set, en public/audio/) pasado por un filtro que deja solo los graves. Al abrirse
- * la puerta el filtro se abre y se cruza con el player de YouTube, que no se puede filtrar.
- */
-export class DoorAudio {
-  private el: HTMLAudioElement;
-  private filter: BiquadFilterNode | null = null;
-  private gain: GainNode | null = null;
-
-  /** @param synced el archivo es el principio del mismo set que suena en YouTube. */
-  private constructor(url: string, readonly synced: boolean) {
-    this.el = new Audio(url);
-    this.el.preload = 'auto';
+/** ¿Ya puede sonar? Algunos navegadores lo permiten sin esperar el primer click. */
+export function audioLive() {
+  try {
+    actx ??= new AudioContext();
+  } catch {
+    return false;
   }
+  return actx.state === 'running';
+}
 
-  /** Busca el archivo del set (por número) o, si no está, uno genérico. null = no hay ninguno. */
-  static async find(setNumber: string | number): Promise<DoorAudio | null> {
-    const base = import.meta.env.BASE_URL;
-    for (const [url, synced] of [[`${base}audio/${setNumber}.mp3`, true], [`${base}audio/afuera.mp3`, false]] as const) {
+/**
+ * El ambiente de la vereda de un boliche, sintetizado (sin archivos): el fondo de la calle,
+ * los graves que atraviesan la pared, el murmullo de la gente de la fila y, cada tanto, un auto
+ * que pasa. No lleva ritmo a propósito: arriba suena, bajito, el set de verdad.
+ */
+export const street = {
+  out: null as GainNode | null,
+  timers: [] as number[],
+  sources: [] as AudioScheduledSourceNode[],
+  get playing() {
+    return this.out !== null;
+  },
+  start(level = 1) {
+    const ctx = actx;
+    if (!ctx || this.out) return;
+    const out = (this.out = ctx.createGain());
+    out.gain.value = 0;
+    out.gain.setTargetAtTime(level, ctx.currentTime, 0.25);
+    out.connect(ctx.destination);
+
+    // Ruido marrón (más graves que agudos) en un buffer que se repite: de ahí sale todo.
+    const len = ctx.sampleRate * 4;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+      d[i] = last * 3.5;
+    }
+    // Que el final empalme con el principio (si no, hace "clic" en cada vuelta).
+    for (let i = 0; i < 2000; i++) d[len - 1 - i] = d[len - 1 - i] * (i / 2000) + d[i] * (1 - i / 2000);
+    /** El ruido pasado por un filtro, a cierto volumen. Devuelve la perilla de volumen. */
+    const layer = (type: BiquadFilterType, freq: number, q: number, vol: number, to: AudioNode = out) => {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.playbackRate.value = 0.8 + Math.random() * 0.4;
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.value = vol;
+      src.connect(f).connect(g).connect(to);
+      src.start(0, Math.random() * 3);
+      this.sources.push(src);
+      return { gain: g.gain, filter: f };
+    };
+
+    // 1) La calle de noche: un fondo parejo, grave.
+    layer('lowpass', 320, 0.5, 0.5);
+    // 2) El boliche a través de la pared: solo graves, que suben y bajan despacio.
+    const wall = layer('bandpass', 62, 3, 1.6);
+    // 3) La gente de la fila hablando: tres bandas de la voz, cada una con su vaivén.
+    const voices = [layer('bandpass', 480, 2.5, 0), layer('bandpass', 1150, 3, 0), layer('bandpass', 2300, 3.5, 0)];
+    this.timers.push(
+      window.setInterval(() => {
+        const t = ctx.currentTime;
+        wall.gain.setTargetAtTime(1.1 + Math.random() * 1.1, t, 0.5);
+        voices.forEach((v, i) => v.gain.setTargetAtTime(Math.random() < 0.75 ? Math.random() * [0.5, 0.3, 0.14][i] : 0, t, 0.06));
+      }, 140),
+    );
+    // 4) Cada tanto pasa un auto: un soplido que crece, cruza de un lado al otro y se va.
+    const car = () => {
+      if (!this.out) return;
+      const t = ctx.currentTime, dur = 3.2 + Math.random() * 1.5;
+      const pan = ctx.createStereoPanner();
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      pan.pan.setValueAtTime(-dir, t);
+      pan.pan.linearRampToValueAtTime(dir, t + dur);
+      pan.connect(out);
+      const c = layer('bandpass', 260, 0.8, 0, pan);
+      c.gain.setValueAtTime(0.0001, t);
+      c.gain.exponentialRampToValueAtTime(0.9, t + dur * 0.5);
+      c.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      c.filter.frequency.setValueAtTime(220, t);
+      c.filter.frequency.linearRampToValueAtTime(620, t + dur * 0.5);
+      c.filter.frequency.linearRampToValueAtTime(200, t + dur);
+      this.timers.push(window.setTimeout(car, (6 + Math.random() * 7) * 1000));
+    };
+    this.timers.push(window.setTimeout(car, 2500));
+  },
+  /** Volumen (0–1), sin saltos. */
+  level(v: number) {
+    if (actx && this.out) this.out.gain.setTargetAtTime(v, actx.currentTime, 0.1);
+  },
+  stop() {
+    for (const t of this.timers) {
+      window.clearInterval(t);
+      window.clearTimeout(t);
+    }
+    this.timers = [];
+    for (const src of this.sources) {
       try {
-        const res = await fetch(url, { method: 'HEAD' });
-        // En desarrollo, una ruta que no existe devuelve la página (200): hay que mirar el tipo.
-        if (res.ok && (res.headers.get('content-type') ?? '').startsWith('audio')) return new DoorAudio(url, synced);
+        src.stop();
       } catch {
-        /* sin red: se sigue sin el efecto */
+        /* ya estaba frenada */
       }
     }
-    return null;
-  }
-
-  /** Cuánto dura el archivo (0 hasta que carga los datos). */
-  get duration() {
-    return Number.isFinite(this.el.duration) ? this.el.duration : 0;
-  }
-
-  /** Arranca tapado, desde `offset` segundos. Devuelve false si el navegador no lo dejó. */
-  start(offset: number) {
-    if (!actx) return false;
-    try {
-      this.filter = actx.createBiquadFilter();
-      this.filter.type = 'lowpass';
-      this.filter.Q.value = 0.7;
-      this.gain = actx.createGain();
-      actx.createMediaElementSource(this.el).connect(this.filter).connect(this.gain).connect(actx.destination);
-      this.open(0);
-      this.level(1);
-      this.el.currentTime = offset;
-      void this.el.play().catch(() => this.stop());
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /** Por dónde va (segundos). */
-  get time() {
-    return this.el.currentTime;
-  }
-
-  /** Qué tan abierta está la puerta: 0 = solo graves, 1 = se escucha todo. */
-  open(k: number) {
-    if (actx && this.filter) this.filter.frequency.setTargetAtTime(170 * 110 ** Math.max(0, Math.min(1, k)), actx.currentTime, 0.03);
-  }
-
-  level(v: number) {
-    if (actx && this.gain) this.gain.gain.setTargetAtTime(v, actx.currentTime, 0.03);
-  }
-
-  stop() {
-    this.el.pause();
-    this.gain?.disconnect();
-    this.gain = null;
-  }
-}
+    this.sources = [];
+    this.out?.disconnect();
+    this.out = null;
+  },
+};
 
 export function blip(freq: number, dur = 0.05, type: OscillatorType = 'square', vol = 0.05, delay = 0) {
   if (!actx) return;
