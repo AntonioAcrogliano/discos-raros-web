@@ -33,8 +33,11 @@ export interface Pose {
   kR: number;
 }
 
-/** No es un paso de baile: es la gente de la fila de afuera, parada mirando el celu. */
-export const EN_LA_FILA = 100;
+/**
+ * No son pasos de baile: es lo que hace la gente de la fila de afuera mientras espera.
+ * Van de 100 para arriba (cada uno a su tiempo, no al compás).
+ */
+export const EN_LA_FILA = 100, CHARLANDO = 101, FUMANDO = 102, ESPERANDO = 103;
 
 export const makePose = (): Pose => ({ hop: 0, yaw: 0, lean: 0, roll: 0, sway: 0, headRx: 0, headRy: 0, aLx: 0, aLz: 0, aRx: 0, aRz: 0, eL: 0, eR: 0, tL: 0, tR: 0, tLz: 0, tRz: 0, kL: 0, kR: 0 });
 
@@ -245,6 +248,54 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
       p.sway = 0.02 * Math.sin(f * 0.45);
       p.kL = 0.12 * Math.max(0, Math.sin(f * 0.45));
       p.tL = -0.06 * Math.max(0, Math.sin(f * 0.45));
+      break;
+    case CHARLANDO: {
+      // Habla de a ratos (gesticula con la derecha) y de a ratos escucha (asiente).
+      const talk = Math.max(0, Math.sin(f * 0.42)), listen = 1 - talk;
+      p.aRx = -0.35 - 0.45 * talk + 0.2 * talk * Math.sin(f * 2.3);
+      p.aRz = -0.15 - 0.25 * talk * Math.max(0, Math.sin(f * 1.7));
+      p.eR = -0.5 - 0.9 * talk + 0.35 * talk * Math.sin(f * 3.1);
+      // La izquierda en la cintura.
+      p.aLz = 0.55;
+      p.aLx = 0.15;
+      p.eL = -1.25;
+      p.headRx = 0.05 + 0.1 * listen * Math.max(0, Math.sin(f * 2.6));
+      p.headRy = 0.12 * Math.sin(f * 0.8);
+      p.lean = 0.05 * talk;
+      p.roll = 0.03 * Math.sin(f * 0.5);
+      p.sway = 0.02 * Math.sin(f * 0.5);
+      break;
+    }
+    case FUMANDO: {
+      // Cada tanto se lleva el pucho a la boca, pita, y larga el humo mirando para arriba.
+      const c = (((f * 0.17) % 1) + 1) % 1;
+      const bump = (a: number, b: number) => (c < a || c > b ? 0 : Math.sin(((c - a) / (b - a)) * Math.PI));
+      const drag = Math.min(1, bump(0, 0.26) * 1.6), out = bump(0.24, 0.5);
+      p.aRx = -0.12 - 0.95 * drag;
+      p.aRz = -0.08 + 0.1 * drag;
+      p.eR = -0.3 - 1.95 * drag;
+      p.headRx = 0.06 * drag - 0.22 * out;
+      p.headRy = 0.25 * Math.sin(f * 0.3);
+      // La otra mano en el bolsillo.
+      p.aLx = 0.12;
+      p.aLz = 0.16;
+      p.eL = -0.35;
+      p.roll = -0.04 + 0.02 * Math.sin(f * 0.4);
+      p.kR = 0.14;
+      p.tR = -0.07;
+      break;
+    }
+    case ESPERANDO:
+      // Manos en los bolsillos, mira para todos lados y golpetea el piso con un pie.
+      p.aLx = p.aRx = 0.14;
+      p.aLz = 0.2;
+      p.aRz = -0.2;
+      p.eL = p.eR = -0.45;
+      p.headRy = 0.55 * Math.sin(f * 0.37) + 0.15 * Math.sin(f * 1.3);
+      p.headRx = 0.05 * Math.sin(f * 0.6);
+      p.tR = -0.16 * Math.max(0, Math.sin(f * 4.4));
+      p.kR = 0.22 * Math.max(0, Math.sin(f * 4.4));
+      p.roll = 0.025 * Math.sin(f * 0.33);
       break;
     default: // saltito
       p.hop = hop01 * 0.14;

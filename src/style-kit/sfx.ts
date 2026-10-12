@@ -26,8 +26,8 @@ export function audioLive() {
 
 /**
  * El ambiente de la vereda de un boliche, sintetizado (sin archivos): el fondo de la calle,
- * los graves que atraviesan la pared, el murmullo de la gente de la fila y, cada tanto, un auto
- * que pasa. No lleva ritmo a propósito: arriba suena, bajito, el set de verdad.
+ * los graves que atraviesan la pared y el murmullo de la gente de la fila. Los autos suenan
+ * cuando la escena avisa que pasa uno (car). No lleva ritmo a propósito: arriba suena, bajito, el set de verdad.
  */
 export const street = {
   out: null as GainNode | null,
@@ -86,25 +86,25 @@ export const street = {
         voices.forEach((v, i) => v.gain.setTargetAtTime(Math.random() < 0.75 ? Math.random() * [0.5, 0.3, 0.14][i] : 0, t, 0.06));
       }, 140),
     );
-    // 4) Cada tanto pasa un auto: un soplido que crece, cruza de un lado al otro y se va.
-    const car = () => {
-      if (!this.out) return;
-      const t = ctx.currentTime, dur = 3.2 + Math.random() * 1.5;
-      const pan = ctx.createStereoPanner();
-      const dir = Math.random() < 0.5 ? 1 : -1;
-      pan.pan.setValueAtTime(-dir, t);
-      pan.pan.linearRampToValueAtTime(dir, t + dur);
-      pan.connect(out);
-      const c = layer('bandpass', 260, 0.8, 0, pan);
-      c.gain.setValueAtTime(0.0001, t);
-      c.gain.exponentialRampToValueAtTime(0.9, t + dur * 0.5);
-      c.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      c.filter.frequency.setValueAtTime(220, t);
-      c.filter.frequency.linearRampToValueAtTime(620, t + dur * 0.5);
-      c.filter.frequency.linearRampToValueAtTime(200, t + dur);
-      this.timers.push(window.setTimeout(car, (6 + Math.random() * 7) * 1000));
-    };
-    this.timers.push(window.setTimeout(car, 2500));
+    this.layer = layer;
+  },
+  layer: null as ((type: BiquadFilterType, freq: number, q: number, vol: number, to?: AudioNode) => { gain: AudioParam; filter: BiquadFilterNode }) | null,
+  /** Pasa un auto: un soplido que crece, cruza de un lado al otro (`dir` 1 = hacia la derecha) y se va. */
+  car(dir: number, dur: number) {
+    const ctx = actx;
+    if (!ctx || !this.out || !this.layer) return;
+    const t = ctx.currentTime;
+    const pan = ctx.createStereoPanner();
+    pan.pan.setValueAtTime(-dir, t);
+    pan.pan.linearRampToValueAtTime(dir, t + dur);
+    pan.connect(this.out);
+    const c = this.layer('bandpass', 260, 0.8, 0, pan);
+    c.gain.setValueAtTime(0.0001, t);
+    c.gain.exponentialRampToValueAtTime(1.1, t + dur * 0.5);
+    c.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    c.filter.frequency.setValueAtTime(220, t);
+    c.filter.frequency.linearRampToValueAtTime(640, t + dur * 0.5);
+    c.filter.frequency.linearRampToValueAtTime(200, t + dur);
   },
   /** Volumen (0–1), sin saltos. */
   level(v: number) {
@@ -124,6 +124,7 @@ export const street = {
       }
     }
     this.sources = [];
+    this.layer = null;
     this.out?.disconnect();
     this.out = null;
   },

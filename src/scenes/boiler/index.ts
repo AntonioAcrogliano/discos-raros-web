@@ -193,7 +193,9 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       // En la vereda la cámara no persigue nada: va por un camino fijo hasta adentro.
       const e = Math.max(0, entering);
       if (entering >= 0) entering += dt;
-      const back = portrait ? 11.5 : 8.2, z = PUERTA.z;
+      // Parado en la calle, del otro lado del carril por donde pasan los autos.
+      const back = portrait ? 12.5 : 9.8, z = PUERTA.z;
+      afuera.traffic = entering < 0;
       // 1) Caminar hasta la puerta. 2) Se abren las hojas. 3) Entrar hasta el lugar de siempre.
       const walk = ease(e / 2.5), open = ease((e - 2.0) / 1.0), inside = ease((e - 2.9) / 1.9);
       const moving = e > 0 && e < 4.6 ? 1 : 0;

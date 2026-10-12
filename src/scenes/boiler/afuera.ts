@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { DR, DR_CYCLE, LOGO_ASPECT, type PSXMaterial, box, makeCanvas, makeCheckerTexture, makeLogoCanvas, makePSXMaterial, makeWallTexture, setPSXMap, toPSXTexture } from '../../style-kit';
+import { DR, DR_CYCLE, LOGO_ASPECT, type PSXMaterial, box, makeCanvas, makeCheckerTexture, makeLogoCanvas, makePSXMaterial, makeWallTexture, setPSXMap, street, toPSXTexture } from '../../style-kit';
 import { randomLook } from '../../../shared/look';
 import { CLUB } from './club';
-import { CELU, Crowd } from './crowd';
-import { EN_LA_FILA } from './dances';
+import { CELU, Crowd, PUCHO } from './crowd';
+import { CHARLANDO, EN_LA_FILA, ESPERANDO, FUMANDO } from './dances';
 
 /**
  * Lo que hay alrededor del club: la vereda con la fachada y las puertas (la entrada del sitio)
@@ -32,6 +32,8 @@ export interface Afuera {
   group: THREE.Group;
   /** Cuánto están abiertas las puertas (0 cerradas, 1 de par en par). */
   setDoors(open: number): void;
+  /** ¿Siguen pasando autos? Se corta mientras el visitante cruza la calle para entrar. */
+  traffic: boolean;
   update(beats: number, energy: number, t: number): void;
 }
 
@@ -149,21 +151,129 @@ export function buildAfuera(): Afuera {
   }
   for (const x of [-3.3, -5.5, -7.7]) group.add(box(2.2, 0.07, 0.06, rope, x, 0.86, z + 1.7));
 
-  // La fila: raros esperando para entrar, cada uno mirando su celu. Son personajes como los
-  // de la pista, con looks al azar (siempre los mismos: la semilla es fija).
-  const fila = new Crowd(8);
+  // La fila: raros esperando para entrar. Son personajes como los de la pista, con looks al
+  // azar (siempre los mismos: la semilla es fija). Unos miran el celu, otros charlan de a dos
+  // dándose vuelta, otros fuman o esperan aburridos.
+  // [qué hace, cuánto se sale de la fila hacia la calle, para dónde mira (0 = hacia la puerta)]
+  const QUEUE: [number, number, number][] = [
+    [EN_LA_FILA, 0, 0],
+    [CHARLANDO, 0.1, 0.25],
+    [CHARLANDO, 0.2, Math.PI - 0.35],
+    [FUMANDO, 0.45, -0.9],
+    [EN_LA_FILA, 0, 0.1],
+    [ESPERANDO, 0.05, 0],
+    [CHARLANDO, 0.15, 0.3],
+    [CHARLANDO, 0.3, Math.PI - 0.5],
+    [FUMANDO, 0.4, -0.6],
+    [EN_LA_FILA, 0, -0.1],
+  ];
+  const fila = new Crowd(QUEUE.length);
   let fseed = 77;
   const fr = () => ((fseed = (fseed * 16807) % 2147483647) - 1) / 2147483646;
   fila.setDancers(
-    Array.from({ length: 8 }, (_, i) => {
+    QUEUE.map(([doing], i) => {
       const look = randomLook(fr);
-      // Sin alas ni mochilas (se pisarían en la fila) y con la mano libre para el celu.
-      return { id: `fila${i}`, name: '', look: { ...look, encima: 0, mano: CELU, baile: EN_LA_FILA } };
+      // Sin alas ni mochilas (se pisarían en la fila) y con la mano libre para el celu o el pucho.
+      return { id: `fila${i}`, name: '', look: { ...look, encima: 0, boca: 0, mano: doing === EN_LA_FILA ? CELU : doing === FUMANDO ? PUCHO : 0, baile: doing } };
     }),
   );
-  for (let i = 0; i < 8; i++) fila.place(i, -2.5 - i * 0.82 + (fr() - 0.5) * 0.12, z + 0.95 + (fr() - 0.5) * 0.25, Math.PI / 2 + (fr() - 0.5) * 0.5);
+  const smokers: { x: number; y: number; z: number; yaw: number }[] = [];
+  QUEUE.forEach(([doing, out, turn], i) => {
+    // Los que charlan se arriman a su compañero.
+    const x = -2.5 - i * 0.8 + (doing === CHARLANDO ? (turn > 1 ? 0.12 : -0.12) : 0) + (fr() - 0.5) * 0.1;
+    const zz = z + 0.85 + out + (fr() - 0.5) * 0.12;
+    const yaw = Math.PI / 2 + turn + (fr() - 0.5) * 0.2;
+    fila.place(i, x, zz, yaw);
+    if (doing === FUMANDO) smokers.push({ x, y: 1.5 * fila.scaleOf(i), z: zz, yaw });
+  });
   group.add(fila.group);
   updaters.push((_b, _e, t) => fila.update(t * 1.3, 1, t));
+  // El humo de los que fuman: tres volutas por cabeza que suben, se abren y se deshacen.
+  for (const sm of smokers) {
+    for (let k = 0; k < 3; k++) {
+      const mat = makePSXMaterial({ color: '#b8b4c4', lit: false, opacity: 0.3 });
+      const puff = box(0.09, 0.09, 0.09, mat);
+      puff.renderOrder = 2;
+      group.add(puff);
+      updaters.push((_b, _e, t) => {
+        const life = (((t * 0.33 + k / 3 + sm.x) % 1) + 1) % 1;
+        puff.position.set(sm.x + Math.sin(sm.yaw) * 0.28 + Math.sin(t * 0.9 + k * 2) * 0.08 * life, sm.y + 0.1 + life * 0.85, sm.z + Math.cos(sm.yaw) * 0.28 + life * 0.12);
+        puff.scale.setScalar(0.7 + life * 1.8);
+        puff.rotation.z = t * 0.6 + k;
+        mat.uniforms.uOpacity.value = 0.34 * Math.sin(life * Math.PI);
+      });
+    }
+  }
+
+  // --- Autos que pasan por la calle, entre la vereda y el que mira ----------------------------
+  const dark = makePSXMaterial({ color: '#0a0a0e' });
+  const lightOn = makePSXMaterial({ color: DR.crema, lit: false });
+  const tail = makePSXMaterial({ color: DR.rojo, lit: false });
+  const glass = makePSXMaterial({ color: '#2a3a52' });
+  /** Un auto mirando hacia +x: carrocería, cabina, ruedas y luces. Con `sign`, cartel de taxi. */
+  const makeCar = (body: string, roof: string, long: number, tall: number, sign = false) => {
+    const g = new THREE.Group();
+    const b = makePSXMaterial({ color: body }), r = makePSXMaterial({ color: roof });
+    g.add(box(long, 0.52, 1.7, b, 0, 0.56, 0));
+    g.add(box(long * 0.5, tall, 1.56, r, -long * 0.06, 0.82 + tall / 2, 0));
+    g.add(box(long * 0.46, tall * 0.62, 1.6, glass, -long * 0.06, 0.84 + tall / 2, 0));
+    g.add(box(long * 0.5, 0.05, 1.5, r, -long * 0.06, 0.82 + tall, 0));
+    for (const wx of [-long * 0.31, long * 0.31]) {
+      for (const wz of [-0.82, 0.82]) {
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.22, 8), dark);
+        w.rotation.x = Math.PI / 2;
+        w.position.set(wx, 0.33, wz);
+        g.add(w);
+      }
+    }
+    for (const lz of [-0.6, 0.6]) {
+      g.add(box(0.06, 0.16, 0.3, lightOn, long / 2, 0.62, lz));
+      g.add(box(0.06, 0.14, 0.3, tail, -long / 2, 0.62, lz));
+    }
+    g.add(box(0.1, 0.16, 1.74, dark, long / 2 - 0.02, 0.36, 0), box(0.1, 0.16, 1.74, dark, -long / 2 + 0.02, 0.36, 0));
+    if (sign) g.add(box(0.5, 0.16, 0.24, makePSXMaterial({ color: DR.amarillo, lit: false }), -long * 0.06, 0.94 + tall, 0));
+    g.visible = false;
+    group.add(g);
+    return g;
+  };
+  // El taxi porteño (negro y amarillo), un par de autos y una camioneta.
+  const cars = [makeCar('#111318', DR.amarillo, 4.1, 0.52, true), makeCar(DR.rojo, DR.rojoOscuro, 3.9, 0.5), makeCar('#d8dce8', '#b8bcc8', 4, 0.5), makeCar(DR.verde, DR.verdeOscuro, 4.6, 0.72), makeCar('#111318', DR.amarillo, 4.1, 0.52, true)];
+  const LANE = z + 7.1, FAR = 20;
+  let driving: { car: THREE.Group; dir: number; speed: number } | null = null;
+  let nextCar = 2.5;
+  let traffic = true;
+  updaters.push((_b, _e, t) => {
+    if (driving) {
+      const c = driving;
+      c.car.position.x += c.dir * c.speed * dt(t);
+      if (Math.abs(c.car.position.x) > FAR) {
+        c.car.visible = false;
+        driving = null;
+        nextCar = t + 4 + fr() * 7;
+      }
+    } else if (traffic && t > nextCar) {
+      const car = cars[Math.floor(fr() * cars.length)];
+      const dir = fr() < 0.82 ? 1 : -1;
+      const speed = 9 + fr() * 5;
+      car.visible = true;
+      car.rotation.y = dir > 0 ? 0 : Math.PI;
+      // Los que vienen de contramano van por el otro carril, más lejos del que mira.
+      car.position.set(-dir * FAR, 0, dir > 0 ? LANE : LANE - 0.2);
+      driving = { car, dir, speed };
+      street.car(dir, (FAR * 2) / speed);
+    }
+    dt(t);
+  });
+  /** Segundos desde el frame anterior (los updaters reciben el tiempo, no el paso). */
+  let lastT = -1, step = 0;
+  function dt(t: number) {
+    if (t !== lastT) {
+      step = lastT < 0 ? 0 : Math.max(0, Math.min(0.1, t - lastT));
+      lastT = t;
+    }
+    return step;
+  }
+
   // Farol con su haz.
   const metal = makePSXMaterial({ color: '#3a3a44' });
   group.add(box(0.14, 4.6, 0.14, metal, 4.6, 2.3, z + 4.2));
@@ -198,6 +308,12 @@ export function buildAfuera(): Afuera {
 
   return {
     group,
+    get traffic() {
+      return traffic;
+    },
+    set traffic(on: boolean) {
+      traffic = on;
+    },
     setDoors(open) {
       hinges[0].rotation.y = -open * 1.85;
       hinges[1].rotation.y = open * 1.85;

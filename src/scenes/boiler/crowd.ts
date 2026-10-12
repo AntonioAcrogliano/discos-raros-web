@@ -428,6 +428,9 @@ const HAND_GEOS: (THREE.BufferGeometry | null)[] = [
  */
 export const CELU = HAND_GEOS.length;
 HAND_GEOS.push(merge(bx(0.075, 0.15, 0.016, 0, HAND_Y - 0.035, 0.06, K), bx(0.06, 0.125, 0.006, 0, HAND_Y - 0.035, 0.07, W)));
+/** El pucho del que fuma en la fila: blanco, con la brasa en la punta. */
+export const PUCHO = HAND_GEOS.length;
+HAND_GEOS.push(merge(bx(0.016, 0.016, 0.075, 0.03, HAND_Y - 0.02, 0.085, W), bx(0.018, 0.018, 0.018, 0.03, HAND_Y - 0.02, 0.13, R)));
 /** Lo que va en las dos manos; el resto, solo en la derecha. */
 const BOTH_HANDS = new Set([1, 4]);
 const HAND_COLOR: Record<number, string> = { 3: '#9ad8ff' };
@@ -625,7 +628,7 @@ export class Crowd {
     this.skirts = parts(SKIRT_GEOS);
     // Los palitos de luz no llevan sombra: brillan.
     const glow = makePSXMaterial({ map: detail, detail: true, lit: false });
-    this.held = parts(HAND_GEOS, (i) => (i === 1 || i === CELU ? glow : plain), capacity * 2);
+    this.held = parts(HAND_GEOS, (i) => (i === 1 || i === CELU || i === PUCHO ? glow : plain), capacity * 2);
     this.parts = [this.shoes, this.torsos, this.heads, this.hair, this.acc, this.glasses, this.mouth, this.over, this.tops, this.skirts, this.held];
   }
 
@@ -791,7 +794,7 @@ export class Crowd {
       const l = d.look;
       const b = BUILDS[l.cuerpo] ?? BUILDS[0];
       // Los que bailan van casi a la par; los de la fila, cada uno a su tiempo.
-      dance(l.baile, beats + d.phase * (l.baile === EN_LA_FILA ? 1.7 : 0.012), e, p);
+      dance(l.baile, beats + d.phase * (l.baile >= EN_LA_FILA ? 1.7 : 0.012), e, p);
       // En el creador gira despacio para verlo de todos lados (o mira para donde lo dejaron).
       const facing = this.solo ? (this.spin ?? Math.sin(t * 0.7) * 0.9) : d.yaw + Math.sin(t * 0.9 + d.phase) * 0.08 * (1 - e);
       const h = b.h * d.vary;
