@@ -111,7 +111,22 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     pickShowcase();
   };
 
-  // Nombres que se muestran de a ratos (además del propio, que está siempre).
+  // Nombres: se ven un rato al entrar a la pista (unos pocos, más el propio) y después
+  // solo el del raro al que se le pasa el mouse por encima (en el celu, al que se toca).
+  const NAMES_SECONDS = 7;
+  let namesLeft = 0;
+  /** Dónde está el puntero (0–1 de la pantalla) y hasta cuándo vale (un toque dura un rato). */
+  const pointer = { x: -1, y: -1, until: 0 };
+  const point = (e: PointerEvent) => {
+    // Solo sobre la pista: arriba de una ventana o de la barra no se señala a nadie.
+    const on = e.target === stage.renderer.domElement || e.target === document.body || e.target === document.documentElement;
+    pointer.x = on ? e.clientX / window.innerWidth : -1;
+    pointer.y = e.clientY / window.innerHeight;
+    pointer.until = e.pointerType === 'mouse' ? Infinity : performance.now() + 2500;
+  };
+  window.addEventListener('pointermove', point);
+  window.addEventListener('pointerdown', point);
+  document.documentElement.addEventListener('pointerleave', () => (pointer.x = -1));
   let showcase: number[] = [];
   const pickShowcase = () => {
     const named: number[] = [];
@@ -173,7 +188,6 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   const wantPos = new THREE.Vector3();
   const wantTarget = new THREE.Vector3();
   let fov = 52;
-  let lastShowcase = 0;
 
   stage.scene = scene;
   stage.onResize = (w, h) => tele.setSize(w, h);
@@ -193,10 +207,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (!fixedVolume) tele.volume = tele.volume + Math.sign(wantVolume - tele.volume) * Math.min(Math.abs(wantVolume - tele.volume), dt * 1.2);
     stage.post.pulse = Math.max(0, 1 - (beats - Math.floor(beats)) * 2) * energy;
 
-    if (t - lastShowcase > 5) {
-      lastShowcase = t;
-      pickShowcase();
-    }
+    if (mode === 'pista' && namesLeft > 0) namesLeft -= dt;
 
     if (mode === 'pelea') return room.takeover?.update(t, dt);
 
@@ -344,6 +355,24 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     }
     if (name) outlined(ctx, name, x, y, unit, color);
   };
+  /** El raro que está abajo del puntero (el de más adelante, si se tapan), o -1. */
+  const feet = new THREE.Vector3();
+  const pointed = () => {
+    if (pointer.x < 0 || performance.now() > pointer.until) return -1;
+    const px = pointer.x * 2 - 1, py = 1 - pointer.y * 2;
+    let best = -1, near = Infinity;
+    for (let i = 0; i < crowd.count; i++) {
+      if (!crowd.headTop(i, v)) continue;
+      feet.set(v.x, 0, v.z).project(stage.camera);
+      v.project(stage.camera);
+      if (v.z > 1 || v.z < -1 || v.z >= near) continue;
+      const tall = v.y - feet.y;
+      if (py > v.y + tall * 0.1 || py < feet.y || Math.abs(px - v.x) * stage.camera.aspect > tall * 0.3) continue;
+      best = i;
+      near = v.z;
+    }
+    return best;
+  };
 
   const room: BoilerRoom = {
     scene,
@@ -383,6 +412,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         view = 'todo';
         doorSpin = null;
         return;
+      }
+      if (m === 'pista' && mode !== 'pista') {
+        namesLeft = NAMES_SECONDS;
+        pickShowcase();
       }
       mode = m;
       club.booth.visible = m !== 'creador';
@@ -452,8 +485,18 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         const unit = titleUnit(w, h);
         outlined(ctx, says, w / 2, Math.round(h * 0.84), Math.min(unit, Math.floor((w * 0.9) / says.length)), entering < DOOR_AT - 0.5 ? DR.crema : DR.amarillo);
       }
-      if (mode === 'pista') for (const i of showcase) label(ctx, w, h, i, DR.crema, false, t);
-      if (hasFirst && (mode === 'pista' || mode === 'creador')) label(ctx, w, h, 0, DR.amarillo, mode === 'pista', t);
+      if (mode === 'creador') return void (hasFirst && label(ctx, w, h, 0, DR.amarillo, false, t));
+      if (mode !== 'pista') return;
+      if (namesLeft > 0) {
+        // Al final se van apagando.
+        ctx.globalAlpha = Math.min(1, namesLeft);
+        for (const i of showcase) label(ctx, w, h, i, DR.crema, false, t);
+        if (hasFirst) label(ctx, w, h, 0, DR.amarillo, true, t);
+        ctx.globalAlpha = 1;
+      }
+      const i = pointed();
+      const mine = hasFirst && i === 0;
+      if (i >= 0 && !(namesLeft > 0.5 && (mine || showcase.includes(i)))) label(ctx, w, h, i, mine ? DR.amarillo : DR.crema, mine, t);
     },
   };
   return room;
