@@ -18,6 +18,8 @@ interface YTPlayer {
   pauseVideo(): void;
   setVolume(v: number): void;
   unMute(): void;
+  mute(): void;
+  isMuted(): boolean;
   getPlayerState(): number;
 }
 interface YTNamespace {
@@ -95,10 +97,25 @@ export class Tele {
    * (así ya está cargado y andando) y con enableSound() se le da sonido.
    */
   private sound = false;
+  /** Ya se comprobó que suena: no hace falta insistir más. */
+  private heard = false;
   enableSound() {
-    if (this.sound) return;
-    this.sound = true;
-    if (!this.player) return;
+    if (!this.sound) {
+      this.sound = true;
+      // En el celular el sonido solo se prende adentro de un toque, y no siempre sale a la primera:
+      // el player puede no haber cargado todavía, o el navegador (el de adentro de Instagram, por
+      // ejemplo) no lo dejó arrancar solo ni mudo. Hasta que suene, cada toque vuelve a probar.
+      const again = () => {
+        if (this.heard) {
+          window.removeEventListener('pointerdown', again, true);
+          window.removeEventListener('keydown', again, true);
+        } else this.enableSound();
+      };
+      window.addEventListener('pointerdown', again, true);
+      window.addEventListener('keydown', again, true);
+    }
+    if (!this.player || this.heard) return;
+    if (this.playing && !this.player.isMuted()) return void (this.heard = true);
     this.player.unMute();
     this.player.setVolume(Math.round(this.vol * 100));
     this.player.playVideo();
@@ -161,6 +178,15 @@ export class Tele {
           if (this.pending && this.pending !== videoId) e.target.loadVideoById(this.pending);
           else e.target.playVideo();
           this.pending = null;
+          // Si cargó después del PRESS START, el navegador puede no dejarlo arrancar con sonido
+          // (ya no es adentro del toque): que arranque mudo, y el próximo toque le da sonido.
+          if (this.sound) {
+            setTimeout(() => {
+              if (this.playing || this.heard) return;
+              e.target.mute();
+              e.target.playVideo();
+            }, 2500);
+          }
         },
         onStateChange: (e: { data: number }) => {
           // 1 = reproduciendo, 0 = terminó.
