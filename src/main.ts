@@ -29,6 +29,9 @@ async function main() {
   if (import.meta.env.DEV && location.search.includes('autostart')) setTimeout(() => document.querySelector<HTMLElement>('.press-start')?.click(), 300);
   await showStartScreen(stage);
   stage.onOverlay = (ctx, w, h, t) => room.drawOverlay(ctx, w, h, t);
+  // Se abren las puertas y se entra caminando; la interfaz aparece recién adentro.
+  setChrome(false);
+  const adentro = room.enter(import.meta.env.DEV && location.search.includes('autostart') && !location.search.includes('puerta'));
 
   const contador = (total: number) => {
     hudContador.textContent = total > 0 ? `${total.toLocaleString('es-AR')} ${total === 1 ? 'RARO' : 'RAROS'} EN LA PISTA` : 'LA PISTA ESTA VACIA. SE EL PRIMERO.';
@@ -74,6 +77,8 @@ async function main() {
   const openPelea = openGame(() => import('./pelea').then((m) => m.startPelea(stage, room, exit)));
   const openFutbol = openGame(() => import('./futbol').then((m) => m.startFutbol(stage, room, exit)));
 
+  await adentro;
+  setChrome(true);
   mountUi([
     { path: 'sets', label: 'DISCOS', open: () => openSets({ playing: () => room.playing()?.id ?? null, play: (s) => void sets.then((list) => room.play(s, list)) }) },
     {
@@ -81,7 +86,7 @@ async function main() {
       label: 'CREA TU RARO',
       open: () => openCreador({ room, mine: () => data.mine, onSaved: (raro, total) => setPista({ ...data, mine: raro, total }) }),
     },
-    { path: 'jugar', label: 'PATIO DE JUEGOS', open: openJugar },
+    { path: 'jugar', label: 'PATIO DE JUEGOS', open: () => openJugar(room) },
     { path: 'contacto', label: 'CONTACTO', open: openContacto },
     // Los juegos se abren desde JUGAR (teclado o joystick en la compu; controles táctiles en el celular).
     { path: 'pelea', label: 'PELEA', nav: false, open: openPelea },

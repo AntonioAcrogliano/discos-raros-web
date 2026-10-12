@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { type Look, type LookView, type Raro, type SetInfo, validLook } from '../../../shared/look';
 import type { PistaData } from '../../api';
-import { DR, type PSXStage, outlined, psxUniforms, titleUnit } from '../../style-kit';
+import { DR, type PSXStage, audioLive, muffled, outlined, psxUniforms, titleUnit } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
+import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
 import { CLUB, buildClub } from './club';
 import { Crowd, MAX_DANCERS } from './crowd';
 import { loadGlbRig } from '../../characters/glbRig';
@@ -11,7 +12,8 @@ import { Tele } from './tele';
 
 const FOG = '#120a1f';
 
-export type BoilerMode = 'pista' | 'creador' | 'pelea';
+/** 'afuera' es la vereda (la entrada del sitio) y 'patio' el patio de juegos; el resto pasa adentro. */
+export type BoilerMode = 'afuera' | 'pista' | 'creador' | 'pelea' | 'patio';
 
 /** Otro modo de juego (la pelea) que usa el club de escenario: maneja la cámara y dibuja su HUD. */
 export interface Takeover {
@@ -29,6 +31,12 @@ export interface BoilerRoom {
   setDraft(draft: { name: string; look: Look } | null): void;
   /** 'creador' acerca la cámara al personaje del visitante y esconde la cabina; 'pelea' saca a los DJs de la cabina. */
   setMode(mode: BoilerMode): void;
+  /**
+   * La entrada: desde la vereda se camina a la puerta (se escucha el bombo a través de la
+   * pared), se abren las hojas, el sonido se aclara y la cámara termina en la pista.
+   * @param skip entrar de una, sin la animación.
+   */
+  enter(skip?: boolean): Promise<void>;
   /** En el creador: qué parte del personaje se mira de cerca. */
   setView(view: LookView): void;
   /** En el creador: para dónde mira el personaje (null = gira solo). */
@@ -76,7 +84,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     })
     .catch((e) => console.warn('No cargaron los modelos de los DJs, quedan los de cajas.', e));
   const tele = new Tele(stage);
-  scene.add(club.group, crowd.group, djGroup, tele.object);
+  const afuera = buildAfuera();
+  const patio = buildPatio();
+  patio.group.visible = false;
+  scene.add(club.group, crowd.group, djGroup, tele.object, afuera.group, patio.group);
 
   // --- Quién baila ---------------------------------------------------------------------
   let pista: PistaData = { total: 0, raros: [], mine: null };
@@ -116,11 +127,31 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     room.play(playlist[(i + 1) % playlist.length], playlist);
   };
 
+  /** Arriba de 150 BPM (drum and bass) se baila a medio tiempo, si no es un flipper. */
+  const danceBpmOf = (b: number) => (b > 150 ? b / 2 : b);
+  /** El set que espera a que se abra la puerta (solo donde no se puede manejar el volumen). */
+  let pendingPlay: (() => void) | null = null;
+
   // --- Cámara ----------------------------------------------------------------------------
-  let mode: BoilerMode = 'pista';
+  let mode: BoilerMode = 'afuera';
   let view: LookView = 'todo';
   const camPos = new THREE.Vector3(0, 2.2, 6.7);
   const camTarget = new THREE.Vector3(0, 1.75, 0.4);
+  // --- Entrada y volumen -------------------------------------------------------------------
+  /** Segundos desde que se apretó entrar (-1 = todavía en la vereda). */
+  let entering = -1;
+  let entered: (() => void) | null = null;
+  const ENTER_SECONDS = 4.4;
+  // En iPhone el volumen del player no se puede manejar: el set arranca cuando se abre la puerta.
+  const fixedVolume = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
+  /** Volumen del set al que hay que llegar (0–1). Afuera no se escucha: suena el bombo de la calle. */
+  let wantVolume = 0;
+  tele.volume = fixedVolume ? 1 : 0;
+  const ease = (x: number) => {
+    const k = Math.max(0, Math.min(1, x));
+    return k * k * (3 - 2 * k);
+  };
+  const a0 = new THREE.Vector3(), a1 = new THREE.Vector3();
   const wantPos = new THREE.Vector3();
   const wantTarget = new THREE.Vector3();
   let fov = 52;
@@ -133,12 +164,15 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     // Sin video (o si YouTube no cargó) la pista baila igual; con el video en pausa, se frena.
     const target = mode === 'creador' ? 0.8 : mode === 'pelea' ? 1 : tele.videoId ? (tele.playing ? 1 : 0.12) : 0.7;
     energy += (target - energy) * Math.min(1, dt * 3);
-    // Arriba de 150 BPM (drum and bass) se baila a medio tiempo, si no es un flipper.
-    const danceBpm = bpm > 150 ? bpm / 2 : bpm;
+    const danceBpm = danceBpmOf(bpm);
     beats += (dt * danceBpm) / 60 * (0.25 + 0.75 * Math.min(1, energy * 1.4));
     club.update(beats, energy, t);
     crowd.update(beats, energy, t);
     djs.update(beats, energy);
+    if (afuera.group.visible) afuera.update(beats, energy, t);
+    if (patio.group.visible) patio.update(beats, energy, t);
+    // El volumen del set va llegando de a poco a donde tiene que estar.
+    if (!fixedVolume) tele.volume = tele.volume + Math.sign(wantVolume - tele.volume) * Math.min(Math.abs(wantVolume - tele.volume), dt * 1.2);
     stage.post.pulse = Math.max(0, 1 - (beats - Math.floor(beats)) * 2) * energy;
 
     if (t - lastShowcase > 5) {
@@ -150,7 +184,54 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
 
     const portrait = stage.camera.aspect < 1;
     let wantFov: number;
-    if (mode === 'creador') {
+    if (mode === 'afuera') {
+      // En la vereda la cámara no persigue nada: va por un camino fijo hasta adentro.
+      // Si el navegador ya deja sonar, el bombo se escucha desde antes de apretar nada.
+      if (!muffled.playing && audioLive()) {
+        muffled.bpm = bpm;
+        muffled.start(entering < 0 ? 0.8 : 1);
+      }
+      const e = Math.max(0, entering);
+      if (entering >= 0) entering += dt;
+      const back = portrait ? 11.5 : 8.2, z = PUERTA.z;
+      // 1) Caminar hasta la puerta. 2) Se abren las hojas. 3) Entrar hasta el lugar de siempre.
+      const walk = ease(e / 2.1), open = ease((e - 1.5) / 1.0), inside = ease((e - 2.4) / 1.9);
+      const moving = e > 0 && e < 4.1 ? 1 : 0;
+      a0.set(Math.sin(t * 0.2) * 0.3 * (1 - walk), 1.75 + Math.abs(Math.sin(e * 6.5)) * 0.045 * moving, z + back + (2.7 - back) * walk);
+      a1.set(0, portrait ? 2.7 : 2.2, portrait ? 9.6 : 6.7);
+      camPos.lerpVectors(a0, a1, inside);
+      a0.set(0, portrait ? 3.4 : 2.6 - 0.5 * walk, z);
+      a1.set(0, portrait ? 2.35 : 1.75, 0.4);
+      camTarget.lerpVectors(a0, a1, inside);
+      afuera.setDoors(open);
+      // Al abrirse la puerta el set sube y el bombo de la calle se va.
+      const clear = ease((e - 1.5) / 1.6);
+      wantVolume = clear;
+      muffled.level((entering < 0 ? 0.8 : 1) * (1 - clear));
+      if (fixedVolume && clear > 0 && pendingPlay) {
+        pendingPlay();
+        pendingPlay = null;
+      }
+      fov = portrait ? 66 : 52;
+      stage.camera.position.copy(camPos);
+      stage.camera.lookAt(camTarget);
+      if (Math.abs(stage.camera.fov - fov) > 0.01) {
+        stage.camera.fov = fov;
+        stage.camera.updateProjectionMatrix();
+      }
+      if (e >= ENTER_SECONDS) {
+        muffled.stop();
+        room.setMode('pista');
+        entered?.();
+        entered = null;
+      }
+      return;
+    }
+    if (mode === 'patio') {
+      wantPos.set(PATIO.x + Math.sin(t * 0.13) * 0.5, portrait ? 2.6 : 2.0, PATIO.z + (portrait ? 9.5 : 4.4));
+      wantTarget.set(PATIO.x, portrait ? 1.9 : 1.45, PATIO.z - PATIO.halfD);
+      wantFov = portrait ? 66 : 54;
+    } else if (mode === 'creador') {
       // El menú va a la izquierda (o abajo en el celular): el personaje queda del otro lado.
       // Según la pestaña se acerca a la cabeza o a las piernas (la altura depende del cuerpo).
       const size = crowd.scaleOf(0), big = Math.max(1, size);
@@ -239,8 +320,12 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       mode = m;
       club.booth.visible = m !== 'creador';
       for (const b of club.beams) b.visible = m !== 'creador';
-      djGroup.visible = m === 'pista';
+      djGroup.visible = m === 'pista' || m === 'afuera';
       tele.interactive = m === 'pista';
+      afuera.group.visible = m === 'afuera';
+      patio.group.visible = m === 'patio';
+      // En el patio la música llega más baja.
+      if (m !== 'afuera') wantVolume = m === 'patio' ? 0.4 : 1;
       crowd.setSolo(m === 'creador');
       view = 'todo';
       crowd.spin = null;
@@ -251,12 +336,26 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     setSpin(yaw) {
       crowd.spin = yaw;
     },
+    enter(skip) {
+      if (mode !== 'afuera') return Promise.resolve();
+      if (skip) {
+        entering = ENTER_SECONDS;
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        entered = resolve;
+        if (entering < 0) entering = 0;
+      });
+    },
     play(set, list) {
       if (list) playlist = list;
       current = set;
       bpm = set.bpm;
-      void tele.play(set.id);
+      muffled.bpm = danceBpmOf(bpm);
       room.onNowPlaying?.(set);
+      // Donde el volumen no se puede manejar, el set espera a que se abra la puerta.
+      if (fixedVolume && mode === 'afuera' && wantVolume === 0) pendingPlay = () => void tele.play(set.id);
+      else void tele.play(set.id);
     },
     playing: () => current,
     drawOverlay(ctx, w, h, t) {
@@ -264,7 +363,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       if (mode === 'pista') for (const i of showcase) label(ctx, w, h, i, DR.crema, false, t);
-      if (hasFirst) label(ctx, w, h, 0, DR.amarillo, mode === 'pista', t);
+      if (hasFirst && (mode === 'pista' || mode === 'creador')) label(ctx, w, h, 0, DR.amarillo, mode === 'pista', t);
     },
   };
   return room;

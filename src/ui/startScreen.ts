@@ -1,8 +1,8 @@
 import { redesLinks } from '../redes';
-import { DR, type PSXStage, drawLogo, drawPressStart, outlined, sfx, titleUnit, unlockAudio } from '../style-kit';
+import { DR, type PSXStage, drawPressStart, outlined, sfx, titleUnit, unlockAudio } from '../style-kit';
 
 /**
- * Pantalla de entrada: logo + PRESS START titilando sobre la escena que esté corriendo.
+ * Pantalla de entrada: PRESS START titilando sobre la vereda del boliche.
  * El click (o Enter / Espacio / tocar la pantalla) desbloquea el audio del navegador,
  * que es lo que después deja sonar el set. Resuelve cuando el visitante entra.
  */
@@ -16,10 +16,8 @@ export function showStartScreen(stage: PSXStage): Promise<void> {
     document.body.append(button, redes);
     button.focus();
 
-    stage.onOverlay = (ctx, w, h, t) => {
-      drawLogo(ctx, w, h, t);
-      drawPressStart(ctx, w, h, t);
-    };
+    // El logo ya está en la marquesina del boliche: acá va solo el PRESS START.
+    stage.onOverlay = (ctx, w, h, t) => drawPressStart(ctx, w, h, t);
 
     let pressedAt = -1;
     const onKey = (e: KeyboardEvent) => {
@@ -39,7 +37,6 @@ export function showStartScreen(stage: PSXStage): Promise<void> {
       stage.onOverlay = (ctx, w, h, t) => {
         if (pressedAt < 0) pressedAt = t;
         const e = t - pressedAt;
-        drawLogo(ctx, w, h, t);
         if (Math.floor(e * 16) % 2 === 0) {
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';

@@ -16,6 +16,7 @@ interface YTPlayer {
   loadVideoById(id: string): void;
   playVideo(): void;
   pauseVideo(): void;
+  setVolume(v: number): void;
   getPlayerState(): number;
 }
 interface YTNamespace {
@@ -88,6 +89,20 @@ export class Tele {
     if (this.object.visible) this.css.render(this.stage.scene, this.stage.camera);
   }
 
+  private vol = 1;
+  /** Volumen del set (0–1): bajito desde afuera y en el patio. En iPhone no hace nada: ahí manda el botón del teléfono. */
+  get volume() {
+    return this.vol;
+  }
+  set volume(v: number) {
+    v = Math.max(0, Math.min(1, v));
+    // Cada cambio es un mensaje al player: no vale la pena por diferencias que no se oyen.
+    if (Math.abs(v - this.vol) < 0.02 && v !== 0 && v !== 1) return;
+    if (v === this.vol) return;
+    this.vol = v;
+    this.player?.setVolume(Math.round(v * 100));
+  }
+
   /** En los juegos y en el creador la tele no recibe toques: si no, se comería los de los menús que le pasan por delante. */
   set interactive(on: boolean) {
     this.holder.style.pointerEvents = on ? 'auto' : 'none';
@@ -126,6 +141,7 @@ export class Tele {
       events: {
         onReady: (e: { target: YTPlayer }) => {
           this.player = e.target;
+          e.target.setVolume(Math.round(this.vol * 100));
           if (this.pending && this.pending !== videoId) e.target.loadVideoById(this.pending);
           else e.target.playVideo();
           this.pending = null;

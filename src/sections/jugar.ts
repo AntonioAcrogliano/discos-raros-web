@@ -1,3 +1,4 @@
+import type { BoilerRoom } from '../scenes/boiler';
 import { sfx } from '../style-kit';
 import { el, isTouch } from '../ui/dom';
 import { openPanel } from '../ui/shell';
@@ -7,9 +8,10 @@ const JUEGOS = [
   { path: 'futbol', name: 'CABEZAZOS', what: 'FUTBOL DE CABEZONES. 60 SEGUNDOS, TIRO VINILO Y GOL DE ORO.' },
 ];
 
-/** Menú de juegos. */
-export function openJugar() {
-  const p = openPanel({ title: 'PATIO DE JUEGOS', narrow: true });
+/** Menú de juegos: se sale al patio del boliche, donde la música llega más baja. */
+export function openJugar(room: BoilerRoom) {
+  const p = openPanel({ title: 'PATIO DE JUEGOS', narrow: true, onClose: () => room.setMode('pista') });
+  room.setMode('patio');
   const list = el('div', 'juegos');
   for (const j of JUEGOS) {
     const a = el('a', 'btn juego', [el('span', 'nombre', j.name), el('span', 'meta', j.what)]);
