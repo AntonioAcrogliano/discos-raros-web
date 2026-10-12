@@ -78,6 +78,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
 
   const club = buildClub();
   const crowd = new Crowd(touch ? 70 : MAX_DANCERS);
+  crowd.roam = true;
   // Arrancan los de cajas; cuando cargan los modelos de verdad, los reemplazan.
   const placeholders = buildPlaceholderDjs();
   let djs = makeDjs(placeholders.discos, placeholders.raros);
@@ -130,8 +131,22 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
 
   // Mirar la pista: arrastrando (mouse o dedo) la cámara gira alrededor y sube; con la rueda o
   // pellizcando se mete arriba de la cabina, encima de los raros. Si no se toca nada, vuelve sola.
-  const look = { yaw: 0, pitch: 0, zoom: 0, idle: 99 };
-  const fingers = new Map<number, { x: number; y: number }>();
+  // Y pasear por el boliche: un toque (o clic) en el piso o en un raro lleva la cámara hasta ahí;
+  // en la compu también se camina con WASD. Parado en un lugar se puede girar todo alrededor.
+  const look = { yaw: 0, pitch: 0, zoom: 0, idle: 99, at: null as { x: number; z: number } | null };
+  const IDLE_SECONDS = 12;
+  const fingers = new Map<number, { x: number; y: number; sx: number; sy: number; t0: number }>();
+  const walk = new Set<string>();
+  const WALK_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
+  window.addEventListener('keydown', (e) => {
+    if (mode === 'pista' && WALK_KEYS.has(e.code) && !document.querySelector('.con-ventana') && !(e.target as Element).closest?.('input, textarea')) walk.add(e.code);
+  });
+  window.addEventListener('keyup', (e) => walk.delete(e.code));
+  window.addEventListener('blur', () => walk.clear());
+  const stand = (x: number, z: number) => {
+    look.at = { x: clamp(x, -CLUB.halfW + 0.6, CLUB.halfW - 0.6), z: clamp(z, CLUB.backZ + 0.6, CLUB.frontZ - 2.5) };
+    look.idle = 0;
+  };
   const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
   const onFloor = (e: Event) => mode === 'pista' && (e.target === document.body || e.target === document.documentElement);
   const zoomBy = (d: number) => {
@@ -139,7 +154,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     look.idle = 0;
   };
   window.addEventListener('pointerdown', (e) => {
-    if (onFloor(e)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (onFloor(e)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t0: performance.now() });
   });
   window.addEventListener('pointermove', (e) => {
     const f = fingers.get(e.pointerId);
@@ -147,7 +162,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (mode !== 'pista') return fingers.clear();
     const dx = e.clientX - f.x, dy = e.clientY - f.y;
     if (fingers.size === 1) {
-      look.yaw = clamp(look.yaw - dx * 0.005, -1.25, 1.25);
+      look.yaw = look.at ? look.yaw - dx * 0.005 : clamp(look.yaw - dx * 0.005, -1.25, 1.25);
       look.pitch = clamp(look.pitch + dy * 0.004, -0.1, 0.7);
       look.idle = 0;
     } else {
@@ -159,6 +174,17 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     f.y = e.clientY;
   });
   const lift = (e: PointerEvent) => fingers.delete(e.pointerId);
+  window.addEventListener('pointerup', (e) => {
+    const f = fingers.get(e.pointerId);
+    // Un toque corto y sin arrastrar: ir hasta ahí (al raro que se tocó, o a ese lugar del piso).
+    if (!f || fingers.size > 1 || mode !== 'pista' || performance.now() - f.t0 > 350 || Math.hypot(e.clientX - f.sx, e.clientY - f.sy) > 8) return;
+    const i = pointed();
+    if (i >= 0 && crowd.headTop(i, v)) return stand(v.x, v.z);
+    v.set((e.clientX / window.innerWidth) * 2 - 1, 1 - (e.clientY / window.innerHeight) * 2, 0.5).unproject(stage.camera).sub(stage.camera.position);
+    if (v.y > -0.02) return;
+    const k = -stage.camera.position.y / v.y;
+    stand(stage.camera.position.x + v.x * k, stage.camera.position.z + v.z * k);
+  });
   window.addEventListener('pointerup', lift);
   window.addEventListener('pointercancel', lift);
   window.addEventListener('wheel', (e) => onFloor(e) && zoomBy(-e.deltaY * 0.0012), { passive: true });
@@ -234,6 +260,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     const danceBpm = danceBpmOf(bpm);
     beats += (dt * danceBpm) / 60 * (0.25 + 0.75 * Math.min(1, energy * 1.4));
     club.update(beats, energy, t);
+    if (mode === 'pista') crowd.wander(dt, energy);
     crowd.update(beats, energy, t);
     djs.update(beats, energy);
     if (afuera.group.visible) afuera.update(beats, energy, t);
@@ -363,13 +390,33 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       // Lo que movió el visitante: gira alrededor de adonde mira; con zoom, el centro se corre
       // a la pista y la cámara sube lo justo para pasar por arriba de los DJs.
       look.idle += dt;
-      if (look.idle > 8 && !fingers.size) {
+      if (walk.size) {
+        // Adelante es para donde mira la cámara.
+        const f = (walk.has('KeyW') ? 1 : 0) - (walk.has('KeyS') ? 1 : 0), r = (walk.has('KeyD') ? 1 : 0) - (walk.has('KeyA') ? 1 : 0);
+        const at = look.at ?? { x: 0, z: -0.6 }, s = Math.sin(look.yaw), c = Math.cos(look.yaw), step = 3 * dt;
+        stand(at.x + (-s * f + c * r) * step, at.z + (-c * f - s * r) * step);
+      }
+      if (look.idle > IDLE_SECONDS && !fingers.size) {
+        if (look.at) {
+          // Vuelve a la toma de siempre (por el lado más corto si dio toda la vuelta).
+          look.at = null;
+          look.yaw = clamp(Math.atan2(Math.sin(look.yaw), Math.cos(look.yaw)), -1.25, 1.25);
+        }
         const back = Math.exp(-dt * 1.5);
         look.yaw *= back;
         look.pitch *= back;
         look.zoom *= back;
       }
-      if (Math.abs(look.yaw) + Math.abs(look.pitch) + look.zoom > 0.002) {
+      if (look.at) {
+        // Parado en un lugar de la pista: la cámara le gira alrededor, de cerca.
+        const dist = 4.6 - 2.6 * look.zoom, pitch = clamp(0.22 + look.pitch, 0.05, 0.95);
+        wantTarget.set(look.at.x, 1.3, look.at.z);
+        wantPos.set(
+          clamp(look.at.x + Math.sin(look.yaw) * Math.cos(pitch) * dist, -CLUB.halfW + 0.4, CLUB.halfW - 0.4),
+          Math.min(1.3 + Math.sin(pitch) * dist, CLUB.ceilY - 0.5),
+          clamp(look.at.z + Math.cos(look.yaw) * Math.cos(pitch) * dist, CLUB.backZ + 0.4, CLUB.frontZ - 0.4),
+        );
+      } else if (Math.abs(look.yaw) + Math.abs(look.pitch) + look.zoom > 0.002) {
         a0.subVectors(wantPos, wantTarget);
         const far = a0.length(), z = ease(look.zoom);
         const yaw = Math.atan2(a0.x, a0.z) + look.yaw;
@@ -545,12 +592,22 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       }
       if (mode === 'creador') return void (hasFirst && label(ctx, w, h, 0, DR.amarillo, false, t));
       if (mode !== 'pista') return;
+      if (tele.stuck && Math.floor(t * 2) % 4 !== 3) {
+        // El set no arrancó solo: cartel titilando abajo de la tele, que es donde hay que tocar.
+        const says = 'TOCA LA TELE PARA QUE SUENE';
+        v.set(CLUB.tele.x, CLUB.tele.y - CLUB.tele.h / 2 - 0.3, CLUB.tele.z).project(stage.camera);
+        const y = v.z > 1 || v.z < -1 ? h * 0.3 : (-v.y * 0.5 + 0.5) * h;
+        outlined(ctx, says, w / 2, Math.round(Math.max(h * 0.12, Math.min(h * 0.8, y))), Math.min(titleUnit(w, h), Math.floor((w * 0.92) / says.length)), DR.amarillo);
+      }
       if (namesLeft > 0) {
         // Al final se van apagando.
         ctx.globalAlpha = Math.min(1, namesLeft);
         for (const i of showcase) label(ctx, w, h, i, DR.crema, false, t);
         if (hasFirst) label(ctx, w, h, 0, DR.amarillo, true, t);
-        if (look.idle > 8) outlined(ctx, 'ARRASTRA PARA MIRAR', w / 2, Math.round(h * 0.9), Math.max(6, Math.round(titleUnit(w, h) * 0.5)), DR.crema);
+        if (look.idle > IDLE_SECONDS) {
+          const says = 'ARRASTRA PARA MIRAR - TOCA PARA IR';
+          outlined(ctx, says, w / 2, Math.round(h * 0.9), Math.max(6, Math.min(Math.round(titleUnit(w, h) * 0.5), Math.floor((w * 0.92) / says.length))), DR.crema);
+        }
         ctx.globalAlpha = 1;
       }
       const i = pointed();
