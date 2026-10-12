@@ -116,9 +116,19 @@ export class Tele {
     }
     if (!this.player || this.heard) return;
     if (this.playing && !this.player.isMuted()) return void (this.heard = true);
+    this.triedAt = performance.now();
     this.player.unMute();
     this.player.setVolume(Math.round(this.vol * 100));
     this.player.playVideo();
+  }
+
+  private triedAt = 0;
+  /**
+   * Se le quiso dar sonido y quedó en pausa: hay navegadores (el de adentro de Instagram) que no
+   * dejan prenderlo desde afuera del video. Ahí solo arranca tocando el player: hay que avisar.
+   */
+  get stuck() {
+    return this.sound && !this.heard && this.player !== null && !this.playing && performance.now() - this.triedAt > 1500;
   }
 
   private vol = 1;
@@ -181,6 +191,7 @@ export class Tele {
           // Si cargó después del PRESS START, el navegador puede no dejarlo arrancar con sonido
           // (ya no es adentro del toque): que arranque mudo, y el próximo toque le da sonido.
           if (this.sound) {
+            this.triedAt = performance.now() + 2500;
             setTimeout(() => {
               if (this.playing || this.heard) return;
               e.target.mute();
