@@ -155,6 +155,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let asking = false;
   /** Lo que dice el patova al dejarlo pasar. */
   let welcome = 'ESTAS. PASA.';
+  /** El creador está abierto en la puerta: la cámara se acerca al raro que se está armando (0–1). */
+  let dressing = false, dressK = 0, doorSpin: number | null = null;
   // En iPhone el volumen del player no se puede manejar: ahí el set arranca al apretar, a volumen normal.
   const fixedVolume = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
   /** Cuánto se escucha el set desde la vereda (0–1). El audio de YouTube no se puede filtrar: "de afuera" es bajito, con el ambiente de la calle encima. */
@@ -232,6 +234,30 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       a0.set((portrait ? 1.5 : 1.25) * chat, (portrait ? 3.4 : 2.6 - 0.5 * walk) * (1 - chat) + 1.75 * chat, z);
       a1.set(0, portrait ? 2.35 : 1.75, 0.4);
       camTarget.lerpVectors(a0, a1, inside);
+      // Armando el raro en la puerta: la cámara se le acerca, como en el creador de adentro.
+      dressK += ((dressing ? 1 : 0) - dressK) * Math.min(1, dt * 4);
+      afuera.guestDress(dressing, doorSpin);
+      let dressFov = portrait ? 66 : 52;
+      if (dressK > 0.001) {
+        const g = afuera.guestSpot(), big = Math.max(1, g.size);
+        const at = view === 'cabeza' ? 1.5 * g.size : view === 'piernas' ? 0.45 * g.size : 0.95 * big;
+        const dist = view === 'todo' ? 3.3 * big : 2.3;
+        if (portrait) {
+          // El menú tapa más de la mitad de abajo: el personaje va arriba, visto desde lo alto.
+          const [up, down, far] = view === 'todo' ? [1.75 * big, 1.55 * big, 4.6 * big] : view === 'cabeza' ? [1.0, 1.5, 3.0] : [1.4, 1.75, 3.5];
+          wantPos.set(g.x, at + up, g.z + far);
+          wantTarget.set(g.x, at - down, g.z);
+          dressFov = 62;
+        } else {
+          // El menú va a la izquierda: el personaje queda del otro lado.
+          const side = -0.9 * (dist / 3.95);
+          wantPos.set(g.x + side, at + (view === 'todo' ? big : 0.45), g.z + dist);
+          wantTarget.set(g.x + side, at, g.z);
+          dressFov = 48;
+        }
+        camPos.lerp(wantPos, dressK);
+        camTarget.lerp(wantTarget, dressK);
+      }
       afuera.setDoors(open);
       afuera.guestWalk(ease((e - DOOR_AT - 0.35) / 1.5));
       // El patova: te mira cuando llegás, baja la vista a la lista, te vuelve a mirar y abre.
@@ -244,7 +270,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       // Si el navegador ya deja sonar, la vereda se escucha desde antes de apretar nada.
       if (!street.playing && e < ENTER_SECONDS - 1 && audioLive()) street.start(0.6);
       street.level(0.6 * (1 - clear));
-      fov = portrait ? 66 : 52;
+      fov = (portrait ? 66 : 52) + (dressFov - (portrait ? 66 : 52)) * dressK;
       stage.camera.position.copy(camPos);
       stage.camera.lookAt(camTarget);
       if (Math.abs(stage.camera.fov - fov) > 0.01) {
@@ -341,6 +367,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       rebuild();
     },
     setDraft(d) {
+      // En la vereda el que se arma es el raro parado en la puerta.
+      if (mode === 'afuera') return afuera.guest(d ? d.look : null);
       const had = hasFirst;
       draft = d ? { id: 'draft', ...d } : null;
       const first = draft ?? pista.mine;
@@ -349,6 +377,13 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       else rebuild();
     },
     setMode(m) {
+      // En la vereda, "abrir el creador" es armar el raro ahí mismo: no se cambia de lugar.
+      if (mode === 'afuera' && entering >= 0 && entering < ENTER_SECONDS && (m === 'creador' || dressing)) {
+        dressing = m === 'creador';
+        view = 'todo';
+        doorSpin = null;
+        return;
+      }
       mode = m;
       club.booth.visible = m !== 'creador';
       for (const b of club.beams) b.visible = m !== 'creador';
@@ -367,7 +402,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       view = v;
     },
     setSpin(yaw) {
-      crowd.spin = yaw;
+      if (mode === 'afuera') doorSpin = yaw;
+      else crowd.spin = yaw;
     },
     setGuest: (look) => afuera.guest(look),
     enter(skip, question) {

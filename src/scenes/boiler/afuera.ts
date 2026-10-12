@@ -43,6 +43,13 @@ export interface Afuera {
   guest(look: Look | null): void;
   /** Cuánto caminó ese raro hacia adentro (0 = en la puerta, 1 = ya entró). */
   guestWalk(k: number): void;
+  /**
+   * Armándolo (el creador abierto en la puerta): baila su paso y gira para verlo de todos
+   * lados, o mira hacia `spin` si lo están arrastrando.
+   */
+  guestDress(on: boolean, spin: number | null): void;
+  /** Dónde está parado y cuánto mide (para acercarle la cámara mientras se lo arma). */
+  guestSpot(): { x: number; z: number; size: number };
   update(beats: number, energy: number, t: number): void;
 }
 
@@ -340,14 +347,17 @@ export function buildAfuera(): Afuera {
   const SPOT = { x: 0.85, z: z + 2.3 };
   let yoLook: Look | null = null;
   let yoWalk = 0;
-  const dressYo = () => yoLook && yo.setDancers([{ id: 'yo', name: '', look: { ...yoLook, baile: yoWalk > 0.02 ? 5 : ESPERANDO } }]);
-  updaters.push((_b, _e, t) => {
+  let dressing = false;
+  // Mientras se lo arma baila el paso elegido; esperando, espera; al entrar, camina.
+  const dressYo = () => yoLook && yo.setDancers([{ id: 'yo', name: '', look: dressing ? yoLook : { ...yoLook, baile: yoWalk > 0.02 ? 5 : ESPERANDO } }]);
+  updaters.push((beats, _e, t) => {
     if (!yo.group.visible) return;
     const k = yoWalk;
     // De su lugar frente al patova al medio de la puerta, y de ahí para adentro.
     const x = SPOT.x * (1 - Math.min(1, k * 2)), zz = SPOT.z + (z - 2.4 - SPOT.z) * k;
     yo.place(0, x, zz, k > 0.02 ? Math.PI : Math.atan2(PATO.x - SPOT.x, PATO.z - SPOT.z));
-    yo.update(t * (k > 0.02 ? 2.6 : 1.3), 1, t);
+    if (dressing) yo.update(beats, 0.8, t);
+    else yo.update(t * (k > 0.02 ? 2.6 : 1.3), 1, t);
   });
 
   return {
@@ -358,6 +368,15 @@ export function buildAfuera(): Afuera {
       yo.group.visible = Boolean(look);
       dressYo();
     },
+    guestDress(on, spin) {
+      yo.spin = spin;
+      if (on === dressing) return;
+      dressing = on;
+      // "Solo" es el modo del creador: gira despacio para verlo entero.
+      yo.setSolo(on);
+      dressYo();
+    },
+    guestSpot: () => ({ x: SPOT.x, z: SPOT.z, size: yoLook ? yo.scaleOf(0) : 1 }),
     guestWalk(k) {
       if (!yoLook) return;
       // Al arrancar a caminar cambia de pose (una sola vez: repintar es caro).

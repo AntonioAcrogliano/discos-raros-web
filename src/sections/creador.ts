@@ -4,7 +4,7 @@ import type { BoilerRoom } from '../scenes/boiler';
 import { makeFaceTexture, makePrintTexture, sfx } from '../style-kit';
 import { mountTurnstile } from '../turnstile';
 import { el } from '../ui/dom';
-import { go, openPanel } from '../ui/shell';
+import { closeWindow, go, openPanel } from '../ui/shell';
 import { OUTFIT_NAMES, outfit } from './outfits';
 
 const DRAFT_KEY = 'dr-raro';
@@ -24,6 +24,11 @@ export interface CreadorOptions {
   /** El personaje que este dispositivo ya tiene guardado (si tiene). */
   mine: () => Raro | null;
   onSaved: (raro: Raro, total: number) => void;
+  /**
+   * En la puerta del boliche: hay que armar el raro para entrar. La ventana no se puede
+   * cerrar y, al guardar, en vez de volver a la pista avisa con qué nombre quedó.
+   */
+  door?: (name: string) => void;
 }
 
 /** Las caras y las estampas se dibujan una sola vez y se copian a los botones del menú. */
@@ -65,15 +70,17 @@ export function openCreador(o: CreadorOptions) {
   window.addEventListener('pointercancel', onUp);
 
   const p = openPanel({
-    title: mine ? 'TU RARO' : 'CREA TU RARO',
+    title: o.door ? 'ARMA TU RARO PARA ENTRAR' : mine ? 'TU RARO' : 'CREA TU RARO',
     dock: true,
-    hints: [['↑↓', 'MOVER'], ['←→', 'CAMBIAR'], ['ESC', 'VOLVER']],
+    fixed: Boolean(o.door),
+    hints: o.door ? [['CLIC', 'ELEGIR'], ['ARRASTRA AFUERA', 'GIRARLO']] : [['↑↓', 'MOVER'], ['←→', 'CAMBIAR'], ['ESC', 'VOLVER']],
     onClose: () => {
       window.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
-      o.room.setDraft(null);
+      // En la puerta el raro se queda parado ahí: es el que entra.
+      if (!o.door) o.room.setDraft(null);
       o.room.setMode('pista');
     },
   });
@@ -239,7 +246,7 @@ export function openCreador(o: CreadorOptions) {
   });
   const save = el('button', 'btn rojo', mine ? 'GUARDAR CAMBIOS' : 'ENTRAR A LA PISTA');
   save.type = 'submit';
-  const status = el('p', 'aviso', mine ? 'YA ESTAS EN LA PISTA. PODES CAMBIARTE CUANDO QUIERAS.' : 'ARMATE Y QUEDAS BAILANDO EN LA PISTA PARA SIEMPRE.');
+  const status = el('p', 'aviso', o.door ? 'SIN RARO NO SE ENTRA. ARMATE Y PASAS.' : mine ? 'YA ESTAS EN LA PISTA. PODES CAMBIARTE CUANDO QUIERAS.' : 'ARMATE Y QUEDAS BAILANDO EN LA PISTA PARA SIEMPRE.');
   status.setAttribute('role', 'status');
   const captcha = el('div');
   const turnstile = mountTurnstile(captcha);
@@ -266,7 +273,10 @@ export function openCreador(o: CreadorOptions) {
       const res = await saveRaro(clean, look, turnstile.token());
       sfx.start();
       o.onSaved(res.raro, res.total);
-      go('');
+      if (o.door) {
+        closeWindow();
+        o.door(res.raro.name);
+      } else go('');
     } catch (err) {
       sfx.error();
       status.className = 'error';

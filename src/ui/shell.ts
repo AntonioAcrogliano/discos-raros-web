@@ -74,7 +74,7 @@ export function setRouteLabel(path: string, label: string, call = false) {
   b.textContent = label;
   b.classList.toggle('llamar', call);
 }
-let panel: { root: HTMLElement; onClose?: () => void } | null = null;
+let panel: { root: HTMLElement; onClose?: () => void; navWasHidden: boolean } | null = null;
 let leave: (() => void) | null = null;
 
 /** Mostrar u ocultar la barra y el cartel (la pelea usa toda la pantalla). */
@@ -121,9 +121,12 @@ function closePanel() {
   panel.root.remove();
   ui.classList.remove('con-ventana');
   panel.onClose?.();
+  // La barra vuelve a como estaba antes de abrir la ventana (en la puerta todavía no se muestra).
+  navbar.hidden = panel.navWasHidden;
   panel = null;
-  navbar.hidden = false;
 }
+/** Cierra la ventana abierta sin cambiar de sección (para las que no son una ruta, como la de la puerta). */
+export const closeWindow = closePanel;
 
 export interface PanelOptions {
   title: string;
@@ -132,6 +135,8 @@ export interface PanelOptions {
   dock?: boolean;
   /** Ayuda de teclas de abajo: pares [tecla, qué hace]. */
   hints?: [string, string][];
+  /** Sin X ni "click afuera": hay que terminar lo que pide (armar el raro en la puerta). */
+  fixed?: boolean;
   onClose?: () => void;
 }
 
@@ -151,16 +156,19 @@ export function openPanel(o: PanelOptions) {
   const body = el('div', 'panel-body');
   const foot = el('div', 'panel-foot');
   for (const [k, v] of o.hints ?? [['↑↓', 'MOVER'], ['ENTER', 'ELEGIR'], ['ESC', 'VOLVER']]) foot.append(el('span', '', [el('b', '', k), ` ${v}`]));
-  root.append(el('header', 'panel-title', [el('span', '', o.title), close]), body, foot);
+  root.append(el('header', 'panel-title', o.fixed ? [el('span', '', o.title)] : [el('span', '', o.title), close]), body, foot);
   wrap.append(root);
   // Click afuera de la ventana = volver.
   wrap.addEventListener('pointerdown', (e) => {
-    if (e.target === wrap) go('');
+    if (e.target === wrap && !o.fixed) go('');
   });
+  // En la puerta la interfaz todavía no está en la página (se monta recién adentro).
+  if (!ui.isConnected) document.body.append(ui);
   ui.append(wrap);
   ui.classList.add('con-ventana');
+  const navWasHidden = Boolean(navbar.hidden);
   navbar.hidden = true;
-  panel = { root: wrap, onClose: o.onClose };
+  panel = { root: wrap, onClose: o.onClose, navWasHidden };
   return {
     body,
     /** Pone el foco en lo primero que se puede elegir. */
