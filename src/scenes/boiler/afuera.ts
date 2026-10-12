@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { DR, DR_CYCLE, LOGO_ASPECT, type PSXMaterial, box, makeCanvas, makeCheckerTexture, makeLogoCanvas, makePSXMaterial, makeWallTexture, setPSXMap, street, toPSXTexture } from '../../style-kit';
-import { randomLook } from '../../../shared/look';
+import { type Look, randomLook } from '../../../shared/look';
 import { CLUB } from './club';
 import { CELU, Crowd, PUCHO } from './crowd';
 import { CHARLANDO, EN_LA_FILA, ESPERANDO, FUMANDO } from './dances';
@@ -39,6 +39,10 @@ export interface Afuera {
    * lista y estirarse a abrir la puerta. `camX`/`camZ` es dónde está parado el que llega.
    */
   bouncer(look: number, list: number, reach: number, camX: number, camZ: number): void;
+  /** El raro del que llega, parado frente al patova (null = nadie: entra sin anotarse). */
+  guest(look: Look | null): void;
+  /** Cuánto caminó ese raro hacia adentro (0 = en la puerta, 1 = ya entró). */
+  guestWalk(k: number): void;
   update(beats: number, energy: number, t: number): void;
 }
 
@@ -329,8 +333,39 @@ export function buildAfuera(): Afuera {
     pato.armR.elbow.rotation.set(-0.15 - 0.25 * reach, 0, 0);
   });
 
+  // El raro del que llega: espera frente al patova y, cuando le abren, entra caminando.
+  const yo = new Crowd(1);
+  yo.group.visible = false;
+  group.add(yo.group);
+  const SPOT = { x: 0.85, z: z + 2.3 };
+  let yoLook: Look | null = null;
+  let yoWalk = 0;
+  const dressYo = () => yoLook && yo.setDancers([{ id: 'yo', name: '', look: { ...yoLook, baile: yoWalk > 0.02 ? 5 : ESPERANDO } }]);
+  updaters.push((_b, _e, t) => {
+    if (!yo.group.visible) return;
+    const k = yoWalk;
+    // De su lugar frente al patova al medio de la puerta, y de ahí para adentro.
+    const x = SPOT.x * (1 - Math.min(1, k * 2)), zz = SPOT.z + (z - 2.4 - SPOT.z) * k;
+    yo.place(0, x, zz, k > 0.02 ? Math.PI : Math.atan2(PATO.x - SPOT.x, PATO.z - SPOT.z));
+    yo.update(t * (k > 0.02 ? 2.6 : 1.3), 1, t);
+  });
+
   return {
     group,
+    guest(look) {
+      yoLook = look;
+      yoWalk = 0;
+      yo.group.visible = Boolean(look);
+      dressYo();
+    },
+    guestWalk(k) {
+      if (!yoLook) return;
+      // Al arrancar a caminar cambia de pose (una sola vez: repintar es caro).
+      const starts = yoWalk <= 0.02 && k > 0.02;
+      yoWalk = k;
+      if (starts) dressYo();
+      if (k >= 1) yo.group.visible = false;
+    },
     get traffic() {
       return traffic;
     },

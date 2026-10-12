@@ -4,6 +4,7 @@ import { createBoilerRoom } from './scenes/boiler';
 import { openContacto } from './sections/contacto';
 import { openCreador } from './sections/creador';
 import { openJugar } from './sections/jugar';
+import { askAtDoor } from './sections/puerta';
 import { openSets } from './sections/sets';
 import { PSXStage, fontsReady, makeLogoCanvas, setLogoSprite } from './style-kit';
 import { isTouch, sinTildes } from './ui/dom';
@@ -34,7 +35,11 @@ async function main() {
   stage.onOverlay = (ctx, w, h, t) => room.drawOverlay(ctx, w, h, t);
   // Se abren las puertas y se entra caminando; la interfaz aparece recién adentro.
   setChrome(false);
-  const adentro = room.enter(import.meta.env.DEV && location.search.includes('autostart') && !location.search.includes('puerta'));
+  // En la puerta el patova pide el nombre: con eso el raro ya queda creado y entra con vos.
+  const adentro = room.enter(import.meta.env.DEV && location.search.includes('autostart') && !location.search.includes('puerta'), async () => {
+    const d = await pista;
+    return askAtDoor({ room, mine: d?.mine ?? null, onSaved: (raro, total) => setPista({ ...data, mine: raro, total }) });
+  });
 
   const contador = (total: number) => {
     hudContador.textContent = total > 0 ? `${total.toLocaleString('es-AR')} ${total === 1 ? 'RARO' : 'RAROS'} EN LA PISTA` : 'LA PISTA ESTA VACIA. SE EL PRIMERO.';
@@ -50,8 +55,10 @@ async function main() {
   player.onNext(() => room.skip(1));
   player.onPrev(() => room.skip(-1));
   let data: PistaData = { total: 0, raros: [], mine: null };
+  let loaded = false;
   const setPista = (d: PistaData) => {
     data = d;
+    loaded = true;
     room.setPista(d);
     contador(d.total);
     setRouteLabel('crear', d.mine ? 'TU RARO' : d.total ? 'CREA TU RARO' : 'ENTRA A LA PISTA', !d.mine && d.total === 0);
@@ -97,6 +104,8 @@ async function main() {
     { path: 'pelea', label: 'PELEA', nav: false, open: openPelea },
     { path: 'futbol', label: 'CABEZAZOS', nav: false, open: openFutbol },
   ]);
+  // La pista pudo llegar (o el raro crearse en la puerta) antes de que existiera la barra: se actualiza su cartel.
+  if (loaded) setPista(data);
 }
 
 void main();

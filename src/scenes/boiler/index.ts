@@ -35,8 +35,12 @@ export interface BoilerRoom {
    * La entrada: desde la vereda se camina a la puerta (el set se escucha bajito, de afuera),
    * se abren las hojas, el sonido sube y la cámara termina en la pista.
    * @param skip entrar de una, sin la animación.
+   * @param ask lo que pasa cuando el patova revisa la lista: la entrada espera a que termine
+   *   y devuelve el nombre con el que lo hace pasar (null = entra sin anotarse).
    */
-  enter(skip?: boolean): Promise<void>;
+  enter(skip?: boolean, ask?: () => Promise<string | null>): Promise<void>;
+  /** El raro del que está en la puerta, frente al patova (null = nadie). */
+  setGuest(look: Look | null): void;
   /** En el creador: qué parte del personaje se mira de cerca. */
   setView(view: LookView): void;
   /** En el creador: para dónde mira el personaje (null = gira solo). */
@@ -145,6 +149,12 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let entered: (() => void) | null = null;
   /** La entrada: llegar (0–1.7), el patova mira y revisa la lista (hasta 3.3), abre (3.3–4.3) y se entra. */
   const ENTER_SECONDS = 6.6, DOOR_AT = 3.3;
+  /** En qué momento el patova pregunta el nombre: ahí la entrada espera la respuesta. */
+  const ASK_AT = 2.2;
+  let ask: (() => Promise<string | null>) | null = null;
+  let asking = false;
+  /** Lo que dice el patova al dejarlo pasar. */
+  let welcome = 'ESTAS. PASA.';
   // En iPhone el volumen del player no se puede manejar: ahí el set arranca al apretar, a volumen normal.
   const fixedVolume = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
   /** Cuánto se escucha el set desde la vereda (0–1). El audio de YouTube no se puede filtrar: "de afuera" es bajito, con el ambiente de la calle encima. */
@@ -193,7 +203,18 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (mode === 'afuera') {
       // En la vereda la cámara no persigue nada: va por un camino fijo hasta adentro.
       const e = Math.max(0, entering);
-      if (entering >= 0) entering += dt;
+      if (entering >= ASK_AT && ask) {
+        // El patova ya tiene la lista en la mano: pregunta, y todo espera la respuesta.
+        const question = ask;
+        ask = null;
+        asking = true;
+        entering = ASK_AT;
+        void question().then((name) => {
+          asking = false;
+          welcome = name ? sinTildes(`ESTAS, ${name}. PASA.`) : 'BUENO, PASA.';
+        });
+      }
+      if (entering >= 0 && !asking) entering += dt;
       // Parado en la calle, del otro lado del carril por donde pasan los autos.
       const back = portrait ? 12.5 : 9.8, z = PUERTA.z;
       afuera.traffic = entering < 0;
@@ -212,6 +233,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       a1.set(0, portrait ? 2.35 : 1.75, 0.4);
       camTarget.lerpVectors(a0, a1, inside);
       afuera.setDoors(open);
+      afuera.guestWalk(ease((e - DOOR_AT - 0.35) / 1.5));
       // El patova: te mira cuando llegás, baja la vista a la lista, te vuelve a mirar y abre.
       const list = ease((e - 1.5) / 0.5) * (1 - ease((e - DOOR_AT + 0.45) / 0.35));
       afuera.bouncer(ease((e - 0.4) / 0.8) * (1 - ease((e - DOOR_AT - 0.9) / 0.6)), list, ease((e - DOOR_AT + 0.1) / 0.6) * (1 - ease((e - DOOR_AT - 1.6) / 0.8)), camPos.x, camPos.z);
@@ -347,8 +369,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     setSpin(yaw) {
       crowd.spin = yaw;
     },
-    enter(skip) {
+    setGuest: (look) => afuera.guest(look),
+    enter(skip, question) {
       if (mode !== 'afuera') return Promise.resolve();
+      ask = skip ? null : (question ?? null);
       // Este es el primer click: recién ahora el navegador deja sonar.
       tele.enableSound();
       if (pendingPlay) {
@@ -365,7 +389,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         // Un segundo toque (o tecla) saltea la espera de la lista: la puerta se abre ya.
         const hurry = () => {
           if (mode !== 'afuera') return stopHurry();
-          if (entering > 0.4 && entering < DOOR_AT) entering = DOOR_AT;
+          // (No mientras el patova espera el nombre: ahí manda la ventana de la lista.)
+          if (!ask && !asking && entering > 0.4 && entering < DOOR_AT) entering = DOOR_AT;
         };
         const stopHurry = () => {
           window.removeEventListener('pointerdown', hurry);
@@ -390,9 +415,9 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       if (mode === 'pelea') return room.takeover?.drawOverlay(ctx, w, h, t);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      if (mode === 'afuera' && entering > 1.6 && entering < DOOR_AT + 1.2) {
-        // Lo que dice el patova, abajo, como subtítulo.
-        const says = entering < DOOR_AT - 0.5 ? 'A VER SI ESTAS EN LA LISTA...' : 'ESTAS. PASA.';
+      if (mode === 'afuera' && entering > 1.6 && entering < DOOR_AT + 1.2 && !asking) {
+        // Lo que dice el patova, abajo, como subtítulo (mientras pregunta el nombre lo dice la ventana).
+        const says = entering < DOOR_AT - 0.5 ? 'A VER SI ESTAS EN LA LISTA...' : welcome;
         const unit = titleUnit(w, h);
         outlined(ctx, says, w / 2, Math.round(h * 0.84), Math.min(unit, Math.floor((w * 0.9) / says.length)), entering < DOOR_AT - 0.5 ? DR.crema : DR.amarillo);
       }
