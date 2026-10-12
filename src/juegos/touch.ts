@@ -24,6 +24,19 @@ export interface TouchPad {
 
 const key = (type: 'keydown' | 'keyup', code: string) => window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true, cancelable: true }));
 
+/**
+ * ¿El juego está acostado por CSS? Pasa con el celu parado y el giro trabado (casi todos los
+ * iPhone): la página no gira nunca, así que se gira el dibujo y se juega girando el celu a mano.
+ */
+const turned = () => document.documentElement.classList.contains('acostado');
+
+/** Dónde cayó un toque sobre la capa de textos, en píxeles de la capa (esté acostada o no). */
+export function layerPoint(layer: HTMLCanvasElement, e: PointerEvent) {
+  if (turned()) return { x: (e.clientY / window.innerHeight) * layer.width, y: (1 - e.clientX / window.innerWidth) * layer.height };
+  const r = layer.getBoundingClientRect();
+  return { x: ((e.clientX - r.left) / r.width) * layer.width, y: ((e.clientY - r.top) / r.height) * layer.height };
+}
+
 /** ¿El toque fue sobre un control táctil? (para no tomarlo también como "toque en la pantalla"). */
 export const onTouchUi = (e: Event) => Boolean((e.target as Element | null)?.closest?.('.touch-ui'));
 
@@ -41,7 +54,9 @@ export function mountTouchPad(actions: TouchAction[], onPortrait: (portrait: boo
   let finger: number | null = null;
   const aim = (e: PointerEvent) => {
     const r = stick.getBoundingClientRect();
-    const x = (e.clientX - r.left - r.width / 2) / (r.width / 2), y = (e.clientY - r.top - r.height / 2) / (r.height / 2);
+    const sx = (e.clientX - r.left - r.width / 2) / (r.width / 2), sy = (e.clientY - r.top - r.height / 2) / (r.height / 2);
+    // Acostado por CSS, "derecha" en el juego es "abajo" en la pantalla.
+    const [x, y] = turned() ? [sy, -sx] : [sx, sy];
     const k = Math.min(1, 1 / Math.max(1e-6, Math.hypot(x, y)));
     knob.style.transform = `translate(${x * k * 32}%, ${y * k * 32}%)`;
     const next = new Set<string>();
@@ -97,17 +112,27 @@ export function mountTouchPad(actions: TouchAction[], onPortrait: (portrait: boo
     key('keyup', 'Escape');
   });
 
-  const rotate = el('div', 'touch-rotate', [el('p', '', 'GIRA EL CELU'), el('p', 'chico', 'LOS JUEGOS SE JUEGAN ACOSTADO')]);
-  const root = el('div', 'touch-ui', [stick, buttons, menu, rotate]);
+  const root = el('div', 'touch-ui', [stick, buttons, menu]);
   root.dataset.mode = 'menu';
   root.addEventListener('contextmenu', (e) => e.preventDefault());
   document.body.append(root);
 
+  // Con el celu parado el juego se dibuja acostado igual (ver `turned`).
   const portrait = window.matchMedia('(orientation: portrait)');
-  const turned = () => onPortrait(portrait.matches);
-  portrait.addEventListener('change', turned);
+  const lay = (on: boolean) => {
+    if (on === turned()) return;
+    letGo();
+    document.documentElement.classList.toggle('acostado', on);
+    window.dispatchEvent(new Event('resize'));
+  };
+  const flipped = () => {
+    lay(portrait.matches);
+    onPortrait(portrait.matches);
+  };
+  portrait.addEventListener('change', flipped);
+  lay(portrait.matches);
 
-  // Donde se puede (Android): pantalla completa y trabada acostada. En iPhone no existe: queda el cartel.
+  // Donde se puede (Android): pantalla completa y trabada acostada. En iPhone no existe: se acuesta el dibujo.
   const orientation = screen.orientation as (ScreenOrientation & { lock?: (o: string) => Promise<void> }) | undefined;
   void document.documentElement
     .requestFullscreen?.()
@@ -128,7 +153,8 @@ export function mountTouchPad(actions: TouchAction[], onPortrait: (portrait: boo
     dispose() {
       letGo();
       for (const c of pressed) key('keyup', c);
-      portrait.removeEventListener('change', turned);
+      portrait.removeEventListener('change', flipped);
+      lay(false);
       root.remove();
       orientation?.unlock?.();
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});

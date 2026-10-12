@@ -1,5 +1,6 @@
 import { DR, FONT, blip, fitSize, outlined } from '../style-kit';
 import { PadEdges } from './gamepad';
+import { layerPoint } from './touch';
 
 /**
  * Interfaz compartida por los juegos (pelea y cabezazos), dibujada en la capa de textos:
@@ -266,8 +267,8 @@ export function selectClicks(layer: HTMLCanvasElement, view: () => SelectView | 
   const at = (e: PointerEvent) => {
     const v = view();
     if (!v) return null;
-    const r = layer.getBoundingClientRect();
-    return selectHit(layer.width, layer.height, v, ((e.clientX - r.left) / r.width) * layer.width, ((e.clientY - r.top) / r.height) * layer.height);
+    const p = layerPoint(layer, e);
+    return selectHit(layer.width, layer.height, v, p.x, p.y);
   };
   const down = (e: PointerEvent) => {
     const hit = at(e);
@@ -414,8 +415,7 @@ export class PauseMenu {
   private tap = (e: PointerEvent) => {
     const layer = this.o.layer;
     if (!this.open || !layer) return;
-    const r = layer.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * layer.width, y = ((e.clientY - r.top) / r.height) * layer.height;
+    const { x, y } = layerPoint(layer, e);
     const i = this.rects.findIndex((q) => x >= q.x && x < q.x + q.w && y >= q.y && y < q.y + q.h);
     if (i < 0) return;
     this.index = i;

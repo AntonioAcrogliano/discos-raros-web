@@ -76,24 +76,6 @@
 .touch-ui[data-mode='menu'] .touch-stick,
 .touch-ui[data-mode='menu'] .touch-buttons { display: none; }
 
-/* Con el celu parado: cartel a pantalla completa. */
-.touch-rotate {
-  display: none;
-  position: absolute;
-  inset: 0;
-  place-content: center;
-  gap: 14px;
-  text-align: center;
-  background: var(--dr-negro);
-  color: var(--dr-amarillo);
-  font-size: 16px;
-}
-.touch-rotate p { margin: 0; }
-.touch-rotate .chico { font-size: 8px; color: var(--dr-rosa); line-height: 1.6; }
-@media (orientation: portrait) {
-  .touch-rotate { display: grid; }
-}
-
 /* Fuera de la partida, SALIR va arriba a la izquierda (abajo está el pie de ayuda del menú). */
 .touch-ui[data-mode='menu'] .touch-menu {
   left: calc(10px + env(safe-area-inset-left));
@@ -101,3 +83,10 @@
   bottom: auto;
   transform: none;
 }
+
+/* Acostado por CSS (ver kit.css): los bordes del celu quedan girados. La izquierda del juego
+   es la parte de arriba del celu (la isla) y la derecha, la de abajo (la barrita). */
+html.acostado .touch-stick { left: calc(14px + env(safe-area-inset-top)); bottom: 14px; }
+html.acostado .touch-buttons { right: calc(14px + env(safe-area-inset-bottom)); bottom: 14px; }
+html.acostado .touch-menu { bottom: 8px; }
+html.acostado .touch-ui[data-mode='menu'] .touch-menu { left: calc(10px + env(safe-area-inset-top)); top: 10px; bottom: auto; }

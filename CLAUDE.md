@@ -33,7 +33,7 @@ Redes: YouTube @discosraros · Instagram @discosraros.arg · Kick discosRaros.
 - **Patio de juegos**: al abrir el menú de juegos la cámara sale al patio (mismo archivo) y el set baja al 40%. Los dos juegos se juegan ahí: están armados alrededor del origen y su `group` se muda entero a `PATIO`. De la línea de la cancha (`PATIO.gameZ`) hacia la cámara no puede haber muebles.
 - **Pista infinita**: nunca se renderizan todos los personajes. Se usa instancing y se muestran como máximo unos 120 a la vez, que es lo que entra sin que se pisen (el tuyo siempre, más los recientes y una muestra aleatoria), con contador total ("1.234 raros en la pista").
 - **Personaje del visitante**: menú de personalización (cuerpo, colores, ropa, accesorios) + nombre visible. **Sin foto de cara** (se descartó: mucho quilombo de moderación). Lo único a moderar es el nombre.
-- **Mobile**: el boiler room tiene que andar en celular (con menos personajes y menos resolución). Los juegos también: stick y botones en pantalla (`src/juegos/touch.ts`), que "aprietan teclas" de mentira, así usan los mismos controles que el teclado. Se juega acostado; parado aparece un cartel pidiendo girar el celu.
+- **Mobile**: el boiler room tiene que andar en celular (con menos personajes y menos resolución). Los juegos también: stick y botones en pantalla (`src/juegos/touch.ts`), que "aprietan teclas" de mentira, así usan los mismos controles que el teclado. Se juega acostado. Con el celu parado (iPhone con el giro trabado: la página no gira nunca) el juego se dibuja acostado igual y se gira por CSS (`html.acostado`, lo pone `touch.ts`), así se juega girando el celu a mano; los toques sobre la capa de textos pasan por `layerPoint`.
 
 ## Modelos 3D
 

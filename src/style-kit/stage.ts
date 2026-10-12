@@ -47,8 +47,10 @@ export class PSXStage {
   }
 
   resize() {
-    const w = Math.max(1, window.innerWidth);
-    const h = Math.max(1, window.innerHeight);
+    // Con los juegos en un celu parado, la imagen se dibuja acostada y se gira por CSS (`html.acostado`).
+    const turned = document.documentElement.classList.contains('acostado');
+    const w = Math.max(1, turned ? window.innerHeight : window.innerWidth);
+    const h = Math.max(1, turned ? window.innerWidth : window.innerHeight);
     this.renderer.setSize(w, h, false);
     this.post.setSize(w, h);
     this.overlayCanvas.width = this.post.internalWidth;
