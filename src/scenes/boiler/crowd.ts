@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LOOK, type Look, type Raro } from '../../../shared/look';
 import { DETAIL, type DetailCell, detailUv, make3DGlassesTexture, makeDetailTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
-import { dance, makePose } from './dances';
+import { EN_LA_FILA, dance, makePose } from './dances';
 
 /**
  * La pista: hasta MAX personajes dibujados con instancing (una malla instanciada por parte del
@@ -422,6 +422,12 @@ const HAND_GEOS: (THREE.BufferGeometry | null)[] = [
   // GUANTES (es solo el color de la mano)
   null,
 ];
+/**
+ * El celu de la gente de la fila: no es una opción del creador (va después de todas las de
+ * LOOK.mano). La pantalla queda del lado de la cara cuando el brazo está doblado hacia arriba.
+ */
+export const CELU = HAND_GEOS.length;
+HAND_GEOS.push(merge(bx(0.075, 0.15, 0.016, 0, HAND_Y - 0.035, 0.06, K), bx(0.06, 0.125, 0.006, 0, HAND_Y - 0.035, 0.07, W)));
 /** Lo que va en las dos manos; el resto, solo en la derecha. */
 const BOTH_HANDS = new Set([1, 4]);
 const HAND_COLOR: Record<number, string> = { 3: '#9ad8ff' };
@@ -619,7 +625,7 @@ export class Crowd {
     this.skirts = parts(SKIRT_GEOS);
     // Los palitos de luz no llevan sombra: brillan.
     const glow = makePSXMaterial({ map: detail, detail: true, lit: false });
-    this.held = parts(HAND_GEOS, (i) => (i === 1 ? glow : plain), capacity * 2);
+    this.held = parts(HAND_GEOS, (i) => (i === 1 || i === CELU ? glow : plain), capacity * 2);
     this.parts = [this.shoes, this.torsos, this.heads, this.hair, this.acc, this.glasses, this.mouth, this.over, this.tops, this.skirts, this.held];
   }
 
@@ -658,6 +664,12 @@ export class Crowd {
   setSolo(solo: boolean) {
     this.solo = solo;
     this.paint();
+  }
+
+  /** Pone al bailarín `i` en un lugar exacto, mirando para donde se le diga (la fila de afuera). */
+  place(i: number, x: number, z: number, yaw: number) {
+    const d = this.dancers[i];
+    if (d) Object.assign(d, { x, z, yaw });
   }
 
   /** Pone al bailarín `i` en un lugar exacto, de frente y sin variaciones (para exportarlo). */
@@ -778,7 +790,8 @@ export class Crowd {
     this.shown().forEach((d, i) => {
       const l = d.look;
       const b = BUILDS[l.cuerpo] ?? BUILDS[0];
-      dance(l.baile, beats + d.phase * 0.012, e, p);
+      // Los que bailan van casi a la par; los de la fila, cada uno a su tiempo.
+      dance(l.baile, beats + d.phase * (l.baile === EN_LA_FILA ? 1.7 : 0.012), e, p);
       // En el creador gira despacio para verlo de todos lados (o mira para donde lo dejaron).
       const facing = this.solo ? (this.spin ?? Math.sin(t * 0.7) * 0.9) : d.yaw + Math.sin(t * 0.9 + d.phase) * 0.08 * (1 - e);
       const h = b.h * d.vary;

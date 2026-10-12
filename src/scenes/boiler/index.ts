@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type Look, type LookView, type Raro, type SetInfo, validLook } from '../../../shared/look';
 import type { PistaData } from '../../api';
-import { DR, type PSXStage, outlined, psxUniforms, titleUnit } from '../../style-kit';
+import { DR, DoorAudio, type PSXStage, outlined, psxUniforms, titleUnit } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
 import { CLUB, buildClub } from './club';
@@ -150,6 +150,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   const OUTSIDE = 0.12;
   /** Volumen del set al que hay que llegar (0–1). */
   let wantVolume = OUTSIDE;
+  /** El audio propio del set, para escucharlo tapado desde la vereda (null = no hay archivo: se usa solo el volumen). */
+  let door: DoorAudio | null = null;
+  /** Ya está sonando el audio propio. */
+  let doorOn = false;
   tele.volume = fixedVolume ? 1 : OUTSIDE;
   const ease = (x: number) => {
     const k = Math.max(0, Math.min(1, x));
@@ -203,8 +207,18 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       a1.set(0, portrait ? 2.35 : 1.75, 0.4);
       camTarget.lerpVectors(a0, a1, inside);
       afuera.setDoors(open);
-      // Al abrirse la puerta el set pasa de escucharse de afuera a sonar a pleno.
-      wantVolume = OUTSIDE + (1 - OUTSIDE) * ease((e - 2.0) / 1.6);
+      if (doorOn && door) {
+        // Con audio propio: afuera suena tapado, la puerta le abre el filtro y recién ahí se
+        // cruza con el player de YouTube (si es el mismo set y van a la par, ni se nota).
+        const cross = door.synced ? ease((e - 3.1) / 0.6) : ease((e - 2.2) / 1.6);
+        door.open(ease((e - 2.0) / 1.1) * (door.synced ? 1 : 0.6));
+        door.level(1 - cross);
+        wantVolume = cross;
+        tele.volume = cross;
+      } else {
+        // Sin archivo: al abrirse la puerta el set pasa de escucharse bajito a sonar a pleno.
+        wantVolume = OUTSIDE + (1 - OUTSIDE) * ease((e - 2.0) / 1.6);
+      }
       fov = portrait ? 66 : 52;
       stage.camera.position.copy(camPos);
       stage.camera.lookAt(camTarget);
@@ -213,6 +227,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         stage.camera.updateProjectionMatrix();
       }
       if (e >= ENTER_SECONDS) {
+        door?.stop();
+        doorOn = false;
         room.setMode('pista');
         entered?.();
         entered = null;
@@ -332,6 +348,20 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     enter(skip) {
       if (mode !== 'afuera') return Promise.resolve();
       // Este es el primer click: recién ahora el navegador deja sonar.
+      if (door && !fixedVolume && !skip) {
+        // Si el archivo es el principio de este set, arranca a la par del video. Si el video ya
+        // se pasó de lo que dura el archivo (o casi), el video vuelve al principio.
+        let at = 0;
+        if (door.synced) {
+          at = tele.time;
+          if (!door.duration || at > door.duration - 8) {
+            at = 0;
+            tele.seek(0);
+          }
+        }
+        doorOn = door.start(at);
+        if (doorOn) tele.volume = 0;
+      }
       tele.enableSound();
       if (pendingPlay) {
         pendingPlay();
@@ -351,6 +381,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       current = set;
       bpm = set.bpm;
       room.onNowPlaying?.(set);
+      if (mode === 'afuera' && entering < 0) void DoorAudio.find(set.number).then((d) => (door = d));
       // En iPhone no conviene arrancarlo mudo antes del click (después no deja darle sonido): espera a que se entre.
       if (fixedVolume && mode === 'afuera' && entering < 0) pendingPlay = () => void tele.play(set.id);
       else void tele.play(set.id);

@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { DR, DR_CYCLE, LOGO_ASPECT, type PSXMaterial, box, makeCanvas, makeCheckerTexture, makeLogoCanvas, makePSXMaterial, makeWallTexture, setPSXMap, toPSXTexture } from '../../style-kit';
+import { randomLook } from '../../../shared/look';
 import { CLUB } from './club';
+import { CELU, Crowd } from './crowd';
+import { EN_LA_FILA } from './dances';
 
 /**
  * Lo que hay alrededor del club: la vereda con la fachada y las puertas (la entrada del sitio)
@@ -13,11 +16,15 @@ const TAU = Math.PI * 2;
 /** Medidas de la puerta (dos hojas) y de la vereda. */
 export const PUERTA = { halfW: 1.15, h: 2.7, z: CLUB.frontZ };
 
-/** Pared con textura de ladrillo repetida según su tamaño. */
-function brick(w: number, h: number, mat: THREE.Material) {
-  const geo = new THREE.PlaneGeometry(w, h, Math.max(1, Math.ceil(w / 2)), Math.max(1, Math.ceil(h / 2)));
+/**
+ * Pared de ladrillo. La textura se mide en metros desde (u0, v0), así varios paños pegados
+ * (la fachada alrededor de la puerta) siguen las mismas hiladas. Va cortada en cuadros chicos:
+ * con polígonos grandes la textura sin corrección de perspectiva se tuerce demasiado.
+ */
+function brick(w: number, h: number, mat: THREE.Material, u0 = 0, v0 = 0) {
+  const geo = new THREE.PlaneGeometry(w, h, Math.max(1, Math.ceil(w / 0.8)), Math.max(1, Math.ceil(h / 0.8)));
   const uv = geo.attributes.uv;
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (w / 1.6), uv.getY(i) * (h / 1.6));
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (u0 + uv.getX(i) * w) / 1.6, (v0 + uv.getY(i) * h) / 1.6);
   return new THREE.Mesh(geo, mat);
 }
 
@@ -36,13 +43,13 @@ export function buildAfuera(): Afuera {
 
   // --- Fachada: pared de ladrillo con el hueco de la puerta ---------------------------------
   const wall = makePSXMaterial({ map: makeWallTexture('#2b1d33', '#120b18') });
-  const side = (W - halfW) / 1;
+  const side = W - halfW;
   for (const s of [-1, 1]) {
-    const p = brick(side, H, wall);
+    const p = brick(side, H, wall, s < 0 ? -W : halfW);
     p.position.set(s * (halfW + side / 2), H / 2, z);
     group.add(p);
   }
-  const top = brick(halfW * 2, H - h, wall);
+  const top = brick(halfW * 2, H - h, wall, -halfW, h);
   top.position.set(0, h + (H - h) / 2, z);
   group.add(top);
   // Marco de la puerta y escalón.
@@ -135,12 +142,28 @@ export function buildAfuera(): Afuera {
   // Postes dorados con soga: la fila.
   const gold = makePSXMaterial({ color: '#c9a227' });
   const rope = makePSXMaterial({ color: DR.rojo });
-  for (const x of [-2.2, -4.4]) {
+  for (const x of [-2.2, -4.4, -6.6, -8.8]) {
     group.add(box(0.1, 1, 0.1, gold, x, 0.5, z + 1.7));
     group.add(box(0.2, 0.06, 0.2, gold, x, 0.03, z + 1.7));
     group.add(box(0.15, 0.1, 0.15, gold, x, 1.03, z + 1.7));
   }
-  group.add(box(2.2, 0.07, 0.06, rope, -3.3, 0.86, z + 1.7));
+  for (const x of [-3.3, -5.5, -7.7]) group.add(box(2.2, 0.07, 0.06, rope, x, 0.86, z + 1.7));
+
+  // La fila: raros esperando para entrar, cada uno mirando su celu. Son personajes como los
+  // de la pista, con looks al azar (siempre los mismos: la semilla es fija).
+  const fila = new Crowd(8);
+  let fseed = 77;
+  const fr = () => ((fseed = (fseed * 16807) % 2147483647) - 1) / 2147483646;
+  fila.setDancers(
+    Array.from({ length: 8 }, (_, i) => {
+      const look = randomLook(fr);
+      // Sin alas ni mochilas (se pisarían en la fila) y con la mano libre para el celu.
+      return { id: `fila${i}`, name: '', look: { ...look, encima: 0, mano: CELU, baile: EN_LA_FILA } };
+    }),
+  );
+  for (let i = 0; i < 8; i++) fila.place(i, -2.5 - i * 0.82 + (fr() - 0.5) * 0.12, z + 0.95 + (fr() - 0.5) * 0.25, Math.PI / 2 + (fr() - 0.5) * 0.5);
+  group.add(fila.group);
+  updaters.push((_b, _e, t) => fila.update(t * 1.3, 1, t));
   // Farol con su haz.
   const metal = makePSXMaterial({ color: '#3a3a44' });
   group.add(box(0.14, 4.6, 0.14, metal, 4.6, 2.3, z + 4.2));

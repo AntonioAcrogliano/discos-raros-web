@@ -18,6 +18,8 @@ interface YTPlayer {
   pauseVideo(): void;
   setVolume(v: number): void;
   unMute(): void;
+  getCurrentTime(): number;
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
   getPlayerState(): number;
 }
 interface YTNamespace {
@@ -102,6 +104,18 @@ export class Tele {
     this.player.unMute();
     this.player.setVolume(Math.round(this.vol * 100));
     this.player.playVideo();
+  }
+
+  /** Por dónde va el set (segundos); 0 si todavía no cargó. */
+  get time() {
+    try {
+      return this.player?.getCurrentTime() ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+  seek(seconds: number) {
+    this.player?.seekTo(seconds, true);
   }
 
   private vol = 1;

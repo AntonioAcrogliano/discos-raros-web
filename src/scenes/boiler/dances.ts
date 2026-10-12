@@ -33,6 +33,9 @@ export interface Pose {
   kR: number;
 }
 
+/** No es un paso de baile: es la gente de la fila de afuera, parada mirando el celu. */
+export const EN_LA_FILA = 100;
+
 export const makePose = (): Pose => ({ hop: 0, yaw: 0, lean: 0, roll: 0, sway: 0, headRx: 0, headRy: 0, aLx: 0, aLz: 0, aRx: 0, aRz: 0, eL: 0, eR: 0, tL: 0, tR: 0, tLz: 0, tRz: 0, kL: 0, kR: 0 });
 
 const TAU = Math.PI * 2;
@@ -227,6 +230,22 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
       squat((1 - hop01) * 0.25 * e);
       break;
     }
+    case EN_LA_FILA:
+      // El celu en la derecha, a la altura del pecho; la cabeza gacha y el pulgar que no para.
+      p.aRx = -0.5;
+      p.aRz = -0.02;
+      p.eR = -1.78 + 0.03 * Math.sin(f * 9);
+      p.aLx = 0.08;
+      p.aLz = 0.12;
+      p.eL = -0.2;
+      p.headRx = 0.46 + 0.04 * Math.sin(f * 0.9);
+      p.headRy = -0.06;
+      // Cambia el peso de una pierna a la otra, despacio.
+      p.roll = 0.035 * Math.sin(f * 0.45);
+      p.sway = 0.02 * Math.sin(f * 0.45);
+      p.kL = 0.12 * Math.max(0, Math.sin(f * 0.45));
+      p.tL = -0.06 * Math.max(0, Math.sin(f * 0.45));
+      break;
     default: // saltito
       p.hop = hop01 * 0.14;
       p.aLx = 0.5 * s * e;

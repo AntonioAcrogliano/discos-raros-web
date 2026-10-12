@@ -1,0 +1,3 @@
+Acá va el audio "de afuera" de cada set: <número>.mp3 (los primeros minutos).
+Se arma con: npm run afuera -- "ruta/al/set.wav" 58
+Sin archivo para el set que suena, el sitio usa afuera.mp3 si existe; si no, solo baja el volumen.

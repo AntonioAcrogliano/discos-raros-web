@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "afuera": "node scripts/afuera.mjs"
   },
   "dependencies": {
     "@fontsource/press-start-2p": "^5.3.0",
