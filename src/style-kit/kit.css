@@ -25,6 +25,8 @@ html, body {
   -webkit-font-smoothing: none;
   font-smooth: never;
   overscroll-behavior: none;
+  /* Arrastrar sobre la pista mueve la cámara: que el navegador no lo tome como scroll o zoom. */
+  touch-action: none;
 }
 
 #stage {

@@ -127,6 +127,41 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   window.addEventListener('pointermove', point);
   window.addEventListener('pointerdown', point);
   document.documentElement.addEventListener('pointerleave', () => (pointer.x = -1));
+
+  // Mirar la pista: arrastrando (mouse o dedo) la cámara gira alrededor y sube; con la rueda o
+  // pellizcando se mete arriba de la cabina, encima de los raros. Si no se toca nada, vuelve sola.
+  const look = { yaw: 0, pitch: 0, zoom: 0, idle: 99 };
+  const fingers = new Map<number, { x: number; y: number }>();
+  const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
+  const onFloor = (e: Event) => mode === 'pista' && (e.target === document.body || e.target === document.documentElement);
+  const zoomBy = (d: number) => {
+    look.zoom = clamp(look.zoom + d, 0, 1);
+    look.idle = 0;
+  };
+  window.addEventListener('pointerdown', (e) => {
+    if (onFloor(e)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  });
+  window.addEventListener('pointermove', (e) => {
+    const f = fingers.get(e.pointerId);
+    if (!f) return;
+    if (mode !== 'pista') return fingers.clear();
+    const dx = e.clientX - f.x, dy = e.clientY - f.y;
+    if (fingers.size === 1) {
+      look.yaw = clamp(look.yaw - dx * 0.005, -1.25, 1.25);
+      look.pitch = clamp(look.pitch + dy * 0.004, -0.1, 0.7);
+      look.idle = 0;
+    } else {
+      // Dos dedos: lo que se separan o se juntan es el zoom.
+      const other = [...fingers.entries()].find(([id]) => id !== e.pointerId)![1];
+      zoomBy((Math.hypot(e.clientX - other.x, e.clientY - other.y) - Math.hypot(f.x - other.x, f.y - other.y)) / 250);
+    }
+    f.x = e.clientX;
+    f.y = e.clientY;
+  });
+  const lift = (e: PointerEvent) => fingers.delete(e.pointerId);
+  window.addEventListener('pointerup', lift);
+  window.addEventListener('pointercancel', lift);
+  window.addEventListener('wheel', (e) => onFloor(e) && zoomBy(-e.deltaY * 0.0012), { passive: true });
   let showcase: number[] = [];
   const pickShowcase = () => {
     const named: number[] = [];
@@ -325,6 +360,29 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       wantPos.set(Math.sin(t * 0.13) * 1.3, (portrait ? 2.7 : 2.2) + Math.sin(t * 0.21) * 0.1, (portrait ? 9.6 : 6.7) - kick);
       wantTarget.set(0, portrait ? 2.35 : 1.75, 0.4);
       wantFov = portrait ? 66 : 52;
+      // Lo que movió el visitante: gira alrededor de adonde mira; con zoom, el centro se corre
+      // a la pista y la cámara sube lo justo para pasar por arriba de los DJs.
+      look.idle += dt;
+      if (look.idle > 8 && !fingers.size) {
+        const back = Math.exp(-dt * 1.5);
+        look.yaw *= back;
+        look.pitch *= back;
+        look.zoom *= back;
+      }
+      if (Math.abs(look.yaw) + Math.abs(look.pitch) + look.zoom > 0.002) {
+        a0.subVectors(wantPos, wantTarget);
+        const far = a0.length(), z = ease(look.zoom);
+        const yaw = Math.atan2(a0.x, a0.z) + look.yaw;
+        const pitch = Math.max(Math.asin(a0.y / far) + look.pitch, 0.35 * z);
+        const dist = far + (4.2 - far) * z;
+        wantTarget.y += (1.5 - wantTarget.y) * z;
+        wantTarget.z += (-2.2 - wantTarget.z) * z;
+        wantPos.set(
+          clamp(wantTarget.x + Math.sin(yaw) * Math.cos(pitch) * dist, -CLUB.halfW + 0.5, CLUB.halfW - 0.5),
+          Math.min(wantTarget.y + Math.sin(pitch) * dist, CLUB.ceilY - 0.5),
+          Math.max(wantTarget.z + Math.cos(yaw) * Math.cos(pitch) * dist, CLUB.backZ + 0.5),
+        );
+      }
     }
     const k = Math.min(1, dt * 4);
     camPos.lerp(wantPos, k);
@@ -492,6 +550,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         ctx.globalAlpha = Math.min(1, namesLeft);
         for (const i of showcase) label(ctx, w, h, i, DR.crema, false, t);
         if (hasFirst) label(ctx, w, h, 0, DR.amarillo, true, t);
+        if (look.idle > 8) outlined(ctx, 'ARRASTRA PARA MIRAR', w / 2, Math.round(h * 0.9), Math.max(6, Math.round(titleUnit(w, h) * 0.5)), DR.crema);
         ctx.globalAlpha = 1;
       }
       const i = pointed();
