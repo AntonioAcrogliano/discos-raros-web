@@ -375,8 +375,9 @@ const OVER_COLOR: Record<number, string> = { 1: '#ffe600', 6: '#f9f2e8' };
 /** Lo que va arriba del torso según LOOK.arriba (el resto de las prendas son solo colores). */
 const TOP_GEOS: (THREE.BufferGeometry | null)[] = LOOK.arriba.map((_, i) =>
   i === TOP
-    ? // La panza al aire.
-      bx(0.42, 0.2, 0.24, 0, HIP_Y + 0.115, 0)
+    ? // La panza al aire: sigue la forma de la cintura (apenas más grande que el torso, para
+      // taparlo). Una caja recta alrededor de la cintura angosta quedaba de panza.
+      tint(at(loft([[0.015, 0.2, 0.116, -0.11, 0.042], [0.215, 0.189, 0.116, -0.106, 0.042]], [0, 0, 1, 1]), 0, HIP_Y, 0), T0)
     : i === ARNES
       ? merge(bx(0.42, 0.045, 0.24, 0, HIP_Y + 0.35, 0), ...pair(0.045, 0.2, 0.24, 0.1, HIP_Y + 0.445, 0), bx(0.09, 0.09, 0.02, 0, HIP_Y + 0.35, 0.127, G), bx(0.045, 0.045, 0.022, 0, HIP_Y + 0.35, 0.128, K))
       : i === CHALECO
