@@ -55,6 +55,8 @@ Redes: YouTube @discosraros · Instagram @discosraros.arg · Kick discosRaros.
 - `src/style-kit/`: paleta, material PSX, post-procesado, texturas, títulos, sonidos y `PSXStage` (renderer + post + capa de textos + loop). Todas las escenas pasan por ahí.
 - `src/scenes/boiler/`: club, pista instanciada (`crowd.ts`: una malla instanciada por prenda/accesorio), pasos de baile (`dances.ts`: funciones del beat, sin animaciones guardadas), DJs, tele de YouTube.
 - El boliche (`club.ts`) mantiene su look de siempre: paredes violetas, baldosas que cambian con el beat, haces de colores de la marca y bola de espejos. `club.light` es esa misma luz latiendo con el bombo (la aplica `index.ts`). Nada de fogonazos a pantalla completa.
+- El que tiene raro lo maneja en la pista (WASD, o un toque en el piso o en otro raro): `crowd.walkTo` / `steer`, y la cámara lo sigue (`follow` en `index.ts`). El que no tiene, mueve la cámara sola.
+- Compartir (`src/sections/compartir.ts`, ruta `#/compartir`, se carga recién al pedirla): arma la foto vertical de 1080×1920 del raro para historias. Lo importante va entre el 13% y el 87% del alto, que es lo que Instagram deja libre.
 - La versión "antro de Berlín" (hormigón, luces por escenas, láseres) quedó guardada en la rama `antro-berlin` para más adelante: no está en uso. No cambiar la estética del sitio sin que lo pidan.
 - Juegos (se cargan recién al entrar, se juegan en el patio y manejan la cámara con `room.takeover`): `src/pelea/` (Discos vs Raros) y `src/futbol/` (Cabezazos; la física y la CPU están en `game.ts`, sin Three.js, así se pueden simular partidos con Node para ajustar la dificultad).
 - `src/ui/` y `src/sections/`: barra, ventanas y secciones (Sets, Crear tu raro, Contacto). Rutas por hash (`#/sets`…).

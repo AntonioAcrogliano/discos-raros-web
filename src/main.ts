@@ -1,4 +1,4 @@
-import type { SetInfo } from '../shared/look';
+import type { Raro, SetInfo } from '../shared/look';
 import { type PistaData, fetchPista, fetchSets } from './api';
 import { createBoilerRoom } from './scenes/boiler';
 import { openContacto } from './sections/contacto';
@@ -8,7 +8,7 @@ import { askAtDoor } from './sections/puerta';
 import { openSets } from './sections/sets';
 import { PSXStage, fontsReady, makeLogoCanvas, setLogoSprite } from './style-kit';
 import { isTouch, sinTildes } from './ui/dom';
-import { go, hudContador, mountUi, pistaHint, player, setChrome, setRouteLabel, showHint } from './ui/shell';
+import { go, hudContador, mountUi, pistaHint, player, setChrome, setRouteLabel, showCall, showHint } from './ui/shell';
 import { showStartScreen } from './ui/startScreen';
 
 /** Dibujitos de la barra: un disco, un raro, un joystick y un sobre. */
@@ -46,7 +46,7 @@ async function main() {
   // En la puerta el patova pide el nombre: con eso el raro ya queda creado y entra con vos.
   const adentro = room.enter(import.meta.env.DEV && location.search.includes('autostart') && !location.search.includes('puerta'), async () => {
     const d = await pista;
-    return askAtDoor({ room, mine: d?.mine ?? null, onSaved: (raro, total) => setPista({ ...data, mine: raro, total }) });
+    return askAtDoor({ room, mine: d?.mine ?? null, onSaved: (raro, total) => onSaved(raro, total) });
   });
 
   const contador = (total: number) => {
@@ -72,6 +72,16 @@ async function main() {
     setRouteLabel('crear', d.mine ? 'TU RARO' : d.total ? 'CREA TU RARO' : 'ENTRA A LA PISTA', !d.mine && d.total === 0);
   };
   void pista.then((d) => d && setPista(d));
+  // Raro recién armado (en la puerta o en el creador): se invita a compartirlo, una vez adentro.
+  let mounted = false, invite = false;
+  const inviteToShare = () => showCall('TU RARO YA ESTA EN LA PISTA.', 'COMPARTILO', 'compartir');
+  const onSaved = (raro: Raro, total: number) => {
+    const isNew = !data.mine;
+    setPista({ ...data, mine: raro, total });
+    if (!isNew) return;
+    if (mounted) inviteToShare();
+    else invite = true;
+  };
   contador(0);
   // El set ya puede estar puesto desde antes de entrar: se actualiza el cartel.
   const now = room.playing();
@@ -105,14 +115,18 @@ async function main() {
       path: 'crear',
       label: 'CREA TU RARO',
       icon: ICONS.raro,
-      open: () => openCreador({ room, mine: () => data.mine, onSaved: (raro, total) => setPista({ ...data, mine: raro, total }) }),
+      open: () => openCreador({ room, mine: () => data.mine, onSaved }),
     },
     { path: 'jugar', label: 'PATIO DE JUEGOS', icon: ICONS.juegos, open: () => openJugar(room) },
     { path: 'contacto', label: 'CONTACTO', icon: ICONS.sobre, open: openContacto },
     // Los juegos se abren desde JUGAR (teclado o joystick en la compu; controles táctiles en el celular).
     { path: 'pelea', label: 'PELEA', nav: false, open: openPelea },
     { path: 'futbol', label: 'CABEZAZOS', nav: false, open: openFutbol },
+    // La foto del raro se arma recién cuando se pide (trae su propio dibujante).
+    { path: 'compartir', label: 'COMPARTIR', nav: false, open: () => void import('./sections/compartir').then((m) => m.openCompartir(data.mine)) },
   ]);
+  mounted = true;
+  if (invite) inviteToShare();
   // La pista pudo llegar (o el raro crearse en la puerta) antes de que existiera la barra: se actualiza su cartel.
   if (loaded) setPista(data);
   // Recién llegado a la pista (no si entró directo a una sección): cómo se mira y se camina.

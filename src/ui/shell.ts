@@ -69,7 +69,15 @@ export const player = {
 };
 const navbar = el('nav', 'navbar');
 navbar.setAttribute('aria-label', 'Secciones');
-ui.append(hud, navbar);
+/** Cartelitos de arriba de la barra (van después de ella: se esconden cuando ella se esconde). */
+const avisos = el('div', 'avisos');
+ui.append(hud, navbar, avisos);
+
+/** Saca un cartelito titilando. */
+function dismiss(box: HTMLElement) {
+  box.classList.add('chau');
+  box.addEventListener('animationend', () => box.remove());
+}
 
 export interface Route {
   /** '' es la pista (sin ventana). */
@@ -109,23 +117,33 @@ export function setChrome(visible: boolean) {
  */
 export function showHint(keys: [string, string][], seconds = 12) {
   const box = el('div', 'ayuda', keys.map(([k, v]) => el('span', '', [el('b', '', k), ` ${v}`])));
-  ui.append(box);
+  avisos.append(box);
   let left = false;
   const leave = (ms: number) => {
     if (left) return;
     left = true;
     window.removeEventListener('pointerdown', onMove);
     window.removeEventListener('keydown', onMove);
-    setTimeout(() => {
-      box.classList.add('chau');
-      box.addEventListener('animationend', () => box.remove());
-    }, ms);
+    setTimeout(() => dismiss(box), ms);
   };
   // Solo cuenta lo que se hace sobre la pista (no los clics en la barra o en una ventana).
   const onMove = (e: Event) => (e.type === 'keydown' || e.target === document.body || e.target === document.documentElement) && !panel && leave(2500);
   window.addEventListener('pointerdown', onMove);
   window.addEventListener('keydown', onMove);
   setTimeout(() => leave(0), seconds * 1000);
+}
+
+/** Aviso con un botón que lleva a una sección (por ejemplo: recién armaste tu raro, compartilo). Se va solo. */
+export function showCall(text: string, label: string, path: string, seconds = 25) {
+  const a = el('a', 'btn chico rojo', label);
+  a.href = `#/${path}`;
+  const box = el('div', 'llamado', [el('span', '', text), a]);
+  avisos.prepend(box);
+  a.addEventListener('click', () => {
+    sfx.select();
+    box.remove();
+  });
+  setTimeout(() => box.isConnected && dismiss(box), seconds * 1000);
 }
 
 /** La ayuda que corresponde a cómo se maneja en este aparato. */

@@ -45,16 +45,30 @@
 .navbar .btn:active { transform: none; }
 .navbar .btn:focus-visible::before { content: none; }
 
-/* --- Ayuda de cómo moverse por la pista: aparece un rato al entrar ----------------- */
-.ayuda {
+/* --- Cartelitos arriba de la barra: la ayuda para moverse y los avisos con botón ---- */
+.ui > .avisos {
   position: fixed; left: 50%; bottom: calc(74px + env(safe-area-inset-bottom)); transform: translateX(-50%);
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; width: max-content; max-width: calc(100% - 20px);
+  display: flex; flex-direction: column; align-items: center; gap: 8px; width: max-content; max-width: calc(100% - 20px);
+  pointer-events: none;
+}
+.ayuda {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px;
   padding: 6px 10px 5px; font-size: 8px; color: var(--dr-crema); background: var(--dr-negro); border: 2px solid #f9f2e840;
-  pointer-events: none !important;
 }
 .ayuda b { color: var(--dr-amarillo); font-weight: normal; }
-.ayuda.chau { animation: dr-blink 0.16s steps(1) 4 forwards; }
-.ui.con-ventana .ayuda, .navbar[hidden] ~ .ayuda { display: none; }
+.llamado {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; pointer-events: auto;
+  padding: 6px 6px 6px 10px; font-size: 8px; color: var(--dr-amarillo); background: var(--dr-negro); border: 2px solid var(--dr-amarillo); box-shadow: 3px 3px 0 #000;
+}
+.llamado .btn { box-shadow: none; }
+.avisos .chau { animation: dr-blink 0.16s steps(1) 4 forwards; }
+.ui.con-ventana .avisos, .navbar[hidden] ~ .avisos { display: none; }
+
+/* --- Compartir tu raro ---------------------------------------------------------------- */
+.compartir { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; }
+.compartir .foto { display: block; width: 158px; height: auto; image-rendering: pixelated; border: 2px solid var(--dr-crema); box-shadow: 3px 3px 0 #000; }
+.compartir-botones { display: grid; gap: 10px; justify-items: start; }
+.compartir-botones p { margin: 0; font-size: 8px; }
 
 /* --- Cartel de arriba: contador + reproductor a la izquierda, redes a la derecha ---- */
 .hud { position: fixed; left: 10px; right: 10px; top: calc(10px + env(safe-area-inset-top)); display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; pointer-events: none; }
@@ -211,7 +225,9 @@
   /* Barra de pestañas: cuatro casilleros iguales, con el dibujito arriba. */
   .navbar { left: 0; right: 0; bottom: 0; transform: none; max-width: none; border-width: 2px 0 0; box-shadow: none; padding-bottom: env(safe-area-inset-bottom); }
   .navbar .btn { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 5px; padding: 9px 3px 7px; font-size: 7px; line-height: 1.5; text-align: center; white-space: normal; }
-  .ayuda { bottom: calc(70px + env(safe-area-inset-bottom)); font-size: 7px; }
+  .ui > .avisos { bottom: calc(70px + env(safe-area-inset-bottom)); }
+  .ayuda { font-size: 7px; }
+  .compartir .foto { width: 118px; }
   .suena { width: 100%; }
   .suena .controles .btn { padding: 9px 4px 8px; }
   .set { grid-template-columns: 80px 1fr; }

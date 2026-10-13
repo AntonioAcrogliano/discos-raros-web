@@ -246,6 +246,10 @@ export function openCreador(o: CreadorOptions) {
   });
   const save = el('button', 'btn rojo', mine ? 'GUARDAR CAMBIOS' : 'ENTRAR A LA PISTA');
   save.type = 'submit';
+  // El que ya está en la pista puede sacarse la foto para compartir.
+  const share = el('a', 'btn', 'COMPARTIR');
+  share.href = '#/compartir';
+  share.addEventListener('click', () => sfx.select());
   const status = el('p', 'aviso', o.door ? 'SIN RARO NO SE ENTRA. ARMATE Y PASAS.' : mine ? 'YA ESTAS EN LA PISTA. PODES CAMBIARTE CUANDO QUIERAS.' : 'ARMATE Y QUEDAS BAILANDO EN LA PISTA PARA SIEMPRE.');
   status.setAttribute('role', 'status');
   const captcha = el('div');
@@ -255,7 +259,7 @@ export function openCreador(o: CreadorOptions) {
     el('div', 'creador-nombre', [input, random]),
     tabs,
     ...sections.map((g) => g.page),
-    el('div', 'creador-pie', [captcha, save, status]),
+    el('div', 'creador-pie', [captcha, el('div', 'fila', mine ? [save, share] : [save]), status]),
   ]);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
