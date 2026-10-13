@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LOOK, type Look, type Raro } from '../../../shared/look';
 import { DETAIL, type DetailCell, detailUv, make3DGlassesTexture, makeDetailTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
-import { CLUB } from './club';
+import { CLUB, PALCO, floorAt } from './club';
 import { EN_LA_FILA, dance, makePose, stride } from './dances';
 
 /**
@@ -16,7 +16,7 @@ import { EN_LA_FILA, dance, makePose, stride } from './dances';
  * forma despareja: eso deforma los brazos al girarlos y achata la cabeza.
  */
 
-export const MAX_DANCERS = 150;
+export const MAX_DANCERS = 260;
 
 // Medidas del cuerpo base (metros).
 const THIGH = 0.42, SHIN = 0.34, SHOE = 0.07, HIP_Y = THIGH + SHIN + SHOE;
@@ -498,7 +498,13 @@ interface Dancer {
   /** Caminar: cuánto del cuerpo va caminando en vez de bailando (0–1) y por dónde va el ciclo de pasos. */
   walk: number;
   stride: number;
+  /** Por dónde tiene que pasar para llegar adonde va (la escalera, la esquina del palco...). */
+  path: Spot[];
+  /** Cuánto hace que quiere caminar y no avanza (para que no se quede empujando una pared). */
+  stall: number;
 }
+
+type Spot = { x: number; z: number };
 
 /** A qué velocidad camina el raro que maneja el visitante (m/s): bastante más rápido que los que pasean. */
 const MY_SPEED = 2.3;
@@ -509,31 +515,78 @@ const MY_STEP = 0.66, STEP = 0.42;
 const turnTo = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
 /**
- * Por dónde se puede andar: todo el boliche menos la cabina (con sus parlantes). Queda la pista
- * de atrás, los dos pasillos de los costados y el frente de la cabina.
+ * Por dónde se puede andar: todo el boliche menos la cabina (con sus parlantes). Abajo queda la
+ * pista de atrás, los dos pasillos de los costados y el frente de la cabina; arriba, los palcos.
+ * `end` es hasta dónde llegan solos hacia la entrada, y `far` hasta dónde se puede ir (ahí
+ * arrancan las escaleras).
  */
-const FLOOR = { halfW: CLUB.halfW - 0.55, back: CLUB.backZ + 0.3, front: -0.45, aisle: 4.4, boothFront: 3.2, end: 4.9 };
+const FLOOR = { halfW: CLUB.halfW - 0.55, back: CLUB.backZ + 0.45, front: -0.45, aisle: 4.4, boothFront: 3.2, end: 4.9, far: 6.7 };
+/** Bordes de los palcos: de `SIDE` para afuera y de `REAR` para atrás, el piso está arriba. */
+const SIDE = CLUB.halfW - PALCO.deep, REAR = CLUB.backZ + PALCO.deep;
+/** La pista de abajo, entre los palcos. */
+const PIT = { halfW: SIDE - 0.5, back: REAR + 0.5 };
+/** El escalón más alto que se sube caminando: del piso al palco solo se pasa por la escalera. */
+const STEP_UP = 0.3;
 /** Aire que se dejan entre ellos, además del ancho de cada uno: no se pisan ni con los brazos. */
 const GAP = 0.2;
-/** Saca un punto de adentro de la cabina (al borde que tenga más cerca). */
-function offBooth(p: { x: number; z: number }) {
+/** Saca un punto de adentro de la cabina (al borde que tenga más cerca) y de afuera del boliche. */
+function offBooth(p: Spot) {
   p.x = Math.max(-FLOOR.halfW, Math.min(FLOOR.halfW, p.x));
-  p.z = Math.max(FLOOR.back, Math.min(FLOOR.end, p.z));
+  p.z = Math.max(FLOOR.back, Math.min(FLOOR.far, p.z));
   if (p.z <= FLOOR.front || p.z >= FLOOR.boothFront || Math.abs(p.x) >= FLOOR.aisle) return;
   const toBack = p.z - FLOOR.front, toFront = FLOOR.boothFront - p.z, toSide = FLOOR.aisle - Math.abs(p.x);
   if (toSide <= toBack && toSide <= toFront) p.x = Math.sign(p.x || 1) * FLOOR.aisle;
   else p.z = toBack < toFront ? FLOOR.front : FLOOR.boothFront;
 }
 
+// --- Caminos: cómo se llega de un lugar a otro cuando hay que subir o bajar ---------------
+/** ¿Está arriba, en un palco? (En la escalera cuenta desde la mitad para arriba.) */
+const high = (p: Spot) => floorAt(p.x, p.z) > PALCO.h / 2;
+/** En qué parte del palco: -1 o 1 = el brazo de ese lado, 0 = el fondo. */
+const arm = (p: Spot) => (p.z <= REAR ? 0 : Math.sign(p.x));
+const stairTop = (s: number): Spot => ({ x: s * (SIDE + PALCO.deep / 2), z: PALCO.frontZ - 0.5 });
+const stairFoot = (s: number): Spot => ({ x: s * (SIDE + PALCO.deep / 2), z: PALCO.frontZ + PALCO.stairs + 0.5 });
+const corner = (s: number): Spot => ({ x: s * (SIDE + PALCO.deep / 2), z: REAR - PALCO.deep / 2 });
+/** El pasillo de al lado de la cabina, a la altura de la escalera y a la altura de la pista. */
+const aisleFront = (s: number): Spot => ({ x: s * 6.6, z: 4.4 });
+const aisleBack = (s: number): Spot => ({ x: s * 6.6, z: -0.3 });
+
+/** Los puntos por los que hay que pasar para ir de `from` a `to` (el último es `to`). */
+function route(from: Spot, to: Spot): Spot[] {
+  const up = high(from), goesUp = high(to);
+  const out: Spot[] = [];
+  if (up && goesUp) {
+    // Por arriba: de un brazo al fondo o al otro brazo se dobla en las esquinas.
+    const a = arm(from), b = arm(to);
+    if (a !== b) {
+      if (a) out.push(corner(a));
+      if (b) out.push(corner(b));
+    }
+  } else if (up) {
+    // Bajar: por la escalera del lado que quede más a mano.
+    const s = arm(from) || Math.sign(to.x || from.x || 1);
+    if (!arm(from)) out.push(corner(s));
+    out.push(stairTop(s), stairFoot(s), aisleFront(s));
+    if (to.z < FLOOR.front) out.push(aisleBack(s));
+  } else if (goesUp) {
+    const s = arm(to) || Math.sign(from.x || to.x || 1);
+    if (from.z < FLOOR.front) out.push(aisleBack(s));
+    out.push(aisleFront(s), stairFoot(s), stairTop(s));
+    if (!arm(to)) out.push(corner(s));
+  }
+  out.push(to);
+  return out;
+}
+
 /** Separación entre lugares: a lo ancho y entre filas (van intercaladas). */
 const SLOT_X = 0.88, SLOT_Z = 0.72;
 
-/** Lugares de la pista, del más visible (centro, adelante) al menos. */
-function makeSlots(): { x: number; z: number }[] {
+/** Lugares del boliche, del más visible (centro de la pista, adelante) al menos. */
+function makeSlots(): Spot[] {
   let seed = 11;
   const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
   const slots: { x: number; z: number; score: number }[] = [];
-  const rows = Math.floor((-0.55 - FLOOR.back) / SLOT_Z) + 1, wide = Math.floor(FLOOR.halfW / SLOT_X);
+  const rows = Math.floor((-0.55 - PIT.back) / SLOT_Z) + 1, wide = Math.floor(PIT.halfW / SLOT_X);
   for (let row = 0; row < rows; row++) {
     const z = -0.55 - row * SLOT_Z;
     const n = row % 2 ? wide - 0.5 : wide;
@@ -545,8 +598,17 @@ function makeSlots(): { x: number; z: number }[] {
   }
   // A los costados de la cabina.
   for (const z of [0.35, 1.2, 2.05, 2.9]) {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       for (const side of [1, -1]) slots.push({ x: side * (4.55 + i * SLOT_X + (r() - 0.5) * 0.1), z: z + (r() - 0.5) * 0.1, score: 3 + i * 0.6 + z * 0.3 });
+    }
+  }
+  // Arriba: el fondo y los dos brazos.
+  for (let row = 0; row < 3; row++) {
+    for (let x = -FLOOR.halfW + 0.3; x <= FLOOR.halfW - 0.3; x += 0.92) slots.push({ x: x + (r() - 0.5) * 0.1, z: FLOOR.back + 0.2 + row * 0.8, score: 9 + row * 0.3 + Math.abs(x) * 0.1 });
+  }
+  for (let col = 0; col < 3; col++) {
+    for (let z = REAR + 0.5; z <= PALCO.frontZ - 0.5; z += 0.85) {
+      for (const side of [1, -1]) slots.push({ x: side * (SIDE + 0.6 + col * 0.85), z: z + (r() - 0.5) * 0.1, score: 11 + col * 0.3 + z * 0.1 });
     }
   }
   return slots.sort((a, b) => a.score - b.score);
@@ -716,6 +778,8 @@ export class Crowd {
         tx: this.slots[i].x,
         tz: this.slots[i].z,
         wait: r() * 8,
+        path: [],
+        stall: 0,
       };
     });
     spread(this.dancers, this.slots);
@@ -729,12 +793,13 @@ export class Crowd {
         }
         const was = before.get(d.id);
         // Los que ya andaban paseando siguen donde estaban (si no, pegarían un salto a su lugar).
-        if (was) return void Object.assign(d, { x: was.x, z: was.z, tx: was.tx, tz: was.tz, wait: was.wait, yaw: was.yaw });
+        if (was) return void Object.assign(d, { x: was.x, z: was.z, tx: was.tx, tz: was.tz, wait: was.wait, yaw: was.yaw, path: was.path });
         // Los demás arrancan repartidos por todo el boliche, no formados en filas, y cada uno
         // sale a pasear a su tiempo.
-        this.pick(d, i, false);
-        d.x = d.tx;
-        d.z = d.tz;
+        const at = this.pick(d, i, false);
+        d.x = d.tx = at.x;
+        d.z = d.tz = at.z;
+        d.path = [];
         d.yaw = this.facing(d);
         d.wait = Math.random() * 14;
       });
@@ -744,59 +809,89 @@ export class Crowd {
     this.paint();
   }
 
-  /** Manda al raro del visitante a caminar hasta un punto del boliche (lo más cerca que se pueda). */
+  /** Manda a un bailarín a un punto, pasando por donde haga falta (la escalera, la esquina del palco). */
+  private send(d: Dancer, to: Spot) {
+    d.path = route(d, to);
+    const next = d.path.shift()!;
+    d.tx = next.x;
+    d.tz = next.z;
+  }
+
+  /** Manda al raro del visitante a caminar hasta un punto del boliche (lo más cerca que se pueda): sube y baja solo. */
   walkTo(x: number, z: number) {
     const d = this.dancers[0];
     if (!d || !this.mine) return;
     const p = { x, z };
     offBooth(p);
-    d.tx = p.x;
-    d.tz = p.z;
+    this.send(d, p);
   }
 
   /** Lo lleva en una dirección (teclado): hay que llamarlo en cada frame mientras se aprieta. */
   steer(dx: number, dz: number) {
     const d = this.dancers[0], len = Math.hypot(dx, dz);
-    // El destino va siempre un par de pasos adelante: así camina a velocidad pareja, también en diagonal.
-    if (d && len) this.walkTo(d.x + (dx / len) * 1.6, d.z + (dz / len) * 1.6);
+    if (!d || !len || !this.mine) return;
+    // El destino va siempre un par de pasos adelante: así camina a velocidad pareja, también en
+    // diagonal. Con las teclas va derecho: la escalera hay que encararla.
+    const p = { x: d.x + (dx / len) * 1.6, z: d.z + (dz / len) * 1.6 };
+    offBooth(p);
+    d.path = [];
+    d.tx = p.x;
+    d.tz = p.z;
   }
 
   /** Se soltaron las teclas: frena ahí nomás (un pasito más, por el envión). */
   halt() {
     const d = this.dancers[0];
-    if (d) this.walkTo(d.x + this.vel.x * 0.12, d.z + this.vel.z * 0.12);
+    if (!d) return;
+    d.path = [];
+    d.tx = d.x + this.vel.x * 0.12;
+    d.tz = d.z + this.vel.z * 0.12;
   }
 
-  /** Dónde está parado el bailarín `i`. */
+  /** Dónde está parado el bailarín `i` (`y` = altura del piso ahí: 0 en la pista, más arriba en un palco). */
   spot(i = 0) {
     const d = this.dancers[i];
-    return d ? { x: d.x, z: d.z } : null;
+    return d ? { x: d.x, z: d.z, y: this.roam ? floorAt(d.x, d.z) : 0 } : null;
   }
 
-  /** Elige adónde va a ir: casi siempre a la pista; cada tanto, a un costado, al frente de la cabina o a bailar con alguien. */
-  private pick(d: Dancer, i: number, social = true) {
+  /**
+   * Elige adónde va a ir y lo manda: a la pista, a un palco, a un costado, al frente de la cabina
+   * o a bailar con alguien. Devuelve el lugar elegido.
+   */
+  private pick(d: Dancer, i: number, social = true): Spot {
     const ds = this.dancers;
     const where = Math.random();
+    const to = { x: 0, z: 0 };
     d.buddy = -1;
-    if (social && where < 0.22 && ds.length > 2) {
+    if (social && where < 0.2 && ds.length > 2) {
       // Se le para al lado a otro (puede ser el del visitante) y bailan enfrentados.
       let j = Math.floor(Math.random() * ds.length);
       if (j === i) j = (j + 1) % ds.length;
       const a = Math.random() * Math.PI * 2;
       d.buddy = j;
-      d.tx = ds[j].x + Math.cos(a) * 0.9;
-      d.tz = ds[j].z + Math.sin(a) * 0.9;
+      to.x = ds[j].x + Math.cos(a) * 0.9;
+      to.z = ds[j].z + Math.sin(a) * 0.9;
+    } else if (where < 0.56) {
+      to.x = (Math.random() * 2 - 1) * PIT.halfW;
+      to.z = PIT.back + Math.random() * (FLOOR.front - PIT.back);
     } else if (where < 0.76) {
-      d.tx = (Math.random() * 2 - 1) * FLOOR.halfW;
-      d.tz = FLOOR.back + Math.random() * (FLOOR.front - FLOOR.back);
-    } else if (where < 0.89) {
-      d.tx = Math.sign(Math.random() - 0.5) * (FLOOR.aisle + 0.2 + Math.random() * (FLOOR.halfW - FLOOR.aisle - 0.2));
-      d.tz = FLOOR.front + Math.random() * (FLOOR.boothFront - FLOOR.front);
+      // Arriba, al fondo: la tribuna de abajo de la tele.
+      to.x = (Math.random() * 2 - 1) * FLOOR.halfW;
+      to.z = FLOOR.back + Math.random() * (PALCO.deep - 1.1);
+    } else if (where < 0.88) {
+      // Arriba, en uno de los brazos.
+      to.x = Math.sign(Math.random() - 0.5) * (SIDE + 0.55 + Math.random() * (PALCO.deep - 1.2));
+      to.z = REAR + Math.random() * (PALCO.frontZ - 0.6 - REAR);
+    } else if (where < 0.95) {
+      to.x = Math.sign(Math.random() - 0.5) * (FLOOR.aisle + 0.2 + Math.random() * (PIT.halfW - FLOOR.aisle - 0.2));
+      to.z = FLOOR.front + Math.random() * (FLOOR.boothFront - FLOOR.front);
     } else {
       // Al frente, pero no en el medio: ahí taparían la cabina, que es lo que se mira al entrar.
-      d.tx = Math.sign(Math.random() - 0.5) * (2.8 + Math.random() * (FLOOR.halfW - 2.8));
-      d.tz = FLOOR.boothFront + 0.2 + Math.random() * (FLOOR.end - FLOOR.boothFront - 0.2);
+      to.x = Math.sign(Math.random() - 0.5) * (4.6 + Math.random() * (PIT.halfW - 4.6));
+      to.z = FLOOR.boothFront + 0.2 + Math.random() * (FLOOR.end - FLOOR.boothFront - 0.2);
     }
+    this.send(d, to);
+    return to;
   }
 
   /** Para dónde mira parado: a su compañero de baile si lo tiene al lado; si no, a la cabina, cada uno un poco a su manera. */
@@ -806,19 +901,22 @@ export class Crowd {
     return Math.atan2(-d.x * 0.5, CLUB.djZ - d.z) + d.bias;
   }
 
+  private heights: number[] = [];
   /**
    * Nadie se mete adentro de nadie: los que se tocan se separan del todo (varias pasadas, porque
    * al correr a uno se lo puede arrimar a otro o a la cabina). Si alguno venía caminando, además
    * se rodean, siempre para el mismo lado: así dos que van de frente no quedan trabados.
+   * Los de arriba y los de abajo no se molestan entre ellos.
    */
   private separate(moving: boolean[] | null, slide: number) {
-    const ds = this.dancers;
+    const ds = this.dancers, hs = this.heights;
+    for (let i = 0; i < ds.length; i++) hs[i] = floorAt(ds[i].x, ds[i].z);
     for (let pass = 0; pass < 4; pass++) {
       for (let i = 0; i < ds.length; i++) {
         for (let j = i + 1; j < ds.length; j++) {
           const a = ds[i], b = ds[j];
           const dx = b.x - a.x, dz = b.z - a.z;
-          if (Math.abs(dx) > 1.6 || Math.abs(dz) > 1.6) continue;
+          if (Math.abs(dx) > 1.6 || Math.abs(dz) > 1.6 || Math.abs(hs[i] - hs[j]) > 0.7) continue;
           const min = this.radius[i] + this.radius[j] + GAP, dist = Math.hypot(dx, dz) || 0.001;
           if (dist >= min) continue;
           const ux = dx / dist, uz = dz / dist, push = min - dist, ka = i === 0 ? 0 : 0.5, kb = 1 - ka;
@@ -833,24 +931,72 @@ export class Crowd {
     }
   }
 
+  /** Dónde estaba cada uno al empezar el frame (x, z) y cuánto quería caminar. */
+  private prev: number[] = [];
+  private wanted: number[] = [];
+  /**
+   * Nadie sube ni baja de un salto: si lo que se movió en este frame (caminando o empujado) lo
+   * deja a otra altura, se queda con la parte del movimiento que no cambia de nivel. Así el
+   * borde del palco y el costado de la escalera funcionan como paredes.
+   */
+  private keepLevel(dt: number) {
+    const ds = this.dancers, prev = this.prev;
+    ds.forEach((d, i) => {
+      const x0 = prev[i * 2], z0 = prev[i * 2 + 1], h0 = floorAt(x0, z0);
+      if (Math.abs(floorAt(d.x, d.z) - h0) > STEP_UP) {
+        if (Math.abs(floorAt(d.x, z0) - h0) <= STEP_UP) d.z = z0;
+        else if (Math.abs(floorAt(x0, d.z) - h0) <= STEP_UP) d.x = x0;
+        else {
+          d.x = x0;
+          d.z = z0;
+        }
+      }
+      // El que pasea y no avanza (quedó contra un borde o trabado con otro) prueba con otro lado.
+      if (i === 0 && this.mine) return;
+      const want = this.wanted[i] ?? 0;
+      d.stall = want > 0 && Math.hypot(d.x - x0, d.z - z0) < want * 0.3 ? d.stall + dt : 0;
+      if (d.stall > 2.5) {
+        d.stall = 0;
+        d.path = [];
+        d.tx = d.x;
+        d.tz = d.z;
+        d.wait = 0;
+      }
+    });
+  }
+
   /**
    * Un paso del paseo: cada uno va bailando hasta algún lugar del boliche (mirando para donde
-   * camina), se queda un rato de cara a la cabina o a quien fue a buscar, y elige otro. Los hay
-   * inquietos y los hay plantados. Se esquivan entre ellos y no pisan la cabina. El primero, si
-   * es el del visitante, no pasea: va adonde lo mandan, y los demás le abren paso.
+   * camina, subiendo o bajando por la escalera si hace falta), se queda un rato de cara a la
+   * cabina o a quien fue a buscar, y elige otro. Los hay inquietos y los hay plantados. Se
+   * esquivan entre ellos y no pisan la cabina. El primero, si es el del visitante, no pasea: va
+   * adonde lo mandan, y los demás le abren paso.
    */
   wander(dt: number, energy: number) {
     if (!this.roam || this.solo) return;
     const ds = this.dancers;
     const speed = 0.6 * (0.25 + 0.75 * Math.min(1, energy));
     const moving: boolean[] = [false];
+    ds.forEach((d, i) => {
+      this.prev[i * 2] = d.x;
+      this.prev[i * 2 + 1] = d.z;
+    });
     const me = ds[0];
     this.walking = false;
     if (this.mine && me) {
       const v = this.vel;
-      const dx = me.tx - me.x, dz = me.tz - me.z, far = Math.hypot(dx, dz);
+      let dx = me.tx - me.x, dz = me.tz - me.z, far = Math.hypot(dx, dz);
+      // Llegó a un punto de paso: sigue al próximo sin frenar.
+      if (far < 0.35 && me.path.length) {
+        const next = me.path.shift()!;
+        me.tx = next.x;
+        me.tz = next.z;
+        dx = me.tx - me.x;
+        dz = me.tz - me.z;
+        far = Math.hypot(dx, dz);
+      }
       // Va hacia el destino acelerando de a poco, y al llegar afloja en vez de clavarse.
-      const want = far > 0.04 ? MY_SPEED * Math.min(1, far / 0.55) : 0;
+      const want = far > 0.04 ? MY_SPEED * (me.path.length ? 1 : Math.min(1, far / 0.55)) : 0;
       const k = Math.min(1, dt * 9);
       v.x += ((far ? dx / far : 0) * want - v.x) * k;
       v.z += ((far ? dz / far : 0) * want - v.z) * k;
@@ -871,14 +1017,26 @@ export class Crowd {
     }
     for (let i = 1; i < ds.length; i++) {
       const d = ds[i];
-      d.wait -= dt;
+      let dx = d.tx - d.x, dz = d.tz - d.z, far = Math.hypot(dx, dz);
+      if (far < 0.3 && d.path.length) {
+        const next = d.path.shift()!;
+        d.tx = next.x;
+        d.tz = next.z;
+        dx = d.tx - d.x;
+        dz = d.tz - d.z;
+        far = Math.hypot(dx, dz);
+      }
+      // El rato que se queda bailando en un lugar corre recién cuando llega (subir a un palco lleva lo suyo).
+      if (far <= 0.15 && !d.path.length) d.wait -= dt;
       if (d.wait <= 0) {
         this.pick(d, i);
         d.wait = (7 + Math.random() * 14) / d.pace;
+        this.wanted[i] = 0;
+        continue;
       }
-      const dx = d.tx - d.x, dz = d.tz - d.z, far = Math.hypot(dx, dz);
       const go = far > 0.15 ? Math.min(speed * d.pace * dt, far) / far : 0;
       moving[i] = go > 0;
+      this.wanted[i] = far * go;
       d.x += dx * go;
       d.z += dz * go;
       d.stride += (far * go * Math.PI) / STEP;
@@ -887,6 +1045,7 @@ export class Crowd {
       d.yaw += turnTo(d.yaw, go ? Math.atan2(dx, dz) : this.facing(d)) * Math.min(1, dt * (go ? 4 : 2));
     }
     this.separate(moving, speed * dt * 0.8);
+    this.keepLevel(dt);
   }
 
   /** Cambia el look de un bailarín sin rearmar la pista (vista previa del creador). */
@@ -1040,7 +1199,8 @@ export class Crowd {
       const footL = THIGH * Math.cos(p.tL) + (SHIN + SHOE) * Math.cos(p.tL + p.kL);
       const footR = THIGH * Math.cos(p.tR) + (SHIN + SHOE) * Math.cos(p.tR + p.kR);
       const lift = (l.calzado === PLATAFORMAS ? PLATFORM : 0) - (HIP_Y - Math.max(footL, footR));
-      const y = p.hop + lift * h;
+      // En un palco (o subiendo la escalera) todo el raro va más arriba.
+      const y = p.hop + lift * h + (this.roam ? floorAt(d.x, d.z) : 0);
       this.root.compose(this.pos.set(d.x + p.sway * h, y, d.z), this.quat.setFromEuler(this.rootEuler.set(p.lean, facing + p.yaw, p.roll)), this.scale.set(h, h, h));
 
       const hip = 0.1 * b.w, shoulder = 0.2 * b.w + 0.055 * b.limb;

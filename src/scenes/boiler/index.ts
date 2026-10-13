@@ -4,7 +4,7 @@ import type { PistaData } from '../../api';
 import { DR, FONT, type PSXStage, audioLive, outlined, psxUniforms, street, titleUnit, sfx } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
-import { CLUB, buildClub } from './club';
+import { CLUB, PALCO, buildClub, floorAt } from './club';
 import { Crowd, MAX_DANCERS } from './crowd';
 import { loadGlbRig } from '../../characters/glbRig';
 import { buildPlaceholderDjs, makeDjs } from './djs';
@@ -68,7 +68,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   const scene = new THREE.Scene();
   psxUniforms.uFog.value = 1;
   psxUniforms.uFogNear.value = 9;
-  psxUniforms.uFogFar.value = 26;
+  psxUniforms.uFogFar.value = 31;
   psxUniforms.uLightDir.value.set(0.25, 0.8, 0.9).normalize();
   /** Cuánto de la luz es la del boliche (1) y cuánto la de la calle (0): se cruzan al pasar la puerta. */
   let inClub = 0;
@@ -85,7 +85,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   };
 
   const club = buildClub();
-  const crowd = new Crowd(touch ? 70 : MAX_DANCERS);
+  const crowd = new Crowd(touch ? 90 : MAX_DANCERS);
   crowd.roam = true;
   // Arrancan los de cajas; cuando cargan los modelos de verdad, los reemplazan.
   const placeholders = buildPlaceholderDjs();
@@ -147,12 +147,14 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   // Y pasear por el boliche: un toque (o clic) en el piso o en un raro manda para ahí, y en la
   // compu también se camina con WASD. El que tiene raro lo maneja a él, con la cámara atrás
   // siguiéndolo; el que no, mueve la cámara sola. Parado en un lugar se puede girar todo alrededor.
-  const look = { yaw: 0, pitch: 0, zoom: 0, idle: 99, at: null as { x: number; z: number } | null };
+  const look = { yaw: 0, pitch: 0, zoom: 0, idle: 99, at: null as { x: number; z: number; y: number } | null };
   const IDLE_SECONDS = 12;
   /** El bloque de la cabina con los DJs y los parlantes de los costados, visto de arriba: la cámara no mira a través. */
   const BOOTH = { halfX: 4.15, back: 1.25, front: 3.35 };
   /** La cámara sigue al raro del visitante (desde que lo mueve hasta que se queda quieto un rato). */
   let follow = false;
+  /** Altura a la que mira la cámara cuando gira alrededor de un punto (sube con los palcos). */
+  let eyeY = 1.3;
   /** Lo viene llevando con las teclas (para frenarlo cuando las suelta). */
   let steering = false;
   const fingers = new Map<number, { x: number; y: number; sx: number; sy: number; t0: number }>();
@@ -164,7 +166,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   window.addEventListener('keyup', (e) => walk.delete(e.code));
   window.addEventListener('blur', () => walk.clear());
   const stand = (x: number, z: number) => {
-    look.at = { x: clamp(x, -CLUB.halfW + 1.4, CLUB.halfW - 1.4), z: clamp(z, CLUB.backZ + 1.4, CLUB.frontZ - 1.4) };
+    const at = { x: clamp(x, -CLUB.halfW + 1.4, CLUB.halfW - 1.4), z: clamp(z, CLUB.backZ + 1.4, CLUB.frontZ - 1.4) };
+    look.at = { ...at, y: floorAt(at.x, at.z) };
     look.idle = 0;
   };
   const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
@@ -221,8 +224,12 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     }
     v.set((e.clientX / window.innerWidth) * 2 - 1, 1 - (e.clientY / window.innerHeight) * 2, 0.5).unproject(stage.camera).sub(stage.camera.position);
     if (v.y > -0.02) return;
-    const k = -stage.camera.position.y / v.y;
-    goTo(stage.camera.position.x + v.x * k, stage.camera.position.z + v.z * k);
+    const cam = stage.camera.position;
+    // Primero se prueba con el piso de los palcos: si el toque cae arriba, es ahí adonde se va.
+    const up = (PALCO.h - cam.y) / v.y;
+    if (up > 0 && floorAt(cam.x + v.x * up, cam.z + v.z * up) > PALCO.h - 0.01) return goTo(cam.x + v.x * up, cam.z + v.z * up);
+    const k = -cam.y / v.y;
+    goTo(cam.x + v.x * k, cam.z + v.z * k);
   });
   window.addEventListener('pointerup', lift);
   window.addEventListener('pointercancel', lift);
@@ -408,10 +415,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       // El menú va a la izquierda (o abajo en el celular): el personaje queda del otro lado.
       // Según la pestaña se acerca a la cabeza o a las piernas (la altura depende del cuerpo).
       const size = crowd.scaleOf(0), big = Math.max(1, size);
-      const at = view === 'cabeza' ? 1.5 * size : view === 'piernas' ? 0.45 * size : 0.95 * big;
+      const at = (view === 'cabeza' ? 1.5 * size : view === 'piernas' ? 0.45 * size : 0.95 * big) + (crowd.spot()?.y ?? 0);
       const dist = view === 'todo' ? 3.3 * big : 2.3;
       // El raro se arma donde esté parado (pudo haber caminado a cualquier lado).
-      const me = crowd.spot() ?? { x: 0, z: -0.55 };
+      const me = crowd.spot() ?? { x: 0, z: -0.55, y: 0 };
       if (portrait) {
         // El menú tapa más de la mitad de abajo: el personaje va arriba, visto desde lo alto para
         // que la tele de la pared del fondo quede fuera de cuadro.
@@ -437,7 +444,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       if (walk.size) {
         // Adelante es para donde mira la cámara.
         const f = (walk.has('KeyW') ? 1 : 0) - (walk.has('KeyS') ? 1 : 0), r = (walk.has('KeyD') ? 1 : 0) - (walk.has('KeyA') ? 1 : 0);
-        const at = look.at ?? { x: 0, z: -0.6 }, s = Math.sin(look.yaw), c = Math.cos(look.yaw), step = 3 * dt;
+        const at = look.at ?? { x: 0, z: -0.6, y: 0 }, s = Math.sin(look.yaw), c = Math.cos(look.yaw), step = 3 * dt;
         if (hasFirst) {
           crowd.steer(-s * f + c * r, -c * f - s * r);
           follow = steering = true;
@@ -477,10 +484,13 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         // Lo mismo con la cabina y sus parlantes: si quedan entre la cámara y lo que se mira, la
         // cámara se para de este lado (salvo que ya pase por arriba de todo).
         const at = look.at;
+        // La altura de los ojos acompaña al piso: arriba de un palco se mira desde arriba.
+        eyeY += (1.3 + at.y - eyeY) * Math.min(1, dt * 6);
+        const eye = eyeY;
         const wall = (from: number, d: number, plane: number, other: number, od: number, lo: number, hi: number) => {
           const t = (plane - from) / d;
           const o = other + od * t;
-          return t > 0 && o > lo && o < hi && 1.3 + dy * t < 3 ? Math.max(0.9, t) : Infinity;
+          return t > 0 && o > lo && o < hi && eye + dy * t < 3 ? Math.max(0.9, t) : Infinity;
         };
         const booth =
           at.z < BOOTH.back && dz > 1e-4
@@ -490,9 +500,9 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
               : Math.abs(at.x) > BOOTH.halfX && dx * at.x < -1e-4
                 ? wall(at.x, dx, Math.sign(at.x) * BOOTH.halfX, at.z, dz, BOOTH.back, BOOTH.front)
                 : Infinity;
-        const dist = Math.min(4.6 - 2.6 * look.zoom, booth, room(at.x, dx, -CLUB.halfW + 0.4, CLUB.halfW - 0.4), room(1.3, dy, 0, CLUB.ceilY - 0.5), room(at.z, dz, CLUB.backZ + 0.4, CLUB.frontZ - 0.4));
-        wantTarget.set(look.at.x, 1.3, look.at.z);
-        wantPos.set(look.at.x + dx * dist, 1.3 + dy * dist, look.at.z + dz * dist);
+        const dist = Math.min(4.6 - 2.6 * look.zoom, booth, room(at.x, dx, -CLUB.halfW + 0.4, CLUB.halfW - 0.4), room(eye, dy, 0, CLUB.ceilY - 0.5), room(at.z, dz, CLUB.backZ + 0.4, CLUB.frontZ - 0.4));
+        wantTarget.set(at.x, eye, at.z);
+        wantPos.set(at.x + dx * dist, eye + dy * dist, at.z + dz * dist);
       } else if (Math.abs(look.yaw) + Math.abs(look.pitch) + look.zoom > 0.002) {
         a0.subVectors(wantPos, wantTarget);
         const far = a0.length(), z = ease(look.zoom);

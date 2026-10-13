@@ -54,7 +54,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Cuántos personajes se mandan a la pista: los más nuevos + una muestra al azar. */
 const RECENT = 60;
-const RANDOM = 90;
+const RANDOM = 200;
 
 export async function handleApi(req: Request, ip = clientIp(req)): Promise<Response> {
   const url = new URL(req.url);

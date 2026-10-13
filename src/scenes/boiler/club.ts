@@ -19,15 +19,40 @@ import {
 
 /** Medidas del club (metros). La cámara mira hacia -z: cabina adelante, pista atrás, tele al fondo. */
 export const CLUB = {
-  halfW: 8.2,
-  backZ: -6.5,
+  halfW: 11.5,
+  backZ: -8.5,
   frontZ: 9.6,
-  ceilY: 6.0,
+  ceilY: 7.2,
   boothZ: 2.5,
   boothH: 1.0,
   djZ: 1.86,
-  tele: { x: 0, y: 4.3, z: -6.32, w: 5.3, h: 2.98 },
+  tele: { x: 0, y: 5.2, z: -8.32, w: 6.2, h: 3.49 },
 };
+
+/**
+ * Los palcos: un segundo nivel en U, contra la pared del fondo y las dos de los costados, al
+ * que se sube por una escalera en la punta de cada brazo (del lado de la entrada). Son macizos:
+ * abajo no se camina, así que la altura del piso depende solo de dónde se está parado.
+ */
+export const PALCO = {
+  /** Altura del piso de arriba. */
+  h: 1.5,
+  /** Cuánto se meten hacia adentro desde la pared. */
+  deep: 2.8,
+  /** Hasta dónde llegan los brazos (z); de ahí baja la escalera, hacia la entrada. */
+  frontZ: 3.0,
+  stairs: 2.8,
+};
+
+/** Altura del piso en un punto del boliche: 0 en la pista, `PALCO.h` arriba, y lo que toque en la escalera. */
+export function floorAt(x: number, z: number) {
+  if (z <= CLUB.backZ + PALCO.deep) return PALCO.h;
+  if (Math.abs(x) >= CLUB.halfW - PALCO.deep) {
+    if (z <= PALCO.frontZ) return PALCO.h;
+    if (z < PALCO.frontZ + PALCO.stairs) return PALCO.h * (1 - (z - PALCO.frontZ) / PALCO.stairs);
+  }
+  return 0;
+}
 
 export interface Club {
   group: THREE.Group;
@@ -70,7 +95,7 @@ export function buildClub(): Club {
 
   // --- Pista: baldosas que cambian de color con el beat ------------------------------
   // Una sola textura con 4×4 píxeles por baldosa, que se redibuja en cada beat.
-  const TX = 16, TZ = 16, PX = 4;
+  const TX = 23, TZ = 18, PX = 4;
   const floorCv = makeCanvas(TX * PX, TZ * PX);
   const floorTex = toPSXTexture(floorCv.canvas);
   const floorGeo = new THREE.PlaneGeometry(halfW * 2, depth, TX, TZ);
@@ -107,16 +132,16 @@ export function buildClub(): Club {
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * repeatX, uv.getY(i) * repeatY);
     return new THREE.Mesh(geo, makePSXMaterial({ map: wallTex }));
   };
-  const back = wall(halfW * 2, ceilY, 9, 3);
+  const back = wall(halfW * 2, ceilY, 12, 4);
   back.position.set(0, ceilY / 2, backZ);
-  const left = wall(depth, ceilY, 6, 3);
+  const left = wall(depth, ceilY, 7, 4);
   left.rotation.y = Math.PI / 2;
   left.position.set(-halfW, ceilY / 2, (frontZ + backZ) / 2);
-  const right = wall(depth, ceilY, 6, 3);
+  const right = wall(depth, ceilY, 7, 4);
   right.rotation.y = -Math.PI / 2;
   right.position.set(halfW, ceilY / 2, (frontZ + backZ) / 2);
   // Techo (antes se veía el vacío al mirar para arriba) con sus vigas.
-  const ceiling = new THREE.Mesh(wall(halfW * 2, depth, 9, 9).geometry, makePSXMaterial({ map: wallTex, color: '#9a90b0' }));
+  const ceiling = new THREE.Mesh(wall(halfW * 2, depth, 12, 10).geometry, makePSXMaterial({ map: wallTex, color: '#9a90b0' }));
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(0, ceilY, (frontZ + backZ) / 2);
   group.add(back, left, right, ceiling);
@@ -163,8 +188,8 @@ export function buildClub(): Club {
   };
   const flat = (w: number, h: number, mat: THREE.Material, x: number, y: number, off: number) => inward(new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat), x, y, off);
   const sideW = halfW - doorW;
-  for (const s of [-1, 1]) inward(wall(sideW, ceilY, (9 * sideW) / (halfW * 2), 3), s * (doorW + sideW / 2), ceilY / 2);
-  inward(wall(doorW * 2, ceilY - doorH, (9 * doorW) / halfW, (3 * (ceilY - doorH)) / ceilY), 0, doorH + (ceilY - doorH) / 2);
+  for (const s of [-1, 1]) inward(wall(sideW, ceilY, (12 * sideW) / (halfW * 2), 4), s * (doorW + sideW / 2), ceilY / 2);
+  inward(wall(doorW * 2, ceilY - doorH, (12 * doorW) / halfW, (4 * (ceilY - doorH)) / ceilY), 0, doorH + (ceilY - doorH) / 2);
   const doorFrame = makePSXMaterial({ color: '#0a0a0e' });
   const doorMat = makePSXMaterial({ color: DR.rojoOscuro });
   const doorTrim = makePSXMaterial({ color: DR.amarillo });
@@ -210,6 +235,63 @@ export function buildClub(): Club {
     }
   });
 
+  // --- Palcos: el segundo nivel, en U, con sus escaleras y barandas ---------------------
+  const sideX = halfW - PALCO.deep, rearZ = backZ + PALCO.deep, armLen = PALCO.frontZ - rearZ;
+  const palcoTop = makePSXMaterial({ color: '#2a2038' });
+  const palcoFront = makePSXMaterial({ map: wallTex, color: '#c9bfe0' });
+  const palcoMat = [palcoFront, palcoFront, palcoTop, palcoFront, palcoFront, palcoFront];
+  group.add(box(halfW * 2, PALCO.h, PALCO.deep, palcoMat, 0, PALCO.h / 2, backZ + PALCO.deep / 2));
+  const rail = makePSXMaterial({ color: DR.amarillo });
+  const post = makePSXMaterial({ color: '#0a0a0e' });
+  const edge = makeCanvas(32, 2);
+  for (let i = 0; i < 32; i++) {
+    edge.ctx.fillStyle = Math.floor(i / 2) % 2 ? DR.rojo : DR.amarillo;
+    edge.ctx.fillRect(i, 0, 1, 2);
+  }
+  const edgeTex = toPSXTexture(edge.canvas);
+  edgeTex.wrapS = THREE.RepeatWrapping;
+  const edgeMat = makePSXMaterial({ map: edgeTex, lit: false });
+  // Escalones: oscuros, con el filo amarillo.
+  const step = makeCanvas(8, 1);
+  step.ctx.fillStyle = '#2a2038';
+  step.ctx.fillRect(0, 0, 8, 1);
+  step.ctx.fillStyle = DR.amarillo;
+  step.ctx.fillRect(0, 0, 1, 1);
+  const stepTex = toPSXTexture(step.canvas);
+  stepTex.wrapS = THREE.RepeatWrapping;
+  const stepMat = makePSXMaterial({ map: stepTex });
+  /** Franja de la marca en el canto de arriba (como la de la cabina) y baranda con postes. */
+  const trim = (len: number, x: number, z: number, turned: boolean) => {
+    const geo = new THREE.PlaneGeometry(len, 0.09, Math.ceil(len / 2), 1);
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * len * 0.9);
+    const s = new THREE.Mesh(geo, edgeMat);
+    s.position.set(x, PALCO.h - 0.06, z);
+    if (turned) s.rotation.y = x > 0 ? -Math.PI / 2 : Math.PI / 2;
+    group.add(s);
+    const bar = turned ? box(0.06, 0.06, len, rail, x, PALCO.h + 0.95, z) : box(len, 0.06, 0.06, rail, x, PALCO.h + 0.95, z);
+    group.add(bar);
+    for (let k = 0; k <= Math.round(len / 2.2); k++) {
+      const at = -len / 2 + (k * len) / Math.round(len / 2.2);
+      group.add(box(0.07, 0.95, 0.07, post, turned ? x : x + at, PALCO.h + 0.475, turned ? z + at : z));
+    }
+  };
+  trim(sideX * 2, 0, rearZ + 0.012, false);
+  for (const s of [-1, 1]) {
+    group.add(box(PALCO.deep, PALCO.h, armLen, palcoMat, s * (halfW - PALCO.deep / 2), PALCO.h / 2, rearZ + armLen / 2));
+    trim(armLen, s * (sideX - 0.012), rearZ + armLen / 2, true);
+    // La escalera: una cuña que baja hacia la entrada, con los escalones pintados.
+    const wedge = new THREE.BoxGeometry(PALCO.deep, PALCO.h, PALCO.stairs);
+    const pos = wedge.attributes.position;
+    for (let i = 0; i < pos.count; i++) if (pos.getY(i) > 0 && pos.getZ(i) > 0) pos.setY(i, -PALCO.h / 2 + 0.02);
+    const stairs = new THREE.Mesh(wedge, [palcoFront, palcoFront, stepMat, palcoFront, palcoFront, palcoFront]);
+    const suv = wedge.attributes.uv;
+    // La cara de arriba (la rampa) lleva una raya por escalón.
+    for (let i = 8; i < 12; i++) suv.setXY(i, suv.getY(i) * 9, 0.5);
+    stairs.position.set(s * (halfW - PALCO.deep / 2), PALCO.h / 2, PALCO.frontZ + PALCO.stairs / 2);
+    group.add(stairs);
+  }
+
   // --- Tele del fondo: el marco y la pantalla "apagada" con el logo --------------------
   const { tele } = CLUB;
   const dark = makePSXMaterial({ color: '#0a0a0e' });
@@ -253,9 +335,11 @@ export function buildClub(): Club {
       const rx = (i % 2 ? 0.25 : 0) + 0.4 * Math.sin(TAU * beats * 0.03125 + i);
       beam.rotation.set(rx, 0, rz);
       // Para dónde apunta (el haz cuelga hacia -y) y a qué distancia toca el piso.
-      const len = Math.min(9, o.y / (Math.cos(rz) * Math.cos(rx)));
+      const len = Math.min(11, o.y / (Math.cos(rz) * Math.cos(rx)));
       beam.scale.y = len;
-      pool.position.set(o.x + Math.sin(rz) * len, 0.03, o.z - Math.cos(rz) * Math.sin(rx) * len);
+      const px = o.x + Math.sin(rz) * len, pz = o.z - Math.cos(rz) * Math.sin(rx) * len;
+      // Si cae en un palco, el charco queda arriba, no enterrado.
+      pool.position.set(px, floorAt(px, pz) + 0.03, pz);
       const a = 0.03 + (0.05 + 0.09 * pulse) * energy;
       mat.uniforms.uOpacity.value = a;
       poolMat.uniforms.uOpacity.value = a * 1.6;
