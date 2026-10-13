@@ -17,6 +17,7 @@ interface YTPlayer {
   playVideo(): void;
   pauseVideo(): void;
   setVolume(v: number): void;
+  getVolume(): number;
   unMute(): void;
   mute(): void;
   isMuted(): boolean;
@@ -90,6 +91,35 @@ export class Tele {
   /** Llamar después de cada frame: acomoda el iframe a donde quedó la cámara. */
   render() {
     if (this.object.visible) this.css.render(this.stage.scene, this.stage.camera);
+    this.listen();
+  }
+
+  /** Lo último que se le mandó al player (0–100; -1 = nada todavía) y cuándo. */
+  private sent = -1;
+  private sentAt = 0;
+  private checkedAt = 0;
+  /**
+   * El tope que eligió el visitante con el control de volumen de YouTube (0–1). Todo lo que
+   * hace el sitio con el volumen (bajito desde la vereda, más bajo en el patio) va por abajo de
+   * ese tope: si lo bajó a mano, se queda ahí y no vuelve a subir solo.
+   */
+  private master = 1;
+  private send() {
+    if (!this.player) return;
+    this.sent = Math.round(this.vol * this.master * 100);
+    this.sentAt = performance.now();
+    this.player.setVolume(this.sent);
+  }
+  /** Cada medio segundo: si el volumen del player no es el que se le mandó, lo movió el visitante. */
+  private listen() {
+    const now = performance.now();
+    // Recién mandado todavía puede no haberse aplicado: se espera a que el sitio lo deje quieto.
+    if (!this.player || this.sent < 0 || now - this.checkedAt < 500 || now - this.sentAt < 1200) return;
+    this.checkedAt = now;
+    const real = this.player.getVolume?.();
+    if (typeof real !== 'number' || Math.abs(real - this.sent) < 2) return;
+    this.master = Math.max(0, Math.min(1, real / 100 / Math.max(0.05, this.vol)));
+    this.sent = real;
   }
 
   /**
@@ -118,7 +148,7 @@ export class Tele {
     if (this.playing && !this.player.isMuted()) return void (this.heard = true);
     this.triedAt = performance.now();
     this.player.unMute();
-    this.player.setVolume(Math.round(this.vol * 100));
+    this.send();
     this.player.playVideo();
   }
 
@@ -142,7 +172,7 @@ export class Tele {
     if (Math.abs(v - this.vol) < 0.02 && v !== 0 && v !== 1) return;
     if (v === this.vol) return;
     this.vol = v;
-    this.player?.setVolume(Math.round(v * 100));
+    this.send();
   }
 
   /** En los juegos y en el creador la tele no recibe toques: si no, se comería los de los menús que le pasan por delante. */
@@ -183,7 +213,7 @@ export class Tele {
       events: {
         onReady: (e: { target: YTPlayer }) => {
           this.player = e.target;
-          e.target.setVolume(Math.round(this.vol * 100));
+          this.send();
           if (this.sound) e.target.unMute();
           if (this.pending && this.pending !== videoId) e.target.loadVideoById(this.pending);
           else e.target.playVideo();
