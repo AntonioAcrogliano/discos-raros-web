@@ -49,6 +49,7 @@ uniform float uVhs;
 uniform float uCrt;
 uniform float uChroma;
 uniform float uPulse;
+uniform float uVignette;
 uniform sampler2D tOverlay;
 uniform float uOverlayOn;
 varying vec2 vUv;
@@ -111,6 +112,11 @@ void main() {
     vec4 ov = texture2D(tOverlay, screenUv);
     c = mix(c, vec4(ov.rgb, 1.0), ov.a);
   }
+  // Viñeta: las esquinas se van a negro (antes del tramado, así queda en escalones).
+  if (uVignette > 0.0) {
+    vec2 v = vUv * 2.0 - 1.0;
+    c.rgb *= 1.0 - uVignette * smoothstep(0.45, 1.7, dot(v, v));
+  }
   ivec2 p = ivec2(floor(uv * uRes));
   if (uDepth > 0.5) {
     float t = uDither > 0.5 ? (BAYER[(p.x & 3) + (p.y & 3) * 4] + 0.5) / 16.0 : 0.5;
@@ -143,6 +149,8 @@ export class PSXPost {
   readonly filters: FilterSettings = { vhs: 0, crt: 0, chroma: 0, react: 0.5 };
   /** Golpe del beat en este frame (0–1). */
   pulse = 0;
+  /** Cuánto se oscurecen las esquinas (0 = nada). */
+  vignette = 0;
   /** Tiempo para el ruido del VHS. */
   time = 0;
   /** Color de fondo con el que se limpia el render target. */
@@ -178,6 +186,7 @@ export class PSXPost {
         uCrt: { value: 0 },
         uChroma: { value: 0 },
         uPulse: { value: 0 },
+        uVignette: { value: 0 },
         tOverlay: { value: null },
         uOverlayOn: { value: 0 },
       },
@@ -243,6 +252,7 @@ export class PSXPost {
     u.uCrt.value = f.crt;
     u.uChroma.value = f.chroma;
     u.uPulse.value = this.pulse * f.react;
+    u.uVignette.value = this.vignette;
     u.tOverlay.value = this.overlay;
     u.uOverlayOn.value = this.overlay ? 1 : 0;
 
