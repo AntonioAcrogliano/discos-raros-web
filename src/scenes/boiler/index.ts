@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type Look, type LookView, type Raro, type SetInfo, validLook } from '../../../shared/look';
 import type { PistaData } from '../../api';
-import { ANTRO, DR, type PSXStage, audioLive, outlined, psxUniforms, street, titleUnit } from '../../style-kit';
+import { DR, type PSXStage, audioLive, outlined, psxUniforms, street, titleUnit } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
 import { CLUB, buildClub } from './club';
@@ -10,12 +10,8 @@ import { loadGlbRig } from '../../characters/glbRig';
 import { buildPlaceholderDjs, makeDjs } from './djs';
 import { Tele } from './tele';
 
-/** La luz de la calle (vereda y patio): de noche, tirando a violeta. Adentro manda `club.light`. */
-const CALLE = { ambient: new THREE.Color(0.4, 0.36, 0.5), key: new THREE.Color(0.62, 0.58, 0.56), fog: new THREE.Color('#120a1f'), near: 9, far: 26 };
-/** Armando el raro: luz pareja y sin color, que se vea lo que se elige. */
-const PROBADOR = { ambient: new THREE.Color(0.46, 0.46, 0.5), key: new THREE.Color(0.6, 0.58, 0.56), fog: new THREE.Color(ANTRO.humo) };
-/** Adentro la niebla arranca más cerca: el fondo del boliche se pierde en el humo. */
-const HUMO = { near: 8, far: 25 };
+/** La luz de la calle (vereda y patio): de noche, tirando a violeta. Adentro manda `club.light`, que es la misma pero late con el bombo. */
+const CALLE = { ambient: new THREE.Color(0.4, 0.36, 0.5), key: new THREE.Color(0.62, 0.58, 0.56), fog: new THREE.Color('#120a1f') };
 
 /** 'afuera' es la vereda (la entrada del sitio) y 'patio' el patio de juegos; el resto pasa adentro. */
 export type BoilerMode = 'afuera' | 'pista' | 'creador' | 'pelea' | 'patio';
@@ -71,20 +67,21 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   const touch = isTouch();
   const scene = new THREE.Scene();
   psxUniforms.uFog.value = 1;
+  psxUniforms.uFogNear.value = 9;
+  psxUniforms.uFogFar.value = 26;
   psxUniforms.uLightDir.value.set(0.25, 0.8, 0.9).normalize();
   /** Cuánto de la luz es la del boliche (1) y cuánto la de la calle (0): se cruzan al pasar la puerta. */
   let inClub = 0;
   const mix = new THREE.Color();
   const relight = (k: number) => {
-    const to = mode === 'creador' || dressing ? PROBADOR : club.light;
+    // Armando el raro la luz se queda quieta, que se vea bien lo que se elige.
+    const to = mode === 'creador' ? CALLE : club.light;
     psxUniforms.uAmbient.value.lerp(mix.copy(CALLE.ambient).lerp(to.ambient, inClub), k);
     psxUniforms.uLightColor.value.lerp(mix.copy(CALLE.key).lerp(to.key, inClub), k);
     psxUniforms.uFogColor.value.lerp(mix.copy(CALLE.fog).lerp(to.fog, inClub), k);
-    psxUniforms.uFogNear.value = CALLE.near + (HUMO.near - CALLE.near) * inClub;
-    psxUniforms.uFogFar.value = CALLE.far + (HUMO.far - CALLE.far) * inClub;
     stage.post.clearColor.copy(psxUniforms.uFogColor.value);
     // Adentro las esquinas de la pantalla se oscurecen: la luz está en el medio de la pista.
-    stage.post.vignette = 0.55 * inClub;
+    stage.post.vignette = 0.35 * inClub;
   };
 
   const club = buildClub();

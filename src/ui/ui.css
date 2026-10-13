@@ -1,9 +1,6 @@
 /*
  * Interfaz tipo menú de juego de PS1 con la paleta de DR: ventanas negras con borde crema,
- * título amarillo sobre negro con la franja roja y amarilla de la cabina, cursor que titila y
- * sombras duras. Nada redondeado ni suave.
- * Un solo código de colores en todos lados: crema = donde está el cursor (mouse o teclado),
- * amarillo = lo elegido, rojo = la acción principal o cerrar.
+ * barra de título verde, cursor amarillo que titila y sombras duras. Nada redondeado ni suave.
  */
 
 .ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; font: 10px/1.7 var(--pix-font); text-transform: uppercase; }
@@ -20,8 +17,7 @@
   border: 2px solid var(--dr-crema); border-radius: 0; box-shadow: 3px 3px 0 #000;
   -webkit-tap-highlight-color: transparent;
 }
-.btn.on { color: var(--dr-negro); border-color: var(--dr-amarillo); background: var(--dr-amarillo); box-shadow: 3px 3px 0 var(--dr-rojo); }
-.btn:hover, .btn:focus-visible { outline: none; color: var(--dr-negro); border-color: var(--dr-crema); background: var(--dr-crema); }
+.btn:hover, .btn:focus-visible, .btn.on { outline: none; color: var(--dr-amarillo); border-color: var(--dr-amarillo); background: var(--dr-verde); }
 .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000; }
 .btn:focus-visible::before {
   content: ''; position: absolute; left: -14px; top: 50%; margin-top: -6px;
@@ -29,8 +25,8 @@
   animation: dr-blink 0.8s steps(1) infinite;
 }
 .btn[disabled] { opacity: 0.5; cursor: default; }
-.btn.rojo { background: var(--dr-rojo); border-color: var(--dr-crema); }
-.btn.rojo:hover, .btn.rojo:focus-visible { background: var(--dr-crema); color: var(--dr-rojo); }
+.btn.rojo { background: var(--dr-rojo-oscuro); }
+.btn.rojo:hover, .btn.rojo:focus-visible { background: var(--dr-rojo); color: var(--dr-crema); }
 .pix { display: block; flex: none; width: 18px; height: 18px; fill: currentColor; shape-rendering: crispEdges; }
 .btn.chico { padding: 5px 7px 4px; font-size: 8px; box-shadow: 2px 2px 0 #000; }
 
@@ -48,8 +44,6 @@
 .navbar .btn:first-child { border-left: 0; }
 .navbar .btn:active { transform: none; }
 .navbar .btn:focus-visible::before { content: none; }
-.navbar .btn.on { box-shadow: none; }
-.navbar .btn.on:hover, .navbar .btn.on:focus-visible { background: var(--dr-crema); }
 
 /* --- Ayuda de cómo moverse por la pista: aparece un rato al entrar ----------------- */
 .ayuda {
@@ -66,7 +60,7 @@
 .hud { position: fixed; left: 10px; right: 10px; top: calc(10px + env(safe-area-inset-top)); display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; pointer-events: none; }
 .hud > * { pointer-events: auto; }
 .hud-izq { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
-.hud .contador { padding: 4px 7px 3px; font-size: 8px; color: var(--dr-negro); background: var(--dr-amarillo); box-shadow: 3px 3px 0 #000; max-width: 100%; }
+.hud .contador { padding: 6px 8px 5px; background: #0f1217; border: 2px solid var(--dr-crema); box-shadow: 3px 3px 0 #000; color: var(--dr-amarillo); max-width: 100%; }
 .hud .contador:empty { display: none; }
 /* Reproductor: arriba qué suena (con su vúmetro), abajo los botones pegados como en un equipo. */
 .suena { width: min(400px, 100%); background: var(--dr-negro); border: 2px solid var(--dr-crema); box-shadow: 3px 3px 0 #000; }
@@ -81,7 +75,7 @@
 .eq i:nth-child(3) { animation-duration: 0.6s; animation-delay: -0.1s; }
 .suena.pausa .eq i { animation: none; transform: scaleY(0.2); background: var(--dr-rojo); }
 @keyframes dr-eq { from { transform: scaleY(0.2); } to { transform: scaleY(1); } }
-.suena .titulo { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; color: var(--dr-crema); }
+.suena .titulo { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; color: var(--dr-rosa); }
 .suena .titulo span { display: inline-block; }
 /* Si el nombre no entra, va y vuelve (a los saltos, como un cartel de leds). */
 .suena .titulo.corre span { animation: dr-correr var(--dur, 8s) steps(var(--pasos, 40)) infinite alternate; }
@@ -97,7 +91,7 @@
 .red.yt { background: var(--dr-rojo-oscuro); }
 .red.ig { background: #5a1a52; }
 .red.kick { background: var(--dr-verde-oscuro); }
-.red:hover, .red:focus-visible { background: var(--dr-crema); color: var(--dr-negro); border-color: var(--dr-crema); }
+.red:hover, .red:focus-visible { background: var(--dr-crema); color: var(--dr-negro); border-color: var(--dr-amarillo); }
 .redes.en-ventana { flex-wrap: wrap; }
 .redes.en-ventana .red { padding: 9px 12px 8px; font-size: inherit; }
 /* En la pantalla de PRESS START: arriba a la derecha, por encima del botón gigante. */
@@ -108,7 +102,7 @@
 .juego { display: grid; gap: 6px; padding: 12px; }
 .juego .nombre { color: var(--dr-amarillo); font-size: 12px; }
 .juego .meta { color: var(--dr-rosa); font-size: 8px; line-height: 1.8; }
-.juego:hover > *, .juego:focus-visible > * { color: var(--dr-negro); }
+.juego:hover .meta, .juego:focus-visible .meta { color: var(--dr-crema); }
 
 /* --- Ventanas --------------------------------------------------------------------- */
 .panel-wrap {
@@ -125,18 +119,13 @@
 .panel { animation: dr-abrir 0.14s steps(3); min-width: 0; display: flex; flex-direction: column; width: min(700px, 100%); max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); background: var(--dr-negro); border: 2px solid var(--dr-crema); box-shadow: 6px 6px 0 #000; }
 .panel.angosto { width: min(460px, 100%); }
 .panel-title {
-  position: relative; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 11px 12px;
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 7px 12px;
   color: var(--dr-amarillo); text-shadow: 2px 2px 0 var(--dr-rojo-oscuro); font-size: 12px;
-  background: var(--dr-negro); border-bottom: 2px solid var(--dr-crema);
+  background: linear-gradient(180deg, var(--dr-verde-claro), var(--dr-verde) 60%, var(--dr-verde-oscuro));
+  border-bottom: 2px solid var(--dr-crema);
 }
-/* La franja de la cabina. */
-.panel-title::after {
-  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
-  background: repeating-linear-gradient(90deg, var(--dr-amarillo) 0 8px, var(--dr-rojo) 8px 16px);
-}
-.panel-title .btn { box-shadow: 2px 2px 0 #000; }
 .panel-body { overflow: auto; padding: 14px 16px 14px 22px; scrollbar-color: var(--dr-crema) var(--dr-negro); scrollbar-width: thin; overscroll-behavior: contain; }
-.panel-foot { flex: none; padding: 6px 12px 5px; border-top: 2px solid #f9f2e840; color: var(--dr-rosa); font-size: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.panel-foot { flex: none; padding: 6px 12px 5px; border-top: 2px solid var(--dr-crema); color: var(--dr-rosa); font-size: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .panel-foot b { color: var(--dr-amarillo); font-weight: normal; }
 .panel p { margin: 0 0 12px; }
 .aviso { color: var(--dr-rosa); }
@@ -152,9 +141,7 @@
 .set .nombre { overflow-wrap: anywhere; }
 .set .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; font-size: 8px; color: var(--dr-rosa); }
 .set .genero { color: var(--dr-negro); background: var(--dr-amarillo); padding: 1px 4px 0; }
-.set:hover .num, .set:hover .meta, .set:focus-visible .num, .set:focus-visible .meta { color: var(--dr-negro); }
-.set:hover .genero, .set:focus-visible .genero { color: var(--dr-amarillo); background: var(--dr-negro); }
-.set.sonando { border-color: var(--dr-amarillo); box-shadow: 3px 3px 0 var(--dr-rojo); }
+.set.sonando { border-color: var(--dr-rojo); }
 .set.sonando .num::after { content: ' - SONANDO'; color: var(--dr-rojo); }
 .set-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
 .set-fila .yt { display: grid; place-items: center; text-align: center; width: 62px; line-height: 1.5; }
@@ -183,7 +170,7 @@
 .pestanas .btn { flex: 1 0 auto; text-align: center; padding: 7px 6px 6px; }
 .opciones { display: grid; gap: 6px; min-height: 250px; align-content: start; }
 .opcion { display: grid; gap: 6px; padding: 6px; border: 2px solid transparent; }
-.opcion:focus-visible, .opcion:focus-within { outline: none; border-color: var(--dr-amarillo); background: #1b2029; }
+.opcion:focus-visible, .opcion:focus-within { outline: none; border-color: var(--dr-amarillo); background: var(--dr-verde-oscuro); }
 .opcion-titulo { display: flex; justify-content: space-between; gap: 8px; font-size: 8px; }
 .opcion .etiqueta { color: var(--dr-rosa); }
 .opcion .valor { color: var(--dr-amarillo); text-align: right; }
@@ -200,7 +187,7 @@
 .fichas.dibujos .ficha.on { box-shadow: 0 0 0 2px var(--dr-rojo); position: relative; z-index: 1; }
 .fichas.grandes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .fichas.grandes .ficha { padding: 12px 8px 11px; font-size: 10px; text-align: center; box-shadow: 3px 3px 0 #000; }
-.fichas.grandes .ficha:hover, .fichas.grandes .ficha:focus-visible { outline: none; color: var(--dr-negro); border-color: var(--dr-crema); background: var(--dr-crema); }
+.fichas.grandes .ficha:hover, .fichas.grandes .ficha:focus-visible { outline: none; color: var(--dr-amarillo); border-color: var(--dr-amarillo); background: var(--dr-verde); }
 .fichas.grandes .ficha:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000; }
 .muestras { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px; }
 .muestra { width: 24px; height: 24px; padding: 0; border: 2px solid var(--dr-negro); outline: 2px solid #ffffff40; border-radius: 0; cursor: pointer; }
