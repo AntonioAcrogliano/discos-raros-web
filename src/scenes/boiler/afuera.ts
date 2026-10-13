@@ -505,7 +505,7 @@ function buildPatova() {
  * juegos, y la cámara de costado se para bien atrás. `gameZ` es la línea de la cancha y del
  * ring; de ahí hacia la cámara no puede haber muebles.
  */
-export const PATIO = { x: 12.8, back: -5, front: 13, halfW: 5.8, gameZ: -0.4, wallH: 4.6 };
+export const PATIO = { x: CLUB.halfW + 6.2, back: -5, front: 13, halfW: 5.8, gameZ: -0.4, wallH: 4.6 };
 
 /** Pantalla de un fichín: franjas de colores y un cartel, en 32×24. */
 function makeArcadeScreen(title: string, a: string, b: string) {

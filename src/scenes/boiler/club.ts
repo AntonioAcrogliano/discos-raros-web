@@ -19,14 +19,14 @@ import {
 
 /** Medidas del club (metros). La cámara mira hacia -z: cabina adelante, pista atrás, tele al fondo. */
 export const CLUB = {
-  halfW: 6.6,
-  backZ: -5.3,
+  halfW: 8.2,
+  backZ: -6.5,
   frontZ: 9.6,
-  ceilY: 5.6,
+  ceilY: 6.0,
   boothZ: 2.5,
   boothH: 1.0,
   djZ: 1.86,
-  tele: { x: 0, y: 4.15, z: -5.12, w: 4.8, h: 2.7 },
+  tele: { x: 0, y: 4.3, z: -6.32, w: 5.3, h: 2.98 },
 };
 
 export interface Club {
@@ -70,7 +70,7 @@ export function buildClub(): Club {
 
   // --- Pista: baldosas que cambian de color con el beat ------------------------------
   // Una sola textura con 4×4 píxeles por baldosa, que se redibuja en cada beat.
-  const TX = 13, TZ = 15, PX = 4;
+  const TX = 16, TZ = 16, PX = 4;
   const floorCv = makeCanvas(TX * PX, TZ * PX);
   const floorTex = toPSXTexture(floorCv.canvas);
   const floorGeo = new THREE.PlaneGeometry(halfW * 2, depth, TX, TZ);
@@ -107,16 +107,16 @@ export function buildClub(): Club {
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * repeatX, uv.getY(i) * repeatY);
     return new THREE.Mesh(geo, makePSXMaterial({ map: wallTex }));
   };
-  const back = wall(halfW * 2, ceilY, 7, 3);
+  const back = wall(halfW * 2, ceilY, 9, 3);
   back.position.set(0, ceilY / 2, backZ);
-  const left = wall(depth, ceilY, 5, 3);
+  const left = wall(depth, ceilY, 6, 3);
   left.rotation.y = Math.PI / 2;
   left.position.set(-halfW, ceilY / 2, (frontZ + backZ) / 2);
-  const right = wall(depth, ceilY, 5, 3);
+  const right = wall(depth, ceilY, 6, 3);
   right.rotation.y = -Math.PI / 2;
   right.position.set(halfW, ceilY / 2, (frontZ + backZ) / 2);
   // Techo (antes se veía el vacío al mirar para arriba) con sus vigas.
-  const ceiling = new THREE.Mesh(wall(halfW * 2, depth, 7, 8).geometry, makePSXMaterial({ map: wallTex, color: '#9a90b0' }));
+  const ceiling = new THREE.Mesh(wall(halfW * 2, depth, 9, 9).geometry, makePSXMaterial({ map: wallTex, color: '#9a90b0' }));
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(0, ceilY, (frontZ + backZ) / 2);
   group.add(back, left, right, ceiling);
@@ -124,7 +124,8 @@ export function buildClub(): Club {
   // Pilastras entre tapa y tapa de disco, cada una con su tubo de neón que late con el bombo.
   const pilar = makePSXMaterial({ color: '#241a33' });
   const tubes: { tube: PSXMaterial; halo: PSXMaterial; color: THREE.Color }[] = [];
-  [-3.5, -0.3, 2.9, 6.1].forEach((z, i) => {
+  [0, 1, 2, 3].forEach((i) => {
+    const z = backZ + 1.8 + i * 3.2;
     group.add(box(halfW * 2, 0.26, 0.22, pilar, 0, ceilY - 0.13, z));
     for (const s of [-1, 1]) {
       const color = new THREE.Color(DR_CYCLE[(i * 2 + (s > 0 ? 1 : 0)) % 4]);
@@ -162,8 +163,8 @@ export function buildClub(): Club {
   };
   const flat = (w: number, h: number, mat: THREE.Material, x: number, y: number, off: number) => inward(new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat), x, y, off);
   const sideW = halfW - doorW;
-  for (const s of [-1, 1]) inward(wall(sideW, ceilY, (7 * sideW) / (halfW * 2), 3), s * (doorW + sideW / 2), ceilY / 2);
-  inward(wall(doorW * 2, ceilY - doorH, (7 * doorW) / halfW, (3 * (ceilY - doorH)) / ceilY), 0, doorH + (ceilY - doorH) / 2);
+  for (const s of [-1, 1]) inward(wall(sideW, ceilY, (9 * sideW) / (halfW * 2), 3), s * (doorW + sideW / 2), ceilY / 2);
+  inward(wall(doorW * 2, ceilY - doorH, (9 * doorW) / halfW, (3 * (ceilY - doorH)) / ceilY), 0, doorH + (ceilY - doorH) / 2);
   const doorFrame = makePSXMaterial({ color: '#0a0a0e' });
   const doorMat = makePSXMaterial({ color: DR.rojoOscuro });
   const doorTrim = makePSXMaterial({ color: DR.amarillo });
@@ -266,7 +267,7 @@ export function buildClub(): Club {
   for (let i = 0; i < 6; i++) {
     const m = makePSXMaterial({ color: '#000', lit: false });
     bars.push(m);
-    group.add(box(8.4, 0.06, 0.08, m, 0, ceilY - 0.62, -4.9 + i * 1.1));
+    group.add(box(halfW * 1.3, 0.06, 0.08, m, 0, ceilY - 0.62, backZ + 0.4 + i * 1.1));
   }
   updaters.push((beats, energy) => {
     const beat = Math.floor(beats);
@@ -370,9 +371,9 @@ export function buildClub(): Club {
   // Y dos más colgados en las esquinas del fondo, apuntando a la pista.
   for (const s of [-1, 1]) {
     const hung = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.3, 0.7), [cab, cab, cab, cab, front, cab]);
-    hung.position.set(s * 5.35, 3.95, backZ + 0.95);
+    hung.position.set(s * (halfW - 1.25), 3.95, backZ + 0.95);
     hung.rotation.set(0.22, -s * 0.5, 0);
-    group.add(hung, box(0.04, ceilY - 4.55, 0.04, metal, s * 5.35, (ceilY + 4.55) / 2, backZ + 0.85));
+    group.add(hung, box(0.04, ceilY - 4.55, 0.04, metal, s * (halfW - 1.25), (ceilY + 4.55) / 2, backZ + 0.85));
   }
 
   // El logo se carga aparte: cuando llega, se prende en la cabina y en la tele.

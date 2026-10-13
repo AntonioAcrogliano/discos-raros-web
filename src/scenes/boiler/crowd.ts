@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LOOK, type Look, type Raro } from '../../../shared/look';
 import { DETAIL, type DetailCell, detailUv, make3DGlassesTexture, makeDetailTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
+import { CLUB } from './club';
 import { EN_LA_FILA, dance, makePose } from './dances';
 
 /**
@@ -483,18 +484,25 @@ interface Dancer {
   /** Altura de la cabeza en el último frame (para los cartelitos). */
   headY: number;
   id: string;
-  /** Paseo por la pista (ver `Crowd.roam`): adónde va, cuánto falta para que elija otro lado y cuánto gira al caminar. */
+  /** Paseo por la pista (ver `Crowd.roam`): adónde va y cuánto falta para que elija otro lado. */
   tx: number;
   tz: number;
   wait: number;
-  turn: number;
+  /** Con quién fue a bailar (su lugar en la lista; -1 = solo): parado al lado, lo mira. */
+  buddy: number;
+  /** Cada uno a su manera: para dónde tuerce el cuerpo cuando mira a la cabina y qué tan inquieto es. */
+  bias: number;
+  pace: number;
 }
+
+/** Diferencia entre dos ángulos por el lado más corto. */
+const turnTo = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
 /**
  * Por dónde se puede andar: todo el boliche menos la cabina (con sus parlantes). Queda la pista
  * de atrás, los dos pasillos de los costados y el frente de la cabina.
  */
-const FLOOR = { halfW: 6.05, back: -5.0, front: -0.45, aisle: 4.4, boothFront: 3.2, end: 4.9 };
+const FLOOR = { halfW: CLUB.halfW - 0.55, back: CLUB.backZ + 0.3, front: -0.45, aisle: 4.4, boothFront: 3.2, end: 4.9 };
 /** Aire que se dejan entre ellos, además del ancho de cada uno: no se pisan ni con los brazos. */
 const GAP = 0.2;
 /** Saca un punto de adentro de la cabina (al borde que tenga más cerca). */
@@ -515,9 +523,10 @@ function makeSlots(): { x: number; z: number }[] {
   let seed = 11;
   const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
   const slots: { x: number; z: number; score: number }[] = [];
-  for (let row = 0; row < 7; row++) {
+  const rows = Math.floor((-0.55 - FLOOR.back) / SLOT_Z) + 1, wide = Math.floor(FLOOR.halfW / SLOT_X);
+  for (let row = 0; row < rows; row++) {
     const z = -0.55 - row * SLOT_Z;
-    const n = row % 2 ? 6.5 : 7;
+    const n = row % 2 ? wide - 0.5 : wide;
     for (let i = -n; i <= n; i++) {
       const x = i * SLOT_X;
       const first = row === 0 && i === 0;
@@ -526,7 +535,7 @@ function makeSlots(): { x: number; z: number }[] {
   }
   // A los costados de la cabina.
   for (const z of [0.35, 1.2, 2.05, 2.9]) {
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 3; i++) {
       for (const side of [1, -1]) slots.push({ x: side * (4.55 + i * SLOT_X + (r() - 0.5) * 0.1), z: z + (r() - 0.5) * 0.1, score: 3 + i * 0.6 + z * 0.3 });
     }
   }
@@ -668,73 +677,87 @@ export class Crowd {
     let seed = 99;
     const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
     const before = new Map(this.dancers.map((d) => [d.id, d]));
-    this.dancers = list.slice(0, Math.min(this.capacity, this.slots.length)).map((raro, i) => ({
-      x: this.slots[i].x,
-      z: this.slots[i].z,
-      yaw: (r() - 0.5) * 0.5,
-      phase: r() * 10,
-      look: raro.look,
-      vary: 0.96 + r() * 0.08,
-      name: raro.name,
-      headY: 1.7,
-      id: raro.id,
-      tx: this.slots[i].x,
-      tz: this.slots[i].z,
-      wait: r() * 8,
-      turn: 0,
-    }));
+    this.dancers = list.slice(0, Math.min(this.capacity, this.slots.length)).map((raro, i) => {
+      const bias = (r() - 0.5) * 0.5;
+      return {
+        x: this.slots[i].x,
+        z: this.slots[i].z,
+        yaw: bias,
+        bias,
+        pace: 0.7 + r() * 0.7,
+        buddy: -1,
+        phase: r() * 10,
+        look: raro.look,
+        vary: 0.96 + r() * 0.08,
+        name: raro.name,
+        headY: 1.7,
+        id: raro.id,
+        tx: this.slots[i].x,
+        tz: this.slots[i].z,
+        wait: r() * 8,
+      };
+    });
     spread(this.dancers, this.slots);
     this.radius = this.dancers.map((d) => reach(d.look));
-    // Los que ya andaban paseando siguen donde estaban (si no, pegarían un salto a su lugar).
     if (this.roam) {
       this.dancers.forEach((d, i) => {
-        const was = i > 0 && before.get(d.id);
-        if (was) Object.assign(d, { x: was.x, z: was.z, tx: was.tx, tz: was.tz, wait: was.wait, turn: was.turn });
+        if (i === 0) return;
+        const was = before.get(d.id);
+        // Los que ya andaban paseando siguen donde estaban (si no, pegarían un salto a su lugar).
+        if (was) return void Object.assign(d, { x: was.x, z: was.z, tx: was.tx, tz: was.tz, wait: was.wait, yaw: was.yaw });
+        // Los demás arrancan repartidos por todo el boliche, no formados en filas, y cada uno
+        // sale a pasear a su tiempo.
+        this.pick(d, i, false);
+        d.x = d.tx;
+        d.z = d.tz;
+        d.yaw = this.facing(d);
+        d.wait = Math.random() * 14;
       });
+      for (let pass = 0; pass < 12; pass++) this.separate(null, 0);
     }
     this.paint();
   }
 
-  /**
-   * Un paso del paseo: cada uno va bailando despacio hasta algún lugar de la pista, se queda un
-   * rato y elige otro. Se esquivan entre ellos y no pisan la cabina. El primero (el del
-   * visitante) se queda en su lugar, así siempre se lo encuentra.
-   */
-  wander(dt: number, energy: number) {
-    if (!this.roam || this.solo) return;
+  /** Elige adónde va a ir: casi siempre a la pista; cada tanto, a un costado, al frente de la cabina o a bailar con alguien. */
+  private pick(d: Dancer, i: number, social = true) {
     const ds = this.dancers;
-    const speed = 0.45 * (0.25 + 0.75 * Math.min(1, energy));
-    const moving: boolean[] = [false];
-    for (let i = 1; i < ds.length; i++) {
-      const d = ds[i];
-      d.wait -= dt;
-      if (d.wait <= 0) {
-        // Casi siempre a la pista; cada tanto, a un costado o al frente de la cabina.
-        const where = Math.random();
-        if (where < 0.7) {
-          d.tx = (Math.random() * 2 - 1) * FLOOR.halfW;
-          d.tz = FLOOR.back + Math.random() * (FLOOR.front - FLOOR.back);
-        } else if (where < 0.85) {
-          d.tx = Math.sign(Math.random() - 0.5) * (FLOOR.aisle + 0.2 + Math.random() * 1.3);
-          d.tz = FLOOR.front + Math.random() * (FLOOR.boothFront - FLOOR.front);
-        } else {
-          d.tx = (Math.random() * 2 - 1) * FLOOR.halfW;
-          d.tz = FLOOR.boothFront + 0.2 + Math.random() * (FLOOR.end - FLOOR.boothFront - 0.2);
-        }
-        d.wait = 8 + Math.random() * 14;
-      }
-      const dx = d.tx - d.x, dz = d.tz - d.z, far = Math.hypot(dx, dz);
-      const go = far > 0.15 ? Math.min(speed * dt, far) / far : 0;
-      moving[i] = go > 0;
-      d.x += dx * go;
-      d.z += dz * go;
-      // Al ir para un costado se perfila un poco para ese lado.
-      d.turn += ((go ? Math.max(-1, Math.min(1, dx / far)) * 0.55 : 0) - d.turn) * Math.min(1, dt * 2);
+    const where = Math.random();
+    d.buddy = -1;
+    if (social && where < 0.22 && ds.length > 2) {
+      // Se le para al lado a otro (puede ser el del visitante) y bailan enfrentados.
+      let j = Math.floor(Math.random() * ds.length);
+      if (j === i) j = (j + 1) % ds.length;
+      const a = Math.random() * Math.PI * 2;
+      d.buddy = j;
+      d.tx = ds[j].x + Math.cos(a) * 0.9;
+      d.tz = ds[j].z + Math.sin(a) * 0.9;
+    } else if (where < 0.76) {
+      d.tx = (Math.random() * 2 - 1) * FLOOR.halfW;
+      d.tz = FLOOR.back + Math.random() * (FLOOR.front - FLOOR.back);
+    } else if (where < 0.89) {
+      d.tx = Math.sign(Math.random() - 0.5) * (FLOOR.aisle + 0.2 + Math.random() * (FLOOR.halfW - FLOOR.aisle - 0.2));
+      d.tz = FLOOR.front + Math.random() * (FLOOR.boothFront - FLOOR.front);
+    } else {
+      // Al frente, pero no en el medio: ahí taparían la cabina, que es lo que se mira al entrar.
+      d.tx = Math.sign(Math.random() - 0.5) * (2.8 + Math.random() * (FLOOR.halfW - 2.8));
+      d.tz = FLOOR.boothFront + 0.2 + Math.random() * (FLOOR.end - FLOOR.boothFront - 0.2);
     }
-    // Nadie se mete adentro de nadie: los que se tocan se separan del todo (varias pasadas, porque
-    // al correr a uno se lo puede arrimar a otro o a la cabina). Si alguno venía caminando, además
-    // se rodean, siempre para el mismo lado: así dos que van de frente no quedan trabados.
-    const slide = speed * dt * 0.8;
+  }
+
+  /** Para dónde mira parado: a su compañero de baile si lo tiene al lado; si no, a la cabina, cada uno un poco a su manera. */
+  private facing(d: Dancer) {
+    const b = d.buddy >= 0 ? this.dancers[d.buddy] : null;
+    if (b && Math.hypot(b.x - d.x, b.z - d.z) < 1.9) return Math.atan2(b.x - d.x, b.z - d.z);
+    return Math.atan2(-d.x * 0.5, CLUB.djZ - d.z) + d.bias;
+  }
+
+  /**
+   * Nadie se mete adentro de nadie: los que se tocan se separan del todo (varias pasadas, porque
+   * al correr a uno se lo puede arrimar a otro o a la cabina). Si alguno venía caminando, además
+   * se rodean, siempre para el mismo lado: así dos que van de frente no quedan trabados.
+   */
+  private separate(moving: boolean[] | null, slide: number) {
+    const ds = this.dancers;
     for (let pass = 0; pass < 4; pass++) {
       for (let i = 0; i < ds.length; i++) {
         for (let j = i + 1; j < ds.length; j++) {
@@ -744,7 +767,7 @@ export class Crowd {
           const min = this.radius[i] + this.radius[j] + GAP, dist = Math.hypot(dx, dz) || 0.001;
           if (dist >= min) continue;
           const ux = dx / dist, uz = dz / dist, push = min - dist, ka = i === 0 ? 0 : 0.5, kb = 1 - ka;
-          const around = pass === 0 && (moving[i] || moving[j]) ? slide : 0;
+          const around = pass === 0 && moving && (moving[i] || moving[j]) ? slide : 0;
           a.x -= (ux * push + -uz * around) * ka;
           a.z -= (uz * push + ux * around) * ka;
           b.x += (ux * push + -uz * around) * kb;
@@ -753,6 +776,35 @@ export class Crowd {
       }
       for (let i = 1; i < ds.length; i++) offBooth(ds[i]);
     }
+  }
+
+  /**
+   * Un paso del paseo: cada uno va bailando hasta algún lugar del boliche (mirando para donde
+   * camina), se queda un rato de cara a la cabina o a quien fue a buscar, y elige otro. Los hay
+   * inquietos y los hay plantados. Se esquivan entre ellos y no pisan la cabina. El primero (el
+   * del visitante) se queda en su lugar, así siempre se lo encuentra.
+   */
+  wander(dt: number, energy: number) {
+    if (!this.roam || this.solo) return;
+    const ds = this.dancers;
+    const speed = 0.6 * (0.25 + 0.75 * Math.min(1, energy));
+    const moving: boolean[] = [false];
+    for (let i = 1; i < ds.length; i++) {
+      const d = ds[i];
+      d.wait -= dt;
+      if (d.wait <= 0) {
+        this.pick(d, i);
+        d.wait = (7 + Math.random() * 14) / d.pace;
+      }
+      const dx = d.tx - d.x, dz = d.tz - d.z, far = Math.hypot(dx, dz);
+      const go = far > 0.15 ? Math.min(speed * d.pace * dt, far) / far : 0;
+      moving[i] = go > 0;
+      d.x += dx * go;
+      d.z += dz * go;
+      // Caminando mira para donde va; al llegar se acomoda de a poco.
+      d.yaw += turnTo(d.yaw, go ? Math.atan2(dx, dz) : this.facing(d)) * Math.min(1, dt * (go ? 4 : 2));
+    }
+    this.separate(moving, speed * dt * 0.8);
   }
 
   /** Cambia el look de un bailarín sin rearmar la pista (vista previa del creador). */
@@ -898,7 +950,7 @@ export class Crowd {
       // Los que bailan van casi a la par; los de la fila, cada uno a su tiempo.
       dance(l.baile, beats + d.phase * (l.baile >= EN_LA_FILA ? 1.7 : 0.012), e, p);
       // En el creador gira despacio para verlo de todos lados (o mira para donde lo dejaron).
-      const facing = this.solo ? (this.spin ?? Math.sin(t * 0.7) * 0.9) : d.yaw + d.turn + Math.sin(t * 0.9 + d.phase) * 0.08 * (1 - e);
+      const facing = this.solo ? (this.spin ?? Math.sin(t * 0.7) * 0.9) : d.yaw + Math.sin(t * 0.9 + d.phase) * 0.08 * (1 - e);
       const h = b.h * d.vary;
       // Al doblar las rodillas baja la cadera, así el pie que apoya no queda flotando.
       const footL = THIGH * Math.cos(p.tL) + (SHIN + SHOE) * Math.cos(p.tL + p.kL);
