@@ -144,7 +144,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   window.addEventListener('keyup', (e) => walk.delete(e.code));
   window.addEventListener('blur', () => walk.clear());
   const stand = (x: number, z: number) => {
-    look.at = { x: clamp(x, -CLUB.halfW + 0.6, CLUB.halfW - 0.6), z: clamp(z, CLUB.backZ + 0.6, CLUB.frontZ - 2.5) };
+    look.at = { x: clamp(x, -CLUB.halfW + 1.4, CLUB.halfW - 1.4), z: clamp(z, CLUB.backZ + 1.4, CLUB.frontZ - 1.4) };
     look.idle = 0;
   };
   const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
@@ -409,13 +409,13 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       }
       if (look.at) {
         // Parado en un lugar de la pista: la cámara le gira alrededor, de cerca.
-        const dist = 4.6 - 2.6 * look.zoom, pitch = clamp(0.22 + look.pitch, 0.05, 0.95);
+        const pitch = clamp(0.22 + look.pitch, 0.05, 0.95);
+        const dx = Math.sin(look.yaw) * Math.cos(pitch), dy = Math.sin(pitch), dz = Math.cos(look.yaw) * Math.cos(pitch);
+        // Contra una pared (o el techo) la cámara se acerca, en vez de quedar del otro lado.
+        const room = (from: number, d: number, min: number, max: number) => (d > 1e-4 ? (max - from) / d : d < -1e-4 ? (min - from) / d : Infinity);
+        const dist = Math.min(4.6 - 2.6 * look.zoom, room(look.at.x, dx, -CLUB.halfW + 0.4, CLUB.halfW - 0.4), room(1.3, dy, 0, CLUB.ceilY - 0.5), room(look.at.z, dz, CLUB.backZ + 0.4, CLUB.frontZ - 0.4));
         wantTarget.set(look.at.x, 1.3, look.at.z);
-        wantPos.set(
-          clamp(look.at.x + Math.sin(look.yaw) * Math.cos(pitch) * dist, -CLUB.halfW + 0.4, CLUB.halfW - 0.4),
-          Math.min(1.3 + Math.sin(pitch) * dist, CLUB.ceilY - 0.5),
-          clamp(look.at.z + Math.cos(look.yaw) * Math.cos(pitch) * dist, CLUB.backZ + 0.4, CLUB.frontZ - 0.4),
-        );
+        wantPos.set(look.at.x + dx * dist, 1.3 + dy * dist, look.at.z + dz * dist);
       } else if (Math.abs(look.yaw) + Math.abs(look.pitch) + look.zoom > 0.002) {
         a0.subVectors(wantPos, wantTarget);
         const far = a0.length(), z = ease(look.zoom);

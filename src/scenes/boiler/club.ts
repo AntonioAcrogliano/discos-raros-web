@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import {
   DR,
   DR_CYCLE,
+  FONT,
   LOGO_ASPECT,
   type PSXMaterial,
   box,
+  fontsReady,
   makeCanvas,
   makeLogoCanvas,
   makePSXMaterial,
@@ -95,6 +97,54 @@ export function buildClub(): Club {
   right.rotation.y = -Math.PI / 2;
   right.position.set(halfW, ceilY / 2, (frontZ + backZ) / 2);
   group.add(back, left, right);
+
+  // --- Pared de la entrada, con la puerta por la que se entró ------------------------------
+  // Todo en planos que miran para adentro: desde la vereda no se ven (ahí está la fachada de
+  // afuera.ts, en el mismo lugar), y tampoco tapan cuando la cámara queda del otro lado.
+  // La puerta mide lo mismo que la de afuera (PUERTA).
+  const doorW = 1.15, doorH = 2.7;
+  const inward = (mesh: THREE.Mesh, x: number, y: number, off = 0) => {
+    mesh.rotation.y = Math.PI;
+    mesh.position.set(x, y, frontZ - off);
+    group.add(mesh);
+    return mesh;
+  };
+  const flat = (w: number, h: number, mat: THREE.Material, x: number, y: number, off: number) => inward(new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat), x, y, off);
+  const sideW = halfW - doorW;
+  for (const s of [-1, 1]) inward(wall(sideW, ceilY, (7 * sideW) / (halfW * 2), 3), s * (doorW + sideW / 2), ceilY / 2);
+  inward(wall(doorW * 2, ceilY - doorH, (7 * doorW) / halfW, (3 * (ceilY - doorH)) / ceilY), 0, doorH + (ceilY - doorH) / 2);
+  const doorFrame = makePSXMaterial({ color: '#0a0a0e' });
+  const doorMat = makePSXMaterial({ color: DR.rojoOscuro });
+  const doorTrim = makePSXMaterial({ color: DR.amarillo });
+  flat(doorW * 2 + 0.32, doorH + 0.16, doorFrame, 0, (doorH + 0.16) / 2, 0.02);
+  for (const s of [-1, 1]) {
+    const cx = s * (doorW / 2);
+    flat(doorW - 0.03, doorH, doorMat, cx, doorH / 2, 0.04);
+    flat(doorW - 0.2, 0.08, doorTrim, cx, 0.34, 0.06);
+    flat(doorW - 0.2, 0.08, doorTrim, cx, doorH - 0.34, 0.06);
+    // Ojo de buey: del otro lado es de noche.
+    flat(0.46, 0.46, doorFrame, cx, 1.75, 0.06);
+    flat(0.34, 0.34, makePSXMaterial({ color: '#1a2140', lit: false }), cx, 1.75, 0.08);
+    flat(0.07, 0.42, doorTrim, s * 0.16, 1.2, 0.06);
+  }
+  // Cartel de salida, prendido.
+  const exitCv = makeCanvas(48, 16);
+  const exitTex = toPSXTexture(exitCv.canvas);
+  const drawExit = () => {
+    const { ctx } = exitCv;
+    ctx.fillStyle = DR.verdeClaro;
+    ctx.fillRect(0, 0, 48, 16);
+    ctx.fillStyle = DR.crema;
+    ctx.font = `8px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SALIDA', 24, 9);
+    exitTex.needsUpdate = true;
+  };
+  drawExit();
+  void fontsReady().then(drawExit);
+  flat(1.3, 0.5, doorFrame, 0, doorH + 0.55, 0.04);
+  flat(1.2, 0.4, makePSXMaterial({ map: exitTex, lit: false }), 0, doorH + 0.55, 0.06);
 
   // Tapas de discos colgadas en las paredes de los costados.
   const covers: [string, string][] = [[DR.crema, DR.rojo], [DR.amarillo, DR.verde], [DR.rosa, DR.rojo], [DR.verdeClaro, DR.amarillo], [DR.rojo, DR.crema]];
