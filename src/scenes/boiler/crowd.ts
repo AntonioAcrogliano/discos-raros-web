@@ -495,6 +495,9 @@ interface Dancer {
   pace: number;
 }
 
+/** A qué velocidad camina el raro que maneja el visitante (m/s): bastante más rápido que los que pasean. */
+const MY_SPEED = 2.1;
+
 /** Diferencia entre dos ángulos por el lado más corto. */
 const turnTo = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
@@ -587,6 +590,11 @@ export class Crowd {
   spin: number | null = null;
   /** Los bailarines pasean por la pista (solo el boliche: la fila de afuera y el exportador, no). */
   roam = false;
+  /** El primero de la lista es el raro del visitante y lo maneja él (ver `walkTo`). */
+  mine = false;
+  /** El raro del visitante está caminando en este momento. */
+  walking = false;
+  private hadMine = false;
   private radius: number[] = [];
   private slots = makeSlots();
   private dancers: Dancer[] = [];
@@ -677,6 +685,7 @@ export class Crowd {
     let seed = 99;
     const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
     const before = new Map(this.dancers.map((d) => [d.id, d]));
+    const first = this.dancers[0];
     this.dancers = list.slice(0, Math.min(this.capacity, this.slots.length)).map((raro, i) => {
       const bias = (r() - 0.5) * 0.5;
       return {
@@ -701,7 +710,11 @@ export class Crowd {
     this.radius = this.dancers.map((d) => reach(d.look));
     if (this.roam) {
       this.dancers.forEach((d, i) => {
-        if (i === 0) return;
+        if (i === 0) {
+          // El del visitante sigue parado donde lo dejó (aunque le hayan cambiado la ropa).
+          if (first && this.mine && this.hadMine) Object.assign(d, { x: first.x, z: first.z, tx: first.x, tz: first.z, yaw: first.yaw });
+          return;
+        }
         const was = before.get(d.id);
         // Los que ya andaban paseando siguen donde estaban (si no, pegarían un salto a su lugar).
         if (was) return void Object.assign(d, { x: was.x, z: was.z, tx: was.tx, tz: was.tz, wait: was.wait, yaw: was.yaw });
@@ -715,7 +728,30 @@ export class Crowd {
       });
       for (let pass = 0; pass < 12; pass++) this.separate(null, 0);
     }
+    this.hadMine = this.mine;
     this.paint();
+  }
+
+  /** Manda al raro del visitante a caminar hasta un punto del boliche (lo más cerca que se pueda). */
+  walkTo(x: number, z: number) {
+    const d = this.dancers[0];
+    if (!d || !this.mine) return;
+    const p = { x, z };
+    offBooth(p);
+    d.tx = p.x;
+    d.tz = p.z;
+  }
+
+  /** Lo lleva en una dirección (teclado): hay que llamarlo en cada frame mientras se aprieta. */
+  steer(dx: number, dz: number) {
+    const d = this.dancers[0];
+    if (d) this.walkTo(d.x + dx * 0.7, d.z + dz * 0.7);
+  }
+
+  /** Dónde está parado el bailarín `i`. */
+  spot(i = 0) {
+    const d = this.dancers[i];
+    return d ? { x: d.x, z: d.z } : null;
   }
 
   /** Elige adónde va a ir: casi siempre a la pista; cada tanto, a un costado, al frente de la cabina o a bailar con alguien. */
@@ -781,14 +817,29 @@ export class Crowd {
   /**
    * Un paso del paseo: cada uno va bailando hasta algún lugar del boliche (mirando para donde
    * camina), se queda un rato de cara a la cabina o a quien fue a buscar, y elige otro. Los hay
-   * inquietos y los hay plantados. Se esquivan entre ellos y no pisan la cabina. El primero (el
-   * del visitante) se queda en su lugar, así siempre se lo encuentra.
+   * inquietos y los hay plantados. Se esquivan entre ellos y no pisan la cabina. El primero, si
+   * es el del visitante, no pasea: va adonde lo mandan, y los demás le abren paso.
    */
   wander(dt: number, energy: number) {
     if (!this.roam || this.solo) return;
     const ds = this.dancers;
     const speed = 0.6 * (0.25 + 0.75 * Math.min(1, energy));
     const moving: boolean[] = [false];
+    const me = ds[0];
+    this.walking = false;
+    if (this.mine && me) {
+      const dx = me.tx - me.x, dz = me.tz - me.z, far = Math.hypot(dx, dz);
+      if (far > 0.06) {
+        const step = Math.min(MY_SPEED * dt, far), x0 = me.x, z0 = me.z;
+        me.x += (dx / far) * step;
+        me.z += (dz / far) * step;
+        offBooth(me);
+        // Trabado contra la cabina: la rodea por el costado que tiene más cerca.
+        if (Math.hypot(me.x - x0, me.z - z0) < step * 0.3) me.x += Math.sign(me.x || me.tx || 1) * step;
+        me.yaw += turnTo(me.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 9);
+        this.walking = moving[0] = true;
+      }
+    }
     for (let i = 1; i < ds.length; i++) {
       const d = ds[i];
       d.wait -= dt;
