@@ -528,6 +528,8 @@ const turnTo = (from: number, to: number) => Math.atan2(Math.sin(to - from), Mat
  * arrancan las escaleras).
  */
 const FLOOR = { halfW: CLUB.halfW - 0.55, back: CLUB.backZ + 0.45, front: -0.45, aisle: 4.4, boothFront: 3.2, end: 4.9, far: 6.7 };
+/** Hasta dónde se puede arrimar uno a la cabina desde la pista: justo atrás de los DJs, con lugar para que bailen. */
+const BOOTH_BACK = CLUB.djZ - 0.75;
 /** Bordes de los palcos: de `SIDE` para afuera y de `REAR` para atrás, el piso está arriba. */
 const SIDE = CLUB.halfW - PALCO.deep, REAR = CLUB.backZ + PALCO.deep;
 /** La pista de abajo, entre los palcos. */
@@ -540,10 +542,10 @@ const GAP = 0.2;
 function offBooth(p: Spot) {
   p.x = Math.max(-FLOOR.halfW, Math.min(FLOOR.halfW, p.x));
   p.z = Math.max(FLOOR.back, Math.min(FLOOR.far, p.z));
-  if (p.z <= FLOOR.front || p.z >= FLOOR.boothFront || Math.abs(p.x) >= FLOOR.aisle) return;
-  const toBack = p.z - FLOOR.front, toFront = FLOOR.boothFront - p.z, toSide = FLOOR.aisle - Math.abs(p.x);
+  if (p.z <= BOOTH_BACK || p.z >= FLOOR.boothFront || Math.abs(p.x) >= FLOOR.aisle) return;
+  const toBack = p.z - BOOTH_BACK, toFront = FLOOR.boothFront - p.z, toSide = FLOOR.aisle - Math.abs(p.x);
   if (toSide <= toBack && toSide <= toFront) p.x = Math.sign(p.x || 1) * FLOOR.aisle;
-  else p.z = toBack < toFront ? FLOOR.front : FLOOR.boothFront;
+  else p.z = toBack < toFront ? BOOTH_BACK : FLOOR.boothFront;
 }
 
 // --- Caminos: cómo se llega de un lugar a otro cuando hay que subir o bajar ---------------
