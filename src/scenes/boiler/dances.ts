@@ -44,9 +44,9 @@ export const makePose = (): Pose => ({ hop: 0, yaw: 0, lean: 0, roll: 0, sway: 0
 const TAU = Math.PI * 2;
 
 /** Lo que un raro puede hacer en la pista además de bailar (el visitante con una tecla; los demás, cuando les pinta). */
-export const PUCHO = 1, AGUA = 2, SALUDO = 3, SALTO = 4;
+export const PUCHO = 1, AGUA = 2, SALUDO = 3, SALTO = 4, PASTI = 5;
 /** Cuánto dura cada una (segundos). */
-export const ACTION_SECONDS = [0, 5.2, 3.6, 2.4, 1.5];
+export const ACTION_SECONDS = [0, 5.2, 3.6, 2.4, 1.5, 1.7];
 
 /** Sube de 0 a 1 y vuelve, entre `a` y `b` (con los bordes suaves). */
 const pulse = (x: number, a: number, b: number, edge = 0.12) => Math.max(0, Math.min(1, (x - a) / edge, (b - x) / edge));
@@ -60,13 +60,16 @@ export function action(p: Pose, kind: number, t: number) {
   // Entra y sale de a poco.
   const w = Math.max(0, Math.min(1, t / 0.25, (dur - t) / 0.3));
   const mix = (from: number, to: number) => from + (to - from) * w;
-  if (kind === PUCHO || kind === AGUA) {
-    // La mano derecha va a la boca: dos pitadas, o un trago largo con la cabeza para atrás.
-    const m = kind === PUCHO ? pulse((t % 2.6) / 2.6, 0.12, 0.5) : pulse(t / dur, 0.15, 0.82, 0.14);
-    p.aRx = mix(p.aRx, -(0.45 + 0.85 * m));
-    p.aRz = mix(p.aRz, -0.1 + 0.3 * m);
+  if (kind === PUCHO || kind === AGUA || kind === PASTI) {
+    // La mano derecha va a la boca: dos pitadas, un trago largo con la cabeza para atrás, o
+    // la pasti, que es un gesto corto y la cabeza bien para atrás para tragarla.
+    const m = kind === PUCHO ? pulse((t % 2.6) / 2.6, 0.12, 0.5) : kind === AGUA ? pulse(t / dur, 0.15, 0.82, 0.14) : pulse(t / dur, 0.1, 0.6, 0.14);
+    p.aRx = mix(p.aRx, -(0.45 + 0.62 * m));
+    // (Hacia adentro: la mano tiene que llegar a la boca, no quedar frente al hombro.)
+    p.aRz = mix(p.aRz, -0.1 + 0.6 * m);
     p.eR = mix(p.eR, -(0.5 + 1.75 * m));
     if (kind === AGUA) p.headRx = mix(p.headRx, -0.5 * m);
+    if (kind === PASTI) p.headRx = mix(p.headRx, -0.7 * pulse(t / dur, 0.4, 0.9, 0.16));
   } else if (kind === SALUDO) {
     const wave = Math.sin(t * 13);
     p.aRx = mix(p.aRx, 0);

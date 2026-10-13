@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { LOOK, type Look, type Raro } from '../../../shared/look';
 import { DETAIL, type DetailCell, detailUv, make3DGlassesTexture, makeDetailTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
 import { CLUB, PALCO, floorAt } from './club';
-import { ACTION_SECONDS, AGUA, EN_LA_FILA, PUCHO as FUMAR, SALUDO, action, dance, makePose, stride } from './dances';
+import { ACTION_SECONDS, AGUA, EN_LA_FILA, PUCHO as FUMAR, SALTO, SALUDO, action, dance, makePose, stride } from './dances';
 
 /**
  * La pista: hasta MAX personajes dibujados con instancing (una malla instanciada por parte del
@@ -432,7 +432,6 @@ export const CELU = HAND_GEOS.length;
 HAND_GEOS.push(merge(bx(0.075, 0.15, 0.016, 0, HAND_Y - 0.035, 0.06, K), bx(0.06, 0.125, 0.006, 0, HAND_Y - 0.035, 0.07, W)));
 /** El pucho del que fuma en la fila: blanco, con la brasa en la punta. */
 export const PUCHO = HAND_GEOS.length;
-const FUMAR_GEO = PUCHO;
 /** Cuántos pueden estar fumando o tomando a la vez (los que sobran lo hacen igual, pero sin nada en la mano). */
 const PROPS = 40;
 HAND_GEOS.push(merge(bx(0.016, 0.016, 0.075, 0.03, HAND_Y - 0.02, 0.085, W), bx(0.018, 0.018, 0.018, 0.03, HAND_Y - 0.02, 0.13, R)));
@@ -757,7 +756,9 @@ export class Crowd {
     this.held = parts(HAND_GEOS, (i) => (i === 1 || i === CELU || i === PUCHO ? glow : plain), capacity * 2);
     this.parts = [this.shoes, this.torsos, this.heads, this.hair, this.acc, this.glasses, this.mouth, this.over, this.tops, this.skirts, this.held];
     // Lo de las acciones: el pucho y la botella (para cualquiera, tenga lo que tenga en la mano) y el humo.
-    this.cigs = mesh(HAND_GEOS[FUMAR_GEO]!, PROPS, glow);
+    // El pucho de fumar no es el que se lleva de adorno: va suelto, a lo largo de +z, con la brasa
+    // atrás y el filtro adelante, y en cada frame se lo apunta de la mano a la boca (ver `update`).
+    this.cigs = mesh(merge(bx(0.017, 0.017, 0.1, 0, 0, 0.045, W), bx(0.018, 0.018, 0.03, 0, 0, 0.11, Y), bx(0.021, 0.021, 0.022, 0, 0, -0.016, R)), PROPS, glow);
     this.bottles = mesh(merge(bx(0.06, 0.17, 0.06, 0.01, HAND_Y + 0.01, 0.07, C), bx(0.03, 0.035, 0.03, 0.01, HAND_Y + 0.115, 0.07, W)), PROPS);
     this.puffs = mesh(new THREE.BoxGeometry(1, 1, 1), PROPS * 3, makePSXMaterial({ color: '#d9d2e6', lit: false, opacity: 0.5 }));
   }
@@ -1035,7 +1036,7 @@ export class Crowd {
         if (d.actT >= ACTION_SECONDS[d.act]) d.act = 0;
       } else if (!(i === 0 && this.mine) && d.walk < 0.1 && (d.mood -= dt) <= 0) {
         const pick = Math.random();
-        d.act = pick < 0.34 ? FUMAR : pick < 0.68 ? AGUA : pick < 0.8 ? SALUDO : 4;
+        d.act = pick < 0.34 ? FUMAR : pick < 0.68 ? AGUA : pick < 0.8 ? SALUDO : SALTO;
         d.actT = 0;
         d.mood = 30 + Math.random() * 80;
       }
@@ -1200,6 +1201,10 @@ export class Crowd {
   private pose = makePose();
   /** Matriz que no dibuja nada (para esconder una pieza sin correr de lugar a las demás). */
   private hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+  /** Para apuntar el pucho: dónde lo agarra la mano, dónde está la boca, y para dónde es arriba. */
+  private grip = new THREE.Vector3();
+  private lips = new THREE.Vector3();
+  private up = new THREE.Vector3(0, 1, 0);
   private root = new THREE.Matrix4();
   private joint = new THREE.Matrix4();
   private local = new THREE.Matrix4();
@@ -1279,9 +1284,11 @@ export class Crowd {
       hand = this.limb(this.upperArms, this.foreArms, i * 2 + 1, -shoulder, SHOULDER_Y, UPPER, p.aRx, p.aRz, p.eR, b.limb);
       this.hands.setMatrixAt(i * 2 + 1, hand);
       // Fumando o tomando, en esa mano va el pucho o la botella (lo que llevaba se guarda un rato).
-      const prop = doing === FUMAR ? this.cigs : doing === AGUA ? this.bottles : null;
-      if (prop && prop.count < PROPS) prop.setMatrixAt(prop.count++, hand);
-      this.held.matrix(l.mano, prop ? this.hidden : hand);
+      const busy = doing === FUMAR || doing === AGUA;
+      if (doing === AGUA && this.bottles.count < PROPS) this.bottles.setMatrixAt(this.bottles.count++, hand);
+      // De dónde sale el pucho: entre los dedos (se anota ahora, que la matriz de la mano se pisa enseguida).
+      if (doing === FUMAR) this.grip.set(0, HAND_Y - 0.04, 0.02).applyMatrix4(hand);
+      this.held.matrix(l.mano, busy ? this.hidden : hand);
 
       const torso = this.wide.copy(this.root).scale(this.scale.set(b.w, 1, b.d));
       this.torsos.matrix(l.estampa, torso);
@@ -1300,6 +1307,13 @@ export class Crowd {
         this.mouth.matrix(l.boca, head);
       }
       d.headY = y + (NECK_Y + 0.3 * b.head) * h;
+      if (doing === FUMAR && this.cigs.count < PROPS) {
+        // El pucho apunta siempre de la mano a la boca: el filtro del lado de la cara y la brasa
+        // del otro, esté el brazo como esté.
+        this.lips.set(d.x + Math.sin(facing) * 0.16 * b.head * h, d.headY - 0.2 * b.head * h, d.z + Math.cos(facing) * 0.16 * b.head * h);
+        this.out.lookAt(this.lips, this.grip, this.up).scale(this.scale.set(h, h, h)).setPosition(this.grip);
+        this.cigs.setMatrixAt(this.cigs.count++, this.out);
+      }
       // El humo: después de cada pitada salen tres bocanadas que suben y se agrandan.
       if (doing === FUMAR) {
         const u = ((d.actT % 2.6) / 2.6 - 0.5) / 0.45;
