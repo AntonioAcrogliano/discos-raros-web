@@ -383,6 +383,50 @@ export function buildClub(): Club {
     flare.uniforms.uOpacity.value = 0.3 * blind;
   });
 
+  // Láseres: un abanico verde desde el truss de atrás, por arriba de las cabezas, cuando el tema está arriba.
+  const laserMat = glow(DR.verdeClaro, 0);
+  const lasers: THREE.Mesh[] = [];
+  for (let i = 0; i < 7; i++) {
+    const l = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 1).translate(0, 0, 0.5), laserMat);
+    l.position.set(0, ceilY - 0.75, -2.1);
+    l.scale.z = 13;
+    l.renderOrder = 2;
+    fx.add(l);
+    lasers.push(l);
+  }
+  let laserOn = 0;
+  updaters.push((beats) => {
+    const up = music ? Math.max(0, Math.min(1, (music.loud - 0.76) * 6)) : 0;
+    laserOn += (up - laserOn) * 0.08;
+    laserMat.uniforms.uOpacity.value = laserOn * (0.2 + 0.3 * kick);
+    // El abanico se abre y se cierra cada ocho beats, y sube y baja más despacio.
+    const spread = 0.13 + 0.09 * Math.sin(TAU * beats * 0.125), tilt = 0.3 + 0.16 * Math.sin(TAU * beats * 0.0625);
+    lasers.forEach((l, i) => l.rotation.set(tilt, (i - 3) * spread, 0));
+  });
+
+  // Chorros de humo a los costados de la cabina: salen para arriba cuando cae el drop.
+  const jetMat = glow(DR.crema, 0);
+  const jets = [-2.5, 2.5].map((x) => {
+    const j = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.07, 1, 6, 1, true).translate(0, 0.5, 0), jetMat);
+    j.position.set(x, 0.05, CLUB.boothZ + 0.2);
+    j.renderOrder = 2;
+    j.visible = false;
+    fx.add(j);
+    return j;
+  });
+  let jetAt = -9, wasDrop = 0;
+  updaters.push((_b, _e, t) => {
+    const drop = music ? music.drop : 0;
+    if (drop > 0.6 && wasDrop <= 0.6 && t - jetAt > 8) jetAt = t;
+    wasDrop = drop;
+    const u = (t - jetAt) / 1.8;
+    for (const j of jets) {
+      j.visible = u < 1;
+      j.scale.set(0.6 + 1.1 * u, 4.6 * (1 - Math.pow(1 - Math.min(1, u * 2.2), 3)), 0.6 + 1.1 * u);
+    }
+    jetMat.uniforms.uOpacity.value = u < 1 ? 0.5 * (1 - u) * (1 - u) : 0;
+  });
+
   // Barras de led en el techo: una ola de colores que viene del fondo hacia la cabina en cada beat.
   const bars: PSXMaterial[] = [];
   for (let i = 0; i < 6; i++) {

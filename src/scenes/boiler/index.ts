@@ -352,6 +352,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (mode !== 'afuera') inClub += ((mode === 'pista' || mode === 'creador' ? 1 : 0) - inClub) * Math.min(1, dt * 3);
     relight(Math.min(1, dt * 12));
     if (mode === 'pista') crowd.wander(dt, energy);
+    crowd.hype = music && mode === 'pista' ? music.drop : 0;
     crowd.update(beats, energy, t);
     djs.update(beats, energy);
     if (afuera.group.visible) afuera.update(beats, energy, t);

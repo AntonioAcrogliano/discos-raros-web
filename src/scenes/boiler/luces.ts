@@ -14,6 +14,8 @@ export interface Music {
   high: number;
   /** Qué tan arriba está el tema (0–1): baja en los cortes y sube en los drops. */
   loud: number;
+  /** El drop (0–1): salta cuando el tema explota después de venir tranquilo, y se va apagando en unos segundos. */
+  drop: number;
   /** Por qué beat va el set, con fracción. */
   beat: number;
   /** Segundos por beat. */
@@ -50,8 +52,10 @@ export class Luces {
   private time = 0;
   private told = -1;
   private floor = 0;
+  /** Cómo venía el tema en los últimos segundos: contra esto se mide el drop. */
+  private usual = 0;
   private i = 0;
-  private music: Music = { kick: 0, high: 0, loud: 0, beat: 0, period: 0.5 };
+  private music: Music = { kick: 0, high: 0, loud: 0, drop: 0, beat: 0, period: 0.5 };
 
   /** Cambió el set: busca su archivo (si no hay, queda sin música que seguir). */
   load(id: string) {
@@ -75,11 +79,13 @@ export class Luces {
     const d = this.data;
     if (!d || told < 0) return null;
     this.time += dt * rate;
+    let jumped = false;
     if (told !== this.told) {
       this.told = told;
       // Si se fue lejos (adelantaron el video, cambió el set) se salta; si no, se corrige de a poco.
       const off = told - this.time;
-      this.time += Math.abs(off) > 0.25 ? off : off * 0.15;
+      jumped = Math.abs(off) > 0.25;
+      this.time += jumped ? off : off * 0.15;
     }
     const t = this.time + ADELANTO, m = this.music;
 
@@ -92,6 +98,11 @@ export class Luces {
     m.high = at(2);
     const level = Math.max(bass, mid);
     m.loud += (level - m.loud) * Math.min(1, dt * (level > m.loud ? 2.5 : 0.8));
+    // Caer en el medio de un tema no es un drop.
+    if (jumped) this.usual = m.loud = level;
+    this.usual += (m.loud - this.usual) * Math.min(1, dt / 6);
+    const over = Math.max(0, Math.min(1, (m.loud - this.usual - 0.12) * 6));
+    m.drop += (over - m.drop) * Math.min(1, dt * (over > m.drop ? 5 : 0.6));
 
     const b = d.beats, last = b.length - 2;
     let i = Math.min(this.i, last);
