@@ -33,7 +33,44 @@ verYt.rel = 'noopener';
 const todos = el('a', 'btn chico', 'MAS DISCOS');
 todos.href = '#/sets';
 todos.setAttribute('aria-label', 'Todos los sets');
-suena.append(el('div', 'suena-cab', [el('span', 'eq', [el('i'), el('i'), el('i')]), el('span', 'estado'), titulo]), el('div', 'controles', [prev, toggle, next, verYt, todos]));
+// Volumen: una tira de casilleros, como el vúmetro de un equipo. Tocar uno deja el volumen
+// ahí; tocar VOL lo apaga o lo vuelve a prender.
+const VOL_STEPS = 8;
+const volRow = el('div', 'suena-vol');
+volRow.hidden = true;
+volRow.setAttribute('role', 'group');
+volRow.setAttribute('aria-label', 'Volumen');
+const volMute = el('button', 'vol-mudo', 'VOL');
+volMute.type = 'button';
+const volBars = Array.from({ length: VOL_STEPS }, (_, i) => {
+  const b = el('button', 'vol-paso');
+  b.type = 'button';
+  b.setAttribute('aria-label', `Volumen ${Math.round(((i + 1) / VOL_STEPS) * 100)}%`);
+  return b;
+});
+volRow.append(volMute, el('div', 'vol-tira', volBars));
+let volume = 1, lastVolume = 1;
+let onVolumeSet: ((v: number) => void) | null = null;
+function paintVolume() {
+  const lit = Math.round(volume * VOL_STEPS);
+  volBars.forEach((b, i) => {
+    b.classList.toggle('on', i < lit);
+    b.setAttribute('aria-pressed', String(i + 1 === lit));
+  });
+  volMute.classList.toggle('mudo', lit === 0);
+  volMute.setAttribute('aria-label', lit === 0 ? 'Prender el sonido' : 'Apagar el sonido');
+}
+function chooseVolume(v: number) {
+  if (v > 0) lastVolume = v;
+  volume = v;
+  paintVolume();
+  sfx.move();
+  onVolumeSet?.(v);
+}
+volBars.forEach((b, i) => b.addEventListener('click', () => chooseVolume((i + 1) / VOL_STEPS)));
+volMute.addEventListener('click', () => chooseVolume(volume > 0 ? 0 : lastVolume));
+
+suena.append(el('div', 'suena-cab', [el('span', 'eq', [el('i'), el('i'), el('i')]), el('span', 'estado'), titulo]), volRow, el('div', 'controles', [prev, toggle, next, verYt, todos]));
 
 /** Si el nombre del set no entra en el cartel, va y vuelve. */
 function marquee() {
@@ -62,6 +99,17 @@ export const player = {
     toggle.textContent = playing ? '||' : '>';
     toggle.setAttribute('aria-label', playing ? 'Pausar' : 'Reproducir');
     suena.classList.toggle('pausa', !playing);
+  },
+  /** Muestra el control de volumen (donde se puede manejar) y avisa cuando el visitante lo mueve. */
+  onVolume(fn: (v: number) => void) {
+    onVolumeSet = fn;
+    volRow.hidden = false;
+  },
+  /** El volumen cambió por otro lado (el control de YouTube): se refleja en la tira. */
+  setVolume(v: number) {
+    volume = v;
+    if (v > 0) lastVolume = v;
+    paintVolume();
   },
   onPrev: (fn: () => void) => prev.addEventListener('click', fn),
   onNext: (fn: () => void) => next.addEventListener('click', fn),

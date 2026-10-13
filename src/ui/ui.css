@@ -109,6 +109,17 @@
 /* Si el nombre no entra, va y vuelve (a los saltos, como un cartel de leds). */
 .suena .titulo.corre span { animation: dr-correr var(--dur, 8s) steps(var(--pasos, 40)) infinite alternate; }
 @keyframes dr-correr { 0%, 15% { transform: translateX(0); } 85%, 100% { transform: translateX(var(--dist, 0)); } }
+/* Volumen: VOL + una tira de casilleros que se prenden hasta donde está. */
+.suena-vol { display: flex; align-items: center; gap: 8px; padding: 0 8px 7px; font-size: 8px; }
+.vol-mudo { margin: 0; padding: 3px 4px 2px; font: inherit; color: var(--dr-amarillo); background: none; border: 2px solid transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.vol-mudo.mudo { color: var(--dr-rojo); text-decoration: line-through; }
+.vol-mudo:hover, .vol-mudo:focus-visible { outline: none; border-color: var(--dr-amarillo); }
+.vol-tira { flex: 1; display: flex; gap: 3px; height: 14px; }
+/* El casillero es más alto que lo que se ve: más fácil de acertar con el dedo. */
+.vol-paso { flex: 1; min-width: 0; margin: 0; padding: 0; background: none; border: 0; border-bottom: 6px solid #f9f2e830; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.vol-paso.on { border-bottom-color: var(--dr-amarillo); }
+.vol-paso:nth-child(n + 7).on { border-bottom-color: var(--dr-rojo); }
+.vol-paso:hover, .vol-paso:focus-visible { outline: none; border-bottom-color: var(--dr-crema); }
 .suena .controles { display: flex; border-top: 2px solid var(--dr-crema); }
 .suena .controles .btn { flex: 1 1 auto; text-align: center; border: 0; border-left: 2px solid #f9f2e840; box-shadow: none; padding: 7px 8px 6px; }
 .suena .controles .btn:first-child { border-left: 0; }
@@ -250,6 +261,7 @@
   .compartir .foto { width: 118px; }
   .suena { width: 100%; }
   .suena .controles .btn { padding: 9px 4px 8px; }
+  .vol-tira { height: 22px; }
   .set { grid-template-columns: 80px 1fr; }
   .set canvas { width: 80px; height: 45px; }
   .opciones { min-height: 0; }

@@ -104,6 +104,24 @@ export class Tele {
    * ese tope: si lo bajó a mano, se queda ahí y no vuelve a subir solo.
    */
   private master = 1;
+  /** Avisa cuando el visitante cambió el volumen desde el control de YouTube (0–1). */
+  onLevel: ((level: number) => void) | null = null;
+  /** El tope de volumen (0–1): lo mueve el control de YouTube o el del cartel del sitio. */
+  get level() {
+    return this.master;
+  }
+  set level(v: number) {
+    this.master = Math.max(0, Math.min(1, v));
+    this.send();
+  }
+  /** El color del video acompaña al viaje (el video va por atrás del dibujo: el filtro del sitio no le llega). */
+  setTrip(k: number, t: number) {
+    const on = k > 0.01;
+    if (!on && !this.tripping) return;
+    this.tripping = on;
+    this.css.domElement.style.filter = on ? `hue-rotate(${Math.round(((t * 40) % 360) * k)}deg) saturate(${(1 + 0.7 * k).toFixed(2)})` : '';
+  }
+  private tripping = false;
   private send() {
     if (!this.player) return;
     this.sent = Math.round(this.vol * this.master * 100);
@@ -120,6 +138,7 @@ export class Tele {
     if (typeof real !== 'number' || Math.abs(real - this.sent) < 2) return;
     this.master = Math.max(0, Math.min(1, real / 100 / Math.max(0.05, this.vol)));
     this.sent = real;
+    this.onLevel?.(this.master);
   }
 
   /**

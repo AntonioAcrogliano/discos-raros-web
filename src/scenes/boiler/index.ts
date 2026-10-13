@@ -5,6 +5,7 @@ import { DR, FONT, type PSXStage, audioLive, outlined, psxUniforms, street, titl
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
 import { CLUB, PALCO, buildClub, floorAt } from './club';
+import { PASTI } from './dances';
 import { Crowd, MAX_DANCERS } from './crowd';
 import { loadGlbRig } from '../../characters/glbRig';
 import { buildPlaceholderDjs, makeDjs } from './djs';
@@ -53,8 +54,14 @@ export interface BoilerRoom {
   isPlaying(): boolean;
   /** Prende el sonido del set. Hay que llamarlo adentro del primer click (PRESS START): en iPhone, después ya no deja. */
   unlockSound(): void;
-  /** El raro del visitante hace algo en la pista (1 pucho, 2 agua, 3 saludo, 4 salto). */
+  /** El raro del visitante hace algo en la pista (1 pucho, 2 agua, 3 saludo, 4 salto, 5 pasti). */
   act(kind: number): void;
+  /** Volumen del set que eligió el visitante (0–1). En iPhone no se puede manejar: `canVolume` es false. */
+  readonly canVolume: boolean;
+  volume(): number;
+  setVolume(v: number): void;
+  /** Avisa cuando el volumen cambió desde el control de YouTube. */
+  onVolume: ((v: number) => void) | null;
   /** Pausa o reanuda el set. */
   toggle(): void;
   /** Pasa al set siguiente (1) o al anterior (-1) de la lista. */
@@ -116,6 +123,19 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   /** El raro que está diciendo su frase (lo tocaron) y hasta cuándo se ve el globito. */
   const talk = { i: -1, until: 0 };
   const TALK_SECONDS = 4.5;
+  /**
+   * El viaje de la pasti: cuándo pega (-1 = nada), en segundos del reloj de la escena. Sube en
+   * unos segundos, dura un rato y se va de a poco. Solo se ve en la pista.
+   */
+  let tripAt = -1, clock = 0;
+  const TRIP = { up: 3, hold: 22, down: 8 };
+  const tripLevel = () => {
+    const e = clock - tripAt;
+    if (tripAt < 0 || e < 0) return 0;
+    if (e > TRIP.up + TRIP.hold + TRIP.down) return (tripAt = -1), 0;
+    const k = e < TRIP.up ? e / TRIP.up : e < TRIP.up + TRIP.hold ? 1 : 1 - (e - TRIP.up - TRIP.hold) / TRIP.down;
+    return k * k * (3 - 2 * k);
+  };
   /** Cuánto falta para que alguno de los que están cerca diga su frase sin que lo toquen. */
   let chat = 9;
   const rebuild = () => {
@@ -254,6 +274,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let beats = 0;
   let energy = 0.7;
   tele.onState = (p) => room.onPlayState?.(p);
+  tele.onLevel = (v) => room.onVolume?.(v);
   tele.onEnded = () => {
     // Terminó el set: sigue el anterior de la lista (del más nuevo al más viejo).
     if (!current || !playlist.length) return;
@@ -322,6 +343,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     stage.post.pulse = Math.max(0, 1 - (beats - Math.floor(beats)) * 2) * energy;
 
     if (mode === 'pista' && namesLeft > 0) namesLeft -= dt;
+    clock = t;
+    const trip = mode === 'pista' ? tripLevel() : 0;
+    stage.post.trip = trip;
+    tele.setTrip(trip, t);
     if (mode === 'pista' && (chat -= dt) <= 0 && performance.now() > talk.until) {
       // Cada tanto, alguno de los que están cerca (del raro del visitante, o de adonde mira la cámara) dice lo suyo.
       const here = (hasFirst && crowd.spot()) || look.at || { x: 0, z: -3 };
@@ -455,7 +480,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       const kick = stage.post.pulse * 0.04;
       wantPos.set(Math.sin(t * 0.13) * 1.3, (portrait ? 2.7 : 2.2) + Math.sin(t * 0.21) * 0.1, (portrait ? 9.6 : 6.7) - kick);
       wantTarget.set(0, portrait ? 2.35 : 1.75, 0.4);
-      wantFov = portrait ? 66 : 52;
+      // Con la pasti, además, la cámara respira.
+      wantFov = (portrait ? 66 : 52) + Math.sin(t * 1.1) * 6 * trip;
       // Lo que movió el visitante: gira alrededor de adonde mira; con zoom, el centro se corre
       // a la pista y la cámara sube lo justo para pasar por arriba de los DJs.
       look.idle += dt;
@@ -747,9 +773,15 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       void tele.play(set.id);
     },
     unlockSound: () => tele.enableSound(),
+    canVolume: !fixedVolume,
+    onVolume: null,
+    volume: () => tele.level,
+    setVolume: (v) => (tele.level = v),
     act(kind) {
       if (mode !== 'pista' || !hasFirst) return;
       crowd.act(0, kind);
+      // La pasti tarda un cachito en pegar.
+      if (kind === PASTI) tripAt = clock + 1.3;
       // Que se vea: la cámara va con él.
       follow = true;
       look.idle = 0;

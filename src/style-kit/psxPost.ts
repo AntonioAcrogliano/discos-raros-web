@@ -50,6 +50,7 @@ uniform float uCrt;
 uniform float uChroma;
 uniform float uPulse;
 uniform float uVignette;
+uniform float uTrip;
 uniform sampler2D tOverlay;
 uniform float uOverlayOn;
 varying vec2 vUv;
@@ -76,6 +77,13 @@ void main() {
   // Textos (títulos, HUD): se leen en la pantalla ya curvada, sin el corrimiento del VHS.
   vec2 screenUv = uv;
 
+  // Viaje: la imagen se ondula, despacio (nada de fogonazos).
+  if (uTrip > 0.0) {
+    uv += vec2(sin(uv.y * 8.0 + uTime * 1.9), cos(uv.x * 6.0 + uTime * 1.5)) * 0.014 * uTrip;
+    vec2 c = uv - 0.5;
+    uv = 0.5 + c * (1.0 - 0.04 * uTrip * sin(uTime * 0.9));
+  }
+
   // VHS: filas que se corren y una banda de tracking que baja.
   float vhs = uVhs * (1.0 + uPulse);
   if (vhs > 0.0) {
@@ -88,7 +96,7 @@ void main() {
   }
 
   // Aberración cromática (y el color corrido del VHS).
-  float ca = (uChroma * 0.006 + vhs * 0.002) * (1.0 + 2.0 * uPulse);
+  float ca = (uChroma * 0.006 + vhs * 0.002) * (1.0 + 2.0 * uPulse) + 0.011 * uTrip * (0.6 + 0.4 * sin(uTime * 0.8));
   vec2 dir = vec2(1.0, 0.0);
   vec4 base = texture2D(tDiffuse, uv);
   vec3 col = vec3(
@@ -103,6 +111,16 @@ void main() {
     col = l + chroma * (1.0 - 0.25 * vhs);
     col += (hash(uv * uRes + floor(uTime * 30.0)) - 0.5) * 0.12 * vhs;
     col *= vec3(1.0, 0.97, 1.02);
+  }
+
+  if (uTrip > 0.0) {
+    // Los colores dan la vuelta al arcoíris, de a poco, y se saturan.
+    float a = uTime * 0.7, cs = cos(a), sn = sin(a);
+    vec3 k = vec3(0.57735);
+    vec3 turned = col * cs + cross(k, col) * sn + k * dot(k, col) * (1.0 - cs);
+    col = mix(col, turned, uTrip);
+    float l = dot(col, vec3(0.3, 0.59, 0.11));
+    col = l + (col - l) * (1.0 + 0.7 * uTrip);
   }
 
   // El alfa viene de la escena: 0 donde está el agujero de la tele (se ve el video de atrás).
@@ -149,6 +167,8 @@ export class PSXPost {
   readonly filters: FilterSettings = { vhs: 0, crt: 0, chroma: 0, react: 0.5 };
   /** Golpe del beat en este frame (0–1). */
   pulse = 0;
+  /** Viaje (0–1): la imagen se ondula y los colores dan vueltas. */
+  trip = 0;
   /** Cuánto se oscurecen las esquinas (0 = nada). */
   vignette = 0;
   /** Tiempo para el ruido del VHS. */
@@ -187,6 +207,7 @@ export class PSXPost {
         uChroma: { value: 0 },
         uPulse: { value: 0 },
         uVignette: { value: 0 },
+        uTrip: { value: 0 },
         tOverlay: { value: null },
         uOverlayOn: { value: 0 },
       },
@@ -253,6 +274,7 @@ export class PSXPost {
     u.uChroma.value = f.chroma;
     u.uPulse.value = this.pulse * f.react;
     u.uVignette.value = this.vignette;
+    u.uTrip.value = this.trip;
     u.tOverlay.value = this.overlay;
     u.uOverlayOn.value = this.overlay ? 1 : 0;
 

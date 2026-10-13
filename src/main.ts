@@ -25,6 +25,7 @@ const ACTIONS: ActionButton[] = [
   { kind: 2, label: 'AGUA', icon: ['...XXX...', '...XXX...', '..XXXXX..', '..X...X..', '..X...X..', '..XXXXX..', '..XXXXX..', '..XXXXX..', '..XXXXX..'] },
   { kind: 3, label: 'HOLA', icon: ['..X.X.X..', '..X.X.X.X', '..X.X.X.X', 'X.XXXXXXX', 'X.XXXXXXX', 'XXXXXXXXX', '.XXXXXXX.', '..XXXXX..', '..XXXXX..'] },
   { kind: 4, label: 'SALTO', icon: ['....X....', '...XXX...', '..XXXXX..', '.XXXXXXX.', '...XXX...', '...XXX...', '...XXX...', '.........', 'XXXXXXXXX'] },
+  { kind: 5, label: 'PASTI', icon: ['.........', '.....XXX.', '....XXXXX', '...X.XXXX', '..X...XXX', '.X...X.X.', 'X...X....', 'X..X.....', '.XX......'] },
 ];
 
 async function main() {
@@ -67,6 +68,33 @@ async function main() {
   };
   room.onPlayState = (playing) => player.setPlaying(playing);
   player.onToggle(() => room.toggle());
+  // Volumen desde el cartel (en iPhone no: ahí solo lo maneja el teléfono). Se acuerda del que elegiste.
+  if (room.canVolume) {
+    const VOL_KEY = 'dr-vol';
+    const remember = (v: number) => {
+      try {
+        localStorage.setItem(VOL_KEY, String(v));
+      } catch {
+        /* sin almacenamiento */
+      }
+    };
+    let saved = NaN;
+    try {
+      saved = Number(localStorage.getItem(VOL_KEY) ?? NaN);
+    } catch {
+      /* sin almacenamiento */
+    }
+    if (saved >= 0 && saved <= 1) room.setVolume(saved);
+    player.setVolume(room.volume());
+    player.onVolume((v) => {
+      room.setVolume(v);
+      remember(v);
+    });
+    room.onVolume = (v) => {
+      player.setVolume(v);
+      remember(v);
+    };
+  }
   // La lista va del set más nuevo al más viejo: "siguiente" es el anterior en el tiempo.
   player.onNext(() => room.skip(1));
   player.onPrev(() => room.skip(-1));
