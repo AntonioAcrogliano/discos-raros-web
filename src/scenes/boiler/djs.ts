@@ -8,7 +8,8 @@ import { CLUB } from './club';
 export interface Djs {
   discos: Rig;
   raros: Rig;
-  update(beats: number, energy: number): void;
+  /** @param drop 0–1: el tema acaba de explotar (ver `Music.drop` en luces.ts) */
+  update(beats: number, energy: number, drop?: number): void;
 }
 
 /** Colores de los outfits que tienen en la app de PCX (persona1 = Discos, persona2 = Raros). */
@@ -31,36 +32,39 @@ export function makeDjs(discos: Rig, raros: Rig): Djs {
   return {
     discos,
     raros,
-    update(beats, energy) {
+    update(beats, energy, drop = 0) {
       const e = 0.25 + 0.75 * energy;
       const nod = Math.max(0, Math.sin(TAU * beats)) * e;
-      const bounce = Math.abs(Math.sin(Math.PI * beats)) * 0.035 * e;
+      // En el drop sueltan todo: saltan, bombean con las manos arriba y se miran.
+      const wild = Math.min(1, drop * 1.5), pump = Math.max(0, 1 - (beats - Math.floor(beats)) * 2.2);
+      const bounce = Math.abs(Math.sin(Math.PI * beats)) * (0.035 * e + 0.16 * wild);
       // Cada 8 beats, los dos últimos con las manos arriba.
       const phrase = ((beats % 8) + 8) % 8;
-      const up = energy > 0.5 ? Math.min(1, Math.max(0, phrase - 6) * 4) * Math.min(1, (8 - phrase) * 4) : 0;
+      const up = Math.max(wild, energy > 0.5 ? Math.min(1, Math.max(0, phrase - 6) * 4) * Math.min(1, (8 - phrase) * 4) : 0);
       const scratch = Math.sin(TAU * beats * 2) * 0.12 * e;
+      const high = 2.75 - 0.4 * (1 - pump) * wild;
 
       for (const r of [discos, raros]) {
         resetPose(r);
         r.body.position.y = bounce;
-        r.head.rotation.x = 0.28 * nod;
+        r.head.rotation.x = 0.28 * nod - 0.2 * wild;
         r.body.rotation.x = 0.06 + 0.03 * nod;
       }
       const lerp = (a: number, b: number) => a + (b - a) * up;
 
       // Discos: scratchea su bandeja con la derecha y tiene la izquierda en el mixer.
-      discos.body.rotation.y = -0.1;
-      discos.armR.rotation.set(lerp(-0.4 + scratch, 0), 0, lerp(-0.12, -2.75));
+      discos.body.rotation.y = -0.1 + 0.4 * wild;
+      discos.armR.rotation.set(lerp(-0.4 + scratch, 0), 0, lerp(-0.12, -high));
       discos.foreR.rotation.set(lerp(-0.62, -0.1), 0, 0);
-      discos.armL.rotation.set(lerp(-0.42, 0), 0, lerp(0.42, 2.75));
+      discos.armL.rotation.set(lerp(-0.42, 0), 0, lerp(0.42, high));
       discos.foreL.rotation.set(lerp(-0.6 - 0.12 * nod, -0.1), 0, 0);
 
       // Raros: se sostiene el auricular con la derecha y empuja su disco con la izquierda.
-      raros.body.rotation.y = 0.1;
+      raros.body.rotation.y = 0.1 - 0.4 * wild;
       raros.head.rotation.z = -0.12 * (1 - up);
-      raros.armR.rotation.set(lerp(-0.45, 0), 0, lerp(-0.7, -2.75));
+      raros.armR.rotation.set(lerp(-0.45, 0), 0, lerp(-0.7, -high));
       raros.foreR.rotation.set(lerp(-2.25, -0.1), lerp(-0.45, 0), 0);
-      raros.armL.rotation.set(lerp(-0.4 - scratch * 0.7, 0), 0, lerp(0.12, 2.75));
+      raros.armL.rotation.set(lerp(-0.4 - scratch * 0.7, 0), 0, lerp(0.12, high));
       raros.foreL.rotation.set(lerp(-0.62, -0.1), 0, 0);
     },
   };

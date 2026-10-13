@@ -324,7 +324,62 @@ export function blip(freq: number, dur = 0.05, type: OscillatorType = 'square', 
   }
 }
 
+/**
+ * La pista festejando el drop: el soplido de los chorros de humo, el "aaah" de la gente (ruido
+ * con forma de vocal, que sube y se va en tres segundos) y, salpicados, unos "wuu" y un par de silbidos.
+ */
+function cheer(vol = 0.5) {
+  const ctx = actx;
+  if (!ctx || ctx.state !== 'running') return;
+  try {
+    const t = ctx.currentTime, out = ctx.createGain();
+    out.gain.value = vol;
+    out.connect(ctx.destination);
+    const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 3.2), ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    /** Sube rápido a `peak` y se apaga de a poco. */
+    const swell = (from: AudioNode, peak: number, at: number, dur: number) => {
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(peak, t + at + dur * 0.2);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
+      from.connect(g).connect(out);
+    };
+    const noise = (type: BiquadFilterType, freq: number, q: number, peak: number, at: number, dur: number) => {
+      const src = ctx.createBufferSource(), f = ctx.createBiquadFilter();
+      src.buffer = buf;
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      swell(src.connect(f), peak, at, dur);
+      src.start(t + at);
+      src.stop(t + at + dur + 0.05);
+    };
+    noise('highpass', 5000, 0.7, 0.22, 0, 1.3);
+    noise('bandpass', 1100, 0.9, 0.5, 0.05, 3);
+    noise('bandpass', 2400, 1.2, 0.22, 0.1, 2.6);
+    for (let i = 0; i < 5; i++) {
+      const whistle = i < 2, at = rnd(0.1, 1.5), base = whistle ? rnd(1900, 2500) : rnd(380, 620);
+      const o = ctx.createOscillator(), f = ctx.createBiquadFilter();
+      o.type = whistle ? 'sine' : 'sawtooth';
+      o.frequency.setValueAtTime(base, t + at);
+      o.frequency.linearRampToValueAtTime(base * (whistle ? 1.35 : 1.7), t + at + 0.25);
+      o.frequency.linearRampToValueAtTime(base * (whistle ? 1.1 : 1.2), t + at + 0.7);
+      f.type = 'bandpass';
+      f.frequency.value = whistle ? base * 1.2 : 1000;
+      f.Q.value = whistle ? 0.5 : 2;
+      swell(o.connect(f), whistle ? 0.05 : 0.09, at, 0.7);
+      o.start(t + at);
+      o.stop(t + at + 0.8);
+    }
+  } catch {
+    /* sin audio */
+  }
+}
+
 export const sfx = {
+  /** La pista festeja el drop (el volumen acompaña al del set). */
+  cheer,
   /** Mover el cursor del menú. */
   move: () => blip(1320, 0.03, 'square', 0.03),
   /** Elegir una opción. */

@@ -283,6 +283,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let energy = 0.7;
   /** La música de verdad, para los sets que están analizados. */
   const luces = new Luces();
+  let wasDrop = 0, cheerAt = -9;
   tele.onState = (p) => room.onPlayState?.(p);
   tele.onLevel = (v) => room.onVolume?.(v);
   tele.onEnded = () => {
@@ -354,7 +355,14 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (mode === 'pista') crowd.wander(dt, energy);
     crowd.hype = music && mode === 'pista' ? music.drop : 0;
     crowd.update(beats, energy, t);
-    djs.update(beats, energy);
+    const drop = music && mode === 'pista' ? music.drop : 0;
+    djs.update(beats, energy, drop);
+    // Cuando cae el drop, la pista grita (no más de una vez cada tanto).
+    if (drop > 0.6 && wasDrop <= 0.6 && t - cheerAt > 8) {
+      cheerAt = t;
+      sfx.cheer(0.5 * tele.level);
+    }
+    wasDrop = drop;
     if (afuera.group.visible) afuera.update(beats, energy, t);
     if (patio.group.visible) patio.update(beats, energy, t);
     // El volumen del set va llegando de a poco a donde tiene que estar.
