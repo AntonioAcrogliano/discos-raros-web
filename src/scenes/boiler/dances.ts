@@ -46,7 +46,7 @@ const TAU = Math.PI * 2;
 /** Lo que un raro puede hacer en la pista además de bailar (el visitante con una tecla; los demás, cuando les pinta). */
 export const PUCHO = 1, AGUA = 2, SALUDO = 3, SALTO = 4, PASTI = 5;
 /** Cuánto dura cada una (segundos). */
-export const ACTION_SECONDS = [0, 5.2, 3.6, 2.4, 1.5, 1.7];
+export const ACTION_SECONDS = [0, 5.2, 4.4, 2.4, 1.5, 1.7];
 
 /**
  * Achica un giro que puede dar la vuelta entera (el helicóptero, los brazos del molino) sin que
@@ -57,6 +57,36 @@ const crank = (a: number, k: number) => (k <= 0 ? 0 : Math.atan2(Math.sin(a) * k
 
 /** Sube de 0 a 1 y vuelve, entre `a` y `b` (con los bordes suaves). */
 const pulse = (x: number, a: number, b: number, edge = 0.12) => Math.max(0, Math.min(1, (x - a) / edge, (b - x) / edge));
+
+/** El trago de agua: cuánto está la botella en la boca (0–1) a los `t` segundos. */
+export const sipReach = (t: number) => pulse(t / ACTION_SECONDS[AGUA], 0.1, 0.9, 0.16);
+/** Y cuánto la empinó (0–1): arranca casi acostada y termina bien parada, a medida que se vacía. */
+export const sipTip = (t: number) => {
+  const u = t / ACTION_SECONDS[AGUA];
+  return Math.max(0, Math.min(1, (u - 0.26) / 0.48)) * pulse(u, 0.2, 0.86, 0.1);
+};
+
+/**
+ * El drop: manos arriba bombeando con el beat y saltitos. La mitad de la pista levanta los dos
+ * brazos, un cuarto uno solo y el resto nada más salta (`who` es un número fijo de cada raro).
+ * @param k cuánto (0–1)
+ */
+export function hype(p: Pose, beats: number, k: number, who: number) {
+  const b = beats - Math.floor(beats), pump = Math.max(0, 1 - b * 2.2);
+  const mix = (from: number, to: number) => from + (to - from) * k;
+  const style = (who * 7.31) % 1;
+  if (style < 0.75) {
+    p.aLx = mix(p.aLx, -0.25);
+    p.aLz = mix(p.aLz, 2.35 + 0.3 * pump);
+    p.eL = mix(p.eL, -0.55 * (1 - pump));
+  }
+  if (style < 0.5) {
+    p.aRx = mix(p.aRx, -0.25);
+    p.aRz = mix(p.aRz, -(2.35 + 0.3 * pump));
+    p.eR = mix(p.eR, -0.55 * (1 - pump));
+  }
+  p.hop = Math.max(p.hop, k * 0.17 * Math.sin(Math.PI * b));
+}
 
 /**
  * Una acción encima del baile (y del caminar: se puede fumar caminando).
@@ -70,12 +100,24 @@ export function action(p: Pose, kind: number, t: number) {
   if (kind === PUCHO || kind === AGUA || kind === PASTI) {
     // La mano derecha va a la boca: dos pitadas, un trago largo con la cabeza para atrás, o
     // la pasti, que es un gesto corto y la cabeza bien para atrás para tragarla.
-    const m = kind === PUCHO ? pulse((t % 2.6) / 2.6, 0.12, 0.5) : kind === AGUA ? pulse(t / dur, 0.15, 0.82, 0.14) : pulse(t / dur, 0.1, 0.6, 0.14);
-    p.aRx = mix(p.aRx, -(0.45 + 0.62 * m));
+    const m = kind === PUCHO ? pulse((t % 2.6) / 2.6, 0.12, 0.5) : kind === AGUA ? sipReach(t) : pulse(t / dur, 0.1, 0.6, 0.14);
+    // Tomando, el codo sube a medida que empina la botella.
+    const tip = kind === AGUA ? sipTip(t) : 0;
+    p.aRx = mix(p.aRx, -(0.45 + 0.62 * m + 0.3 * tip));
     // (Hacia adentro: la mano tiene que llegar a la boca, no quedar frente al hombro.)
     p.aRz = mix(p.aRz, -0.1 + 0.6 * m);
-    p.eR = mix(p.eR, -(0.5 + 1.75 * m));
-    if (kind === AGUA) p.headRx = mix(p.headRx, -0.5 * m);
+    p.eR = mix(p.eR, -(0.5 + 1.75 * m) + 0.25 * tip);
+    if (kind === AGUA) {
+      // Para tomar se queda quieto y mira al frente (si no, la botella no emboca): la cabeza se
+      // va para atrás con la botella, traga de a sorbos, y al final la baja: "ahh".
+      const still = 1 - 0.85 * m * w;
+      p.hop *= still;
+      p.sway *= still;
+      p.roll *= still;
+      p.headRy *= 1 - m * w;
+      p.lean = mix(p.lean, p.lean * (1 - m) - 0.1 * tip);
+      p.headRx = mix(p.headRx, p.headRx * (1 - m) - 0.25 * m - 0.4 * tip + Math.sin(t * 10) * 0.035 * Math.min(1, tip * 4) + 0.14 * pulse(t / dur, 0.86, 1, 0.05));
+    }
     if (kind === PASTI) p.headRx = mix(p.headRx, -0.7 * pulse(t / dur, 0.4, 0.9, 0.16));
   } else if (kind === SALUDO) {
     const wave = Math.sin(t * 13);
