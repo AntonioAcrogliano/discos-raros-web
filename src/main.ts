@@ -8,8 +8,16 @@ import { askAtDoor } from './sections/puerta';
 import { openSets } from './sections/sets';
 import { PSXStage, fontsReady, makeLogoCanvas, setLogoSprite } from './style-kit';
 import { isTouch, sinTildes } from './ui/dom';
-import { go, hudContador, mountUi, player, setChrome, setRouteLabel } from './ui/shell';
+import { go, hudContador, mountUi, pistaHint, player, setChrome, setRouteLabel, showHint } from './ui/shell';
 import { showStartScreen } from './ui/startScreen';
+
+/** Dibujitos de la barra: un disco, un raro, un joystick y un sobre. */
+const ICONS = {
+  disco: ['..XXXXX..', '.XXXXXXX.', 'XXXXXXXXX', 'XXXX.XXXX', 'XXX...XXX', 'XXXX.XXXX', 'XXXXXXXXX', '.XXXXXXX.', '..XXXXX..'],
+  raro: ['...XXX...', '..XXXXX..', '..XXXXX..', '...XXX...', '.XXXXXXX.', 'XXXXXXXXX', 'X.XXXXX.X', '..XX.XX..', '..XX.XX..'],
+  juegos: ['.........', '.XXXXXXX.', 'XXXXXXXXX', 'XX.XXX.XX', 'X...X.X.X', 'XX.XXX.XX', 'XXXXXXXXX', 'XXX...XXX', '.X.....X.'],
+  sobre: ['.........', 'XXXXXXXXX', 'XX.....XX', 'X.X...X.X', 'X..X.X..X', 'X...X...X', 'X.......X', 'XXXXXXXXX', '.........'],
+};
 
 async function main() {
   const stage = new PSXStage(document.querySelector<HTMLCanvasElement>('#stage')!);
@@ -92,20 +100,23 @@ async function main() {
   await adentro;
   setChrome(true);
   mountUi([
-    { path: 'sets', label: 'DISCOS', open: () => openSets({ playing: () => room.playing()?.id ?? null, play: (s) => void sets.then((list) => room.play(s, list)) }) },
+    { path: 'sets', label: 'DISCOS', icon: ICONS.disco, open: () => openSets({ playing: () => room.playing()?.id ?? null, play: (s) => void sets.then((list) => room.play(s, list)) }) },
     {
       path: 'crear',
       label: 'CREA TU RARO',
+      icon: ICONS.raro,
       open: () => openCreador({ room, mine: () => data.mine, onSaved: (raro, total) => setPista({ ...data, mine: raro, total }) }),
     },
-    { path: 'jugar', label: 'PATIO DE JUEGOS', open: () => openJugar(room) },
-    { path: 'contacto', label: 'CONTACTO', open: openContacto },
+    { path: 'jugar', label: 'PATIO DE JUEGOS', icon: ICONS.juegos, open: () => openJugar(room) },
+    { path: 'contacto', label: 'CONTACTO', icon: ICONS.sobre, open: openContacto },
     // Los juegos se abren desde JUGAR (teclado o joystick en la compu; controles táctiles en el celular).
     { path: 'pelea', label: 'PELEA', nav: false, open: openPelea },
     { path: 'futbol', label: 'CABEZAZOS', nav: false, open: openFutbol },
   ]);
   // La pista pudo llegar (o el raro crearse en la puerta) antes de que existiera la barra: se actualiza su cartel.
   if (loaded) setPista(data);
+  // Recién llegado a la pista (no si entró directo a una sección): cómo se mira y se camina.
+  if (!location.hash.replace(/^#\/?/, '')) showHint(pistaHint());
 }
 
 void main();

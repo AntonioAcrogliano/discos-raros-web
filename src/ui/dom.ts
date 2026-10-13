@@ -18,5 +18,25 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
+/**
+ * Dibujito de píxeles para los botones: cada renglón es una fila y cada X un píxel. Toma el
+ * color del texto del botón.
+ */
+export function pixIcon(rows: string[]): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'pix');
+  svg.setAttribute('viewBox', `0 0 ${rows[0].length} ${rows.length}`);
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(NS, 'path');
+  let d = '';
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) if (row[x] !== '.') d += `M${x} ${y}h1v1h-1z`;
+  });
+  path.setAttribute('d', d);
+  svg.append(path);
+  return svg;
+}
+
 /** ¿Es un celular o una tablet? (pantalla táctil sin mouse). */
 export const isTouch = () => window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(any-pointer: fine)').matches;
