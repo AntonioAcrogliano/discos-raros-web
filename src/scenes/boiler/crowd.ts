@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { LOOK, type Look, type Raro } from '../../../shared/look';
 import { DETAIL, type DetailCell, detailUv, make3DGlassesTexture, makeDetailTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
 import { CLUB } from './club';
-import { EN_LA_FILA, dance, makePose } from './dances';
+import { EN_LA_FILA, dance, makePose, stride } from './dances';
 
 /**
  * La pista: hasta MAX personajes dibujados con instancing (una malla instanciada por parte del
@@ -493,10 +493,15 @@ interface Dancer {
   /** Cada uno a su manera: para dónde tuerce el cuerpo cuando mira a la cabina y qué tan inquieto es. */
   bias: number;
   pace: number;
+  /** Caminar: cuánto del cuerpo va caminando en vez de bailando (0–1) y por dónde va el ciclo de pasos. */
+  walk: number;
+  stride: number;
 }
 
 /** A qué velocidad camina el raro que maneja el visitante (m/s): bastante más rápido que los que pasean. */
-const MY_SPEED = 2.1;
+const MY_SPEED = 2.3;
+/** Largo de un paso (metros): el del visitante camina de verdad, los que pasean van arrastrando los pies. */
+const MY_STEP = 0.66, STEP = 0.42;
 
 /** Diferencia entre dos ángulos por el lado más corto. */
 const turnTo = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
@@ -595,6 +600,8 @@ export class Crowd {
   /** El raro del visitante está caminando en este momento. */
   walking = false;
   private hadMine = false;
+  /** Velocidad del raro del visitante: arranca y frena de a poco, no de golpe. */
+  private vel = { x: 0, z: 0 };
   private radius: number[] = [];
   private slots = makeSlots();
   private dancers: Dancer[] = [];
@@ -695,6 +702,8 @@ export class Crowd {
         bias,
         pace: 0.7 + r() * 0.7,
         buddy: -1,
+        walk: 0,
+        stride: r() * 6,
         phase: r() * 10,
         look: raro.look,
         vary: 0.96 + r() * 0.08,
@@ -744,8 +753,15 @@ export class Crowd {
 
   /** Lo lleva en una dirección (teclado): hay que llamarlo en cada frame mientras se aprieta. */
   steer(dx: number, dz: number) {
+    const d = this.dancers[0], len = Math.hypot(dx, dz);
+    // El destino va siempre un par de pasos adelante: así camina a velocidad pareja, también en diagonal.
+    if (d && len) this.walkTo(d.x + (dx / len) * 1.6, d.z + (dz / len) * 1.6);
+  }
+
+  /** Se soltaron las teclas: frena ahí nomás (un pasito más, por el envión). */
+  halt() {
     const d = this.dancers[0];
-    if (d) this.walkTo(d.x + dx * 0.7, d.z + dz * 0.7);
+    if (d) this.walkTo(d.x + this.vel.x * 0.12, d.z + this.vel.z * 0.12);
   }
 
   /** Dónde está parado el bailarín `i`. */
@@ -828,17 +844,27 @@ export class Crowd {
     const me = ds[0];
     this.walking = false;
     if (this.mine && me) {
+      const v = this.vel;
       const dx = me.tx - me.x, dz = me.tz - me.z, far = Math.hypot(dx, dz);
-      if (far > 0.06) {
-        const step = Math.min(MY_SPEED * dt, far), x0 = me.x, z0 = me.z;
-        me.x += (dx / far) * step;
-        me.z += (dz / far) * step;
+      // Va hacia el destino acelerando de a poco, y al llegar afloja en vez de clavarse.
+      const want = far > 0.04 ? MY_SPEED * Math.min(1, far / 0.55) : 0;
+      const k = Math.min(1, dt * 9);
+      v.x += ((far ? dx / far : 0) * want - v.x) * k;
+      v.z += ((far ? dz / far : 0) * want - v.z) * k;
+      const speed = Math.hypot(v.x, v.z);
+      if (speed > 0.05) {
+        const step = speed * dt, x0 = me.x, z0 = me.z;
+        me.x += v.x * dt;
+        me.z += v.z * dt;
         offBooth(me);
         // Trabado contra la cabina: la rodea por el costado que tiene más cerca.
-        if (Math.hypot(me.x - x0, me.z - z0) < step * 0.3) me.x += Math.sign(me.x || me.tx || 1) * step;
-        me.yaw += turnTo(me.yaw, Math.atan2(dx, dz)) * Math.min(1, dt * 9);
-        this.walking = moving[0] = true;
-      }
+        if (far > 0.3 && Math.hypot(me.x - x0, me.z - z0) < step * 0.3) me.x += Math.sign(me.x || me.tx || 1) * step;
+        // Mira para donde va (cuando ya casi frenó, se queda como estaba).
+        if (speed > 0.35) me.yaw += turnTo(me.yaw, Math.atan2(v.x, v.z)) * Math.min(1, dt * 11);
+        me.stride += (step * Math.PI) / MY_STEP;
+        this.walking = moving[0] = speed > 0.25;
+      } else v.x = v.z = 0;
+      me.walk += (Math.min(1, speed / 1.2) - me.walk) * Math.min(1, dt * 10);
     }
     for (let i = 1; i < ds.length; i++) {
       const d = ds[i];
@@ -852,6 +878,8 @@ export class Crowd {
       moving[i] = go > 0;
       d.x += dx * go;
       d.z += dz * go;
+      d.stride += (far * go * Math.PI) / STEP;
+      d.walk += ((go ? 0.85 : 0) - d.walk) * Math.min(1, dt * 5);
       // Caminando mira para donde va; al llegar se acomoda de a poco.
       d.yaw += turnTo(d.yaw, go ? Math.atan2(dx, dz) : this.facing(d)) * Math.min(1, dt * (go ? 4 : 2));
     }
@@ -1000,6 +1028,8 @@ export class Crowd {
       const b = BUILDS[l.cuerpo] ?? BUILDS[0];
       // Los que bailan van casi a la par; los de la fila, cada uno a su tiempo.
       dance(l.baile, beats + d.phase * (l.baile >= EN_LA_FILA ? 1.7 : 0.012), e, p);
+      // El que va caminando da pasos de verdad (el del visitante, más largos).
+      if (d.walk > 0.01 && !this.solo) stride(p, d.stride, d.walk, i === 0 && this.mine ? 0.62 : 0.36);
       // En el creador gira despacio para verlo de todos lados (o mira para donde lo dejaron).
       const facing = this.solo ? (this.spin ?? Math.sin(t * 0.7) * 0.9) : d.yaw + Math.sin(t * 0.9 + d.phase) * 0.08 * (1 - e);
       const h = b.h * d.vary;

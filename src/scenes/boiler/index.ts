@@ -145,8 +145,12 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   // siguiéndolo; el que no, mueve la cámara sola. Parado en un lugar se puede girar todo alrededor.
   const look = { yaw: 0, pitch: 0, zoom: 0, idle: 99, at: null as { x: number; z: number } | null };
   const IDLE_SECONDS = 12;
+  /** El bloque de la cabina con los DJs y los parlantes de los costados, visto de arriba: la cámara no mira a través. */
+  const BOOTH = { halfX: 4.15, back: 1.25, front: 3.35 };
   /** La cámara sigue al raro del visitante (desde que lo mueve hasta que se queda quieto un rato). */
   let follow = false;
+  /** Lo viene llevando con las teclas (para frenarlo cuando las suelta). */
+  let steering = false;
   const fingers = new Map<number, { x: number; y: number; sx: number; sy: number; t0: number }>();
   const walk = new Set<string>();
   const WALK_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
@@ -426,9 +430,13 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         const at = look.at ?? { x: 0, z: -0.6 }, s = Math.sin(look.yaw), c = Math.cos(look.yaw), step = 3 * dt;
         if (hasFirst) {
           crowd.steer(-s * f + c * r, -c * f - s * r);
-          follow = true;
+          follow = steering = true;
           look.idle = 0;
         } else stand(at.x + (-s * f + c * r) * step, at.z + (-c * f - s * r) * step);
+      } else if (steering) {
+        // Soltó las teclas: el raro frena ahí, no sigue hasta donde iba.
+        steering = false;
+        crowd.halt();
       }
       if (follow) {
         // La cámara gira alrededor del raro, y mientras camina no se da por quieta.
@@ -456,7 +464,23 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         const dx = Math.sin(look.yaw) * Math.cos(pitch), dy = Math.sin(pitch), dz = Math.cos(look.yaw) * Math.cos(pitch);
         // Contra una pared (o el techo) la cámara se acerca, en vez de quedar del otro lado.
         const room = (from: number, d: number, min: number, max: number) => (d > 1e-4 ? (max - from) / d : d < -1e-4 ? (min - from) / d : Infinity);
-        const dist = Math.min(4.6 - 2.6 * look.zoom, room(look.at.x, dx, -CLUB.halfW + 0.4, CLUB.halfW - 0.4), room(1.3, dy, 0, CLUB.ceilY - 0.5), room(look.at.z, dz, CLUB.backZ + 0.4, CLUB.frontZ - 0.4));
+        // Lo mismo con la cabina y sus parlantes: si quedan entre la cámara y lo que se mira, la
+        // cámara se para de este lado (salvo que ya pase por arriba de todo).
+        const at = look.at;
+        const wall = (from: number, d: number, plane: number, other: number, od: number, lo: number, hi: number) => {
+          const t = (plane - from) / d;
+          const o = other + od * t;
+          return t > 0 && o > lo && o < hi && 1.3 + dy * t < 3 ? Math.max(0.9, t) : Infinity;
+        };
+        const booth =
+          at.z < BOOTH.back && dz > 1e-4
+            ? wall(at.z, dz, BOOTH.back, at.x, dx, -BOOTH.halfX, BOOTH.halfX)
+            : at.z > BOOTH.front && dz < -1e-4
+              ? wall(at.z, dz, BOOTH.front, at.x, dx, -BOOTH.halfX, BOOTH.halfX)
+              : Math.abs(at.x) > BOOTH.halfX && dx * at.x < -1e-4
+                ? wall(at.x, dx, Math.sign(at.x) * BOOTH.halfX, at.z, dz, BOOTH.back, BOOTH.front)
+                : Infinity;
+        const dist = Math.min(4.6 - 2.6 * look.zoom, booth, room(at.x, dx, -CLUB.halfW + 0.4, CLUB.halfW - 0.4), room(1.3, dy, 0, CLUB.ceilY - 0.5), room(at.z, dz, CLUB.backZ + 0.4, CLUB.frontZ - 0.4));
         wantTarget.set(look.at.x, 1.3, look.at.z);
         wantPos.set(look.at.x + dx * dist, 1.3 + dy * dist, look.at.z + dz * dist);
       } else if (Math.abs(look.yaw) + Math.abs(look.pitch) + look.zoom > 0.002) {
@@ -474,7 +498,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         );
       }
     }
-    const k = Math.min(1, dt * 4);
+    // Siguiendo al raro la cámara va más pegada: si no, se le escapa del centro al caminar.
+    const k = Math.min(1, dt * (mode === 'pista' && follow ? 7 : 4));
     camPos.lerp(wantPos, k);
     camTarget.lerp(wantTarget, k);
     fov += (wantFov - fov) * k;

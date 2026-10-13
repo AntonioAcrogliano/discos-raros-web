@@ -44,6 +44,36 @@ export const makePose = (): Pose => ({ hop: 0, yaw: 0, lean: 0, roll: 0, sway: 0
 const TAU = Math.PI * 2;
 
 /**
+ * Caminar: mezcla el paso de baile con un ciclo de pasos de verdad (una pierna adelante y la
+ * otra atrás, la rodilla que se dobla al pasar, los brazos al revés que las piernas).
+ * @param phase por dónde va el ciclo (2π = dos pasos); avanza con lo que se camina, no con el tiempo
+ * @param w cuánto pesa el caminar (0 = solo baile, 1 = solo camina)
+ * @param amp qué tan largo es el paso (radianes de la pierna)
+ */
+export function stride(p: Pose, phase: number, w: number, amp: number) {
+  const s = Math.sin(phase), c = Math.cos(phase), k = 1 - w;
+  // Las piernas son todas del caminar; los brazos conservan algo del baile.
+  const a = w * 0.7, ka = 1 - a;
+  p.tL = p.tL * k - s * amp * w;
+  p.tR = p.tR * k + s * amp * w;
+  p.kL = p.kL * k + Math.max(0, c) * amp * 1.5 * w;
+  p.kR = p.kR * k + Math.max(0, -c) * amp * 1.5 * w;
+  p.tLz *= k;
+  p.tRz *= k;
+  p.aLx = p.aLx * ka + s * amp * 0.9 * a;
+  p.aRx = p.aRx * ka - s * amp * 0.9 * a;
+  p.aLz = p.aLz * ka + 0.1 * a;
+  p.aRz = p.aRz * ka - 0.1 * a;
+  p.eL = p.eL * ka - 0.45 * a;
+  p.eR = p.eR * ka - 0.45 * a;
+  p.hop = p.hop * k + Math.abs(s) * 0.03 * w;
+  p.sway *= k;
+  p.yaw *= k;
+  p.roll = p.roll * k + s * 0.03 * w;
+  p.lean = p.lean * k + amp * 0.14 * w;
+}
+
+/**
  * @param kind índice de LOOK.baile
  * @param f tiempo en beats
  * @param e energía: 0 = parado, 1 = bailando a full
