@@ -92,10 +92,21 @@ export function buildClub(): Club {
   let kick = 0;
   let music: Music | null = null;
   const light = { ambient: new THREE.Color(), key: new THREE.Color(), fog: new THREE.Color('#120a1f') };
+  /** El color que baña el boliche: cambia cada cuatro beats y tiñe la luz general, como los tachos de un boliche. */
+  const wash = new THREE.Color(DR_CYCLE[0]), washTo = new THREE.Color();
+  /** Las cegadoras de atrás de la pista (0–1): pegan con el bombo cuando el tema está arriba. */
+  let blind = 0;
   updaters.push((beats, energy) => {
     kick = music ? music.kick : Math.max(0, 1 - (beats - Math.floor(beats)) * 2.5) * energy;
-    light.ambient.setRGB(0.4 + 0.04 * kick, 0.36 + 0.03 * kick, 0.5 + 0.05 * kick);
-    light.key.setRGB(0.62, 0.58, 0.56).multiplyScalar(1 + 0.14 * kick);
+    wash.lerp(washTo.set(DR_CYCLE[Math.floor(beats / 4) % DR_CYCLE.length]), 0.12);
+    // Con el tema arriba, o en la segunda mitad de cada frase de 16 si no se sabe qué suena.
+    const up = music ? Math.max(0, Math.min(1, (music.loud - 0.62) * 5)) : energy > 0.8 && Math.floor(beats / 8) % 2 ? 1 : 0;
+    blind = kick * kick * up;
+    // Más oscuro entre golpe y golpe, y cada bombo prende el salón del color del momento.
+    const dark = 1 - 0.3 * Math.min(1, energy), hit = 0.3 * kick + 0.1 * blind;
+    light.ambient.setRGB(0.4 * dark + wash.r * hit, 0.36 * dark + wash.g * hit, 0.5 * dark + wash.b * hit);
+    light.key.setRGB(0.62, 0.58, 0.56).multiplyScalar(dark + 0.35 * kick + 0.25 * blind);
+    light.fog.set('#120a1f').lerp(wash, 0.07 * kick);
   });
 
   // --- Pista: baldosas que cambian de color con el beat ------------------------------
@@ -334,10 +345,14 @@ export function buildClub(): Club {
   });
   updaters.push((beats, energy) => {
     const pulse = music ? music.kick : 1 - (beats - Math.floor(beats));
+    const bar = Math.floor(beats / 4);
     beams.forEach(({ beam, pool, mat, poolMat }, i) => {
       const o = beam.position;
-      const rz = -o.x * 0.05 + 0.5 * Math.sin(TAU * beats * 0.0625 + i * 1.7);
-      const rx = (i % 2 ? 0.25 : 0) + 0.4 * Math.sin(TAU * beats * 0.03125 + i);
+      // Cada cuatro beats los colores se corren un lugar.
+      mat.uniforms.uColor.value.set(beamColors[(i + bar) % beamColors.length]);
+      poolMat.uniforms.uColor.value.copy(mat.uniforms.uColor.value);
+      const rz = -o.x * 0.05 + 0.62 * Math.sin(TAU * beats * 0.0625 + i * 1.7);
+      const rx = (i % 2 ? 0.25 : 0) + 0.5 * Math.sin(TAU * beats * 0.03125 + i);
       beam.rotation.set(rx, 0, rz);
       // Para dónde apunta (el haz cuelga hacia -y) y a qué distancia toca el piso.
       const len = Math.min(11, o.y / (Math.cos(rz) * Math.cos(rx)));
@@ -345,10 +360,27 @@ export function buildClub(): Club {
       const px = o.x + Math.sin(rz) * len, pz = o.z - Math.cos(rz) * Math.sin(rx) * len;
       // Si cae en un palco, el charco queda arriba, no enterrado.
       pool.position.set(px, floorAt(px, pz) + 0.03, pz);
-      const a = 0.03 + (0.05 + 0.09 * pulse) * energy;
+      const a = 0.03 + (0.07 + 0.2 * pulse) * energy;
       mat.uniforms.uOpacity.value = a;
       poolMat.uniforms.uOpacity.value = a * 1.6;
     });
+  });
+
+  // Cegadoras: una fila de focos en el truss de atrás, mirando a la pista. No encandilan la
+  // pantalla entera: prenden ellas y su resplandor, y le suman un poco a la luz del salón.
+  const lampMat = makePSXMaterial({ color: '#000', lit: false });
+  const flare = glow(DR.crema, 0);
+  for (const x of [-3, -1.8, 1.8, 3]) {
+    group.add(box(0.5, 0.32, 0.2, metal, x, ceilY - 0.55, -2.2), box(0.4, 0.22, 0.04, lampMat, x, ceilY - 0.55, -2.08));
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.1), flare);
+    f.position.set(x, ceilY - 0.55, -2.04);
+    f.renderOrder = 2;
+    fx.add(f);
+  }
+  const lampOn = new THREE.Color(DR.crema);
+  updaters.push(() => {
+    lampMat.uniforms.uColor.value.copy(lampOn).multiplyScalar(0.06 + 0.94 * blind);
+    flare.uniforms.uOpacity.value = 0.3 * blind;
   });
 
   // Barras de led en el techo: una ola de colores que viene del fondo hacia la cabina en cada beat.
@@ -382,7 +414,7 @@ export function buildClub(): Club {
   }
   updaters.push((_b, energy, t) => {
     ball.rotation.y = t * 0.6;
-    sparkMat.uniforms.uOpacity.value = music ? 0.12 + 0.2 * energy + 0.3 * music.high : 0.12 + 0.4 * energy;
+    sparkMat.uniforms.uOpacity.value = music ? 0.15 + 0.25 * energy + 0.45 * music.high : 0.15 + 0.5 * energy;
     const o = ball.position;
     for (const { mesh, a, e } of sparks) {
       const dx = Math.cos(a + t * 0.6) * Math.cos(e), dy = Math.sin(e), dz = Math.sin(a + t * 0.6) * Math.cos(e);
