@@ -48,6 +48,13 @@ export const PUCHO = 1, AGUA = 2, SALUDO = 3, SALTO = 4, PASTI = 5;
 /** Cuánto dura cada una (segundos). */
 export const ACTION_SECONDS = [0, 5.2, 3.6, 2.4, 1.5, 1.7];
 
+/**
+ * Achica un giro que puede dar la vuelta entera (el helicóptero, los brazos del molino) sin que
+ * pegue un salto: con k = 1 queda igual, con k = 0 queda en cero, y en el medio pasa de dar la
+ * vuelta a hamacarse. Multiplicar el ángulo no sirve: como crece sin parar, el raro sale en espiral.
+ */
+const crank = (a: number, k: number) => (k <= 0 ? 0 : Math.atan2(Math.sin(a) * k, Math.cos(a) * k + (1 - Math.min(1, k))));
+
 /** Sube de 0 a 1 y vuelve, entre `a` y `b` (con los bordes suaves). */
 const pulse = (x: number, a: number, b: number, edge = 0.12) => Math.max(0, Math.min(1, (x - a) / edge, (b - x) / edge));
 
@@ -110,15 +117,16 @@ export function stride(p: Pose, phase: number, w: number, amp: number) {
   p.kR = p.kR * k + Math.max(0, -c) * amp * 1.5 * w;
   p.tLz *= k;
   p.tRz *= k;
-  p.aLx = p.aLx * ka + s * amp * 0.9 * a;
-  p.aRx = p.aRx * ka - s * amp * 0.9 * a;
+  p.aLx = crank(p.aLx, ka) + s * amp * 0.9 * a;
+  p.aRx = crank(p.aRx, ka) - s * amp * 0.9 * a;
   p.aLz = p.aLz * ka + 0.1 * a;
   p.aRz = p.aRz * ka - 0.1 * a;
   p.eL = p.eL * ka - 0.45 * a;
   p.eR = p.eR * ka - 0.45 * a;
   p.hop = p.hop * k + Math.abs(s) * 0.03 * w;
   p.sway *= k;
-  p.yaw *= k;
+  // El giro del baile se va enseguida: caminando se mira para donde se va.
+  p.yaw = crank(p.yaw, k * k);
   p.roll = p.roll * k + s * 0.03 * w;
   p.lean = p.lean * k + amp * 0.14 * w;
 }
@@ -172,8 +180,10 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
       p.eL = mix(1);
       p.aRx = mix(2);
       p.eR = mix(3);
-      p.yaw = [0.35, 0, -0.35, 0][step] * e;
-      p.headRx = step % 2 ? 0.15 * e : 0;
+      // El cuerpo y la cabeza cambian junto con los brazos, no de un cuadro para el otro.
+      const Y = [0.35, 0, -0.35, 0], H = [0, 0.15, 0, 0.15];
+      p.yaw = (Y[(step + 3) % 4] + (Y[step] - Y[(step + 3) % 4]) * k) * e;
+      p.headRx = (H[(step + 3) % 4] + (H[step] - H[(step + 3) % 4]) * k) * e;
       break;
     }
     case 4: // cabeceo
@@ -211,8 +221,8 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
       const a = (f * Math.PI) % TAU;
       const k = Math.min(1, e * 1.3);
       p.hop = hop01 * 0.06;
-      p.aLx = -a * k;
-      p.aRx = -((a + Math.PI) % TAU) * k;
+      p.aLx = crank(-a, k);
+      p.aRx = crank(-a - Math.PI, k);
       p.aLz = 0.25;
       p.aRz = -0.25;
       p.eL = p.eR = -0.1;

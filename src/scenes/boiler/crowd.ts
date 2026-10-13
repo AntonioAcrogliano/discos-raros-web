@@ -1274,7 +1274,7 @@ export class Crowd {
       const footR = THIGH * Math.cos(p.tR) + (SHIN + SHOE) * Math.cos(p.tR + p.kR);
       const lift = (l.calzado === PLATAFORMAS ? PLATFORM : 0) - (HIP_Y - Math.max(footL, footR));
       // En un palco (o subiendo la escalera) todo el raro va más arriba.
-      const y = p.hop + lift * h + (this.roam ? floorAt(d.x, d.z) : 0);
+      const y = p.hop * h + lift * h + (this.roam ? floorAt(d.x, d.z) : 0);
       this.root.compose(this.pos.set(d.x + p.sway * h, y, d.z), this.quat.setFromEuler(this.rootEuler.set(p.lean, facing + p.yaw, p.roll)), this.scale.set(h, h, h));
 
       const hip = 0.1 * b.w, shoulder = 0.2 * b.w + 0.055 * b.limb;
@@ -1312,10 +1312,12 @@ export class Crowd {
         this.mouth.matrix(l.boca, head);
       }
       d.headY = y + (NECK_Y + 0.3 * b.head) * h;
+      // La boca, donde esté la cabeza de verdad: el baile lo puede tener girado, inclinado o corrido.
+      if (doing === FUMAR) this.lips.set(0, 0.1, 0.16).applyMatrix4(head);
+      const mouthYaw = facing + p.yaw + p.headRy;
       if (doing === FUMAR && this.cigs.count < PROPS) {
         // El pucho apunta siempre de la mano a la boca: el filtro del lado de la cara y la brasa
         // del otro, esté el brazo como esté.
-        this.lips.set(d.x + Math.sin(facing) * 0.16 * b.head * h, d.headY - 0.2 * b.head * h, d.z + Math.cos(facing) * 0.16 * b.head * h);
         this.out.lookAt(this.lips, this.grip, this.up).scale(this.scale.set(h, h, h)).setPosition(this.grip);
         this.cigs.setMatrixAt(this.cigs.count++, this.out);
       }
@@ -1324,8 +1326,8 @@ export class Crowd {
         const u = ((d.actT % 2.6) / 2.6 - 0.5) / 0.45;
         for (let k = 0; k < 3 && u > 0 && u < 1 && this.puffs.count < PROPS * 3; k++) {
           const age = Math.min(1, u + k * 0.18), size = (0.05 + 0.13 * age) * (1 - 0.6 * Math.max(0, age - 0.7) / 0.3);
-          const out = 0.2 + age * 0.35 + k * 0.05;
-          this.out.makeScale(size, size, size).setPosition(d.x + Math.sin(facing) * out, d.headY - 0.12 * h + age * 0.45 + k * 0.06, d.z + Math.cos(facing) * out);
+          const out = 0.04 + age * 0.35 + k * 0.05;
+          this.out.makeScale(size, size, size).setPosition(this.lips.x + Math.sin(mouthYaw) * out, this.lips.y + 0.08 * h + age * 0.45 + k * 0.06, this.lips.z + Math.cos(mouthYaw) * out);
           this.puffs.setMatrixAt(this.puffs.count++, this.out);
         }
       }
