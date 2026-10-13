@@ -8,7 +8,7 @@ import { askAtDoor } from './sections/puerta';
 import { openSets } from './sections/sets';
 import { PSXStage, fontsReady, makeLogoCanvas, setLogoSprite } from './style-kit';
 import { isTouch, sinTildes } from './ui/dom';
-import { type ActionButton, go, hudContador, mountUi, pistaHint, player, setActions, setChrome, setRouteLabel, showCall, showHint } from './ui/shell';
+import { type ActionButton, go, hudContador, mountStick, mountUi, pistaHint, player, setActions, setChrome, setRouteLabel, showCall, showHint } from './ui/shell';
 import { showStartScreen } from './ui/startScreen';
 
 /** Dibujitos de la barra: un disco, un raro, un joystick y un sobre. */
@@ -163,6 +163,8 @@ async function main() {
     // La foto del raro se arma recién cuando se pide (trae su propio dibujante).
     { path: 'compartir', label: 'COMPARTIR', nav: false, open: () => void import('./sections/compartir').then((m) => m.openCompartir(data.mine)) },
   ]);
+  // En el celu se camina con la palanca.
+  if (isTouch()) mountStick((x, y) => room.steer(x, y));
   mounted = true;
   if (invite) inviteToShare();
   // La pista pudo llegar (o el raro crearse en la puerta) antes de que existiera la barra: se actualiza su cartel.

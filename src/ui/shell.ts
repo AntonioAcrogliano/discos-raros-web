@@ -156,6 +156,51 @@ export function setActions(list: ActionButton[] | null, run?: (kind: number) => 
   );
 }
 
+/**
+ * La palanca para caminar por la pista en el celu: abajo a la izquierda, arriba de la barra.
+ * Avisa para dónde y cuánto se la lleva (x a la derecha, y hacia abajo, entre -1 y 1; 0, 0 al soltarla).
+ */
+export function mountStick(onMove: (x: number, y: number) => void) {
+  const knob = el('div', 'palanca-perilla');
+  const stick = el('div', 'palanca', [knob]);
+  stick.setAttribute('aria-hidden', 'true');
+  let finger: number | null = null;
+  const aim = (e: PointerEvent) => {
+    const r = stick.getBoundingClientRect();
+    let x = (e.clientX - r.left - r.width / 2) / (r.width / 2), y = (e.clientY - r.top - r.height / 2) / (r.height / 2);
+    // El dedo puede irse afuera de la base: la perilla llega hasta el borde y ahí es "a fondo".
+    const far = Math.hypot(x, y), k = far > 1 ? 1 / far : 1;
+    x *= k;
+    y *= k;
+    knob.style.transform = `translate(${x * 62}%, ${y * 62}%)`;
+    // Un cachito de juego en el medio, para que no camine solo con apoyar el dedo.
+    if (far < 0.2) onMove(0, 0);
+    else onMove(x, y);
+  };
+  const letGo = (e?: PointerEvent) => {
+    if (e && e.pointerId !== finger) return;
+    finger = null;
+    knob.style.transform = '';
+    stick.classList.remove('on');
+    onMove(0, 0);
+  };
+  stick.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    finger = e.pointerId;
+    stick.setPointerCapture(e.pointerId);
+    stick.classList.add('on');
+    aim(e);
+  });
+  stick.addEventListener('pointermove', (e) => e.pointerId === finger && aim(e));
+  stick.addEventListener('pointerup', letGo);
+  stick.addEventListener('pointercancel', letGo);
+  stick.addEventListener('contextmenu', (e) => e.preventDefault());
+  // Si se abre una ventana o se va a un juego con el dedo apoyado, no queda caminando.
+  new MutationObserver(() => finger !== null && getComputedStyle(stick).display === 'none' && letGo()).observe(ui, { attributes: true, attributeFilter: ['class'], subtree: true });
+  ui.classList.add('con-palanca');
+  ui.append(stick);
+}
+
 /** Saca un cartelito titilando. */
 function dismiss(box: HTMLElement) {
   box.classList.add('chau');
@@ -191,6 +236,7 @@ let leave: (() => void) | null = null;
 export function setChrome(visible: boolean) {
   navbar.hidden = hud.hidden = !visible;
   acciones.classList.toggle('fuera', !visible);
+  ui.querySelector('.palanca')?.classList.toggle('fuera', !visible);
   // Al volver a la pista (de un juego, por ejemplo) el cartel puede haber cambiado de ancho.
   if (visible) requestAnimationFrame(marquee);
 }
@@ -233,7 +279,7 @@ export function showCall(text: string, label: string, path: string, seconds = 25
 /** La ayuda que corresponde a cómo se maneja en este aparato. */
 export const pistaHint = (): [string, string][] =>
   isTouch()
-    ? [['ARRASTRA', 'MIRAR'], ['TOCA', 'IR'], ['PELLIZCA', 'ZOOM']]
+    ? [['PALANCA', 'CAMINAR'], ['ARRASTRA', 'MIRAR'], ['PELLIZCA', 'ZOOM']]
     : [['ARRASTRA', 'MIRAR'], ['CLIC', 'IR'], ['WASD', 'CAMINAR'], ['RUEDA', 'ZOOM']];
 
 export function mountUi(list: Route[]) {

@@ -79,6 +79,19 @@
   .acciones .pix { width: 20px; height: 20px; }
 }
 
+/* --- Palanca para caminar (celu): a la izquierda, arriba de la barra ---------------- */
+.palanca {
+  position: fixed; left: calc(10px + env(safe-area-inset-left)); bottom: calc(78px + env(safe-area-inset-bottom));
+  width: 104px; height: 104px; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  background: #0f1217aa; border: 2px solid var(--dr-crema); box-shadow: 3px 3px 0 #000;
+}
+.palanca-perilla { position: absolute; inset: 31%; background: var(--dr-crema); box-shadow: 2px 2px 0 #000; pointer-events: none; }
+.palanca.on { border-color: var(--dr-amarillo); }
+.palanca.on .palanca-perilla { background: var(--dr-amarillo); }
+.ui.con-ventana .palanca, .palanca.fuera { display: none; }
+/* Los cartelitos pasan por arriba de la palanca. */
+.ui.con-palanca > .avisos { bottom: calc(192px + env(safe-area-inset-bottom)); }
+
 /* --- Compartir tu raro ---------------------------------------------------------------- */
 .compartir { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; }
 .compartir .foto { display: block; width: 158px; height: auto; image-rendering: pixelated; border: 2px solid var(--dr-crema); box-shadow: 3px 3px 0 #000; }

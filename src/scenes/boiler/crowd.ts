@@ -845,13 +845,18 @@ export class Crowd {
     this.send(d, p);
   }
 
-  /** Lo lleva en una dirección (teclado): hay que llamarlo en cada frame mientras se aprieta. */
-  steer(dx: number, dz: number) {
+  /**
+   * Lo lleva en una dirección (teclado o palanca): hay que llamarlo en cada frame mientras se aprieta.
+   * @param power cuánto se lleva la palanca (0–1): a fondo camina a su paso; con menos, más despacio.
+   */
+  steer(dx: number, dz: number, power = 1) {
     const d = this.dancers[0], len = Math.hypot(dx, dz);
     if (!d || !len || !this.mine) return;
     // El destino va siempre un par de pasos adelante: así camina a velocidad pareja, también en
-    // diagonal. Con las teclas va derecho: la escalera hay que encararla.
-    const p = { x: d.x + (dx / len) * 1.6, z: d.z + (dz / len) * 1.6 };
+    // diagonal. Con las teclas va derecho: la escalera hay que encararla. Con la palanca a medias
+    // el destino queda más cerca, y como al llegar afloja, va más lento.
+    const ahead = power > 0.95 ? 1.6 : 0.55 * Math.max(0.35, power);
+    const p = { x: d.x + (dx / len) * ahead, z: d.z + (dz / len) * ahead };
     offBooth(p);
     d.path = [];
     d.tx = p.x;

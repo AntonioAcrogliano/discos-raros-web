@@ -56,6 +56,8 @@ export interface BoilerRoom {
   unlockSound(): void;
   /** El raro del visitante hace algo en la pista (1 pucho, 2 agua, 3 saludo, 4 salto, 5 pasti). */
   act(kind: number): void;
+  /** La palanca del celu: para dónde se la lleva (x a la derecha, y hacia abajo, -1 a 1) y cuánto. 0, 0 = suelta. */
+  steer(x: number, y: number): void;
   /** Volumen del set que eligió el visitante (0–1). En iPhone no se puede manejar: `canVolume` es false. */
   readonly canVolume: boolean;
   volume(): number;
@@ -168,9 +170,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
 
   // Mirar la pista: arrastrando (mouse o dedo) la cámara gira alrededor y sube; con la rueda o
   // pellizcando se mete arriba de la cabina, encima de los raros. Si no se toca nada, vuelve sola.
-  // Y pasear por el boliche: un toque (o clic) en el piso o en un raro manda para ahí, y en la
-  // compu también se camina con WASD. El que tiene raro lo maneja a él, con la cámara atrás
-  // siguiéndolo; el que no, mueve la cámara sola. Parado en un lugar se puede girar todo alrededor.
+  // Y pasear por el boliche: en la compu, un clic en el piso o en un raro manda para ahí, y también
+  // se camina con WASD; en el celu se camina con la palanca (`steer`), no tocando. El que tiene raro
+  // lo maneja a él, con la cámara atrás siguiéndolo; el que no, mueve la cámara sola. Parado en un
+  // lugar se puede girar todo alrededor.
   const look = { yaw: 0, pitch: 0, zoom: 0, idle: 99, at: null as { x: number; z: number; y: number } | null };
   const IDLE_SECONDS = 12;
   /** El bloque de la cabina con los DJs y los parlantes de los costados, visto de arriba: la cámara no mira a través. */
@@ -183,6 +186,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let steering = false;
   const fingers = new Map<number, { x: number; y: number; sx: number; sy: number; t0: number }>();
   const walk = new Set<string>();
+  /** La palanca del celu (ver `steer`). */
+  const pad = { x: 0, y: 0 };
   const WALK_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
   window.addEventListener('keydown', (e) => {
     if (mode === 'pista' && WALK_KEYS.has(e.code) && !document.querySelector('.con-ventana') && !(e.target as Element).closest?.('input, textarea')) walk.add(e.code);
@@ -240,12 +245,14 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         talk.until = performance.now() + TALK_SECONDS * 1000;
         sfx.select();
       }
-      // ...y el del visitante se le para al lado.
+      // ...y el del visitante se le para al lado (en el celu no: ahí se camina con la palanca).
+      if (touch) return;
       const me = hasFirst ? crowd.spot() : null;
       if (!me) return goTo(v.x, v.z);
       const far = Math.hypot(v.x - me.x, v.z - me.z);
       return void (i > 0 && far > 1 && goTo(v.x - ((v.x - me.x) / far) * 0.9, v.z - ((v.z - me.z) / far) * 0.9));
     }
+    if (touch) return;
     v.set((e.clientX / window.innerWidth) * 2 - 1, 1 - (e.clientY / window.innerHeight) * 2, 0.5).unproject(stage.camera).sub(stage.camera.position);
     if (v.y > -0.02) return;
     const cam = stage.camera.position;
@@ -485,12 +492,14 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       // Lo que movió el visitante: gira alrededor de adonde mira; con zoom, el centro se corre
       // a la pista y la cámara sube lo justo para pasar por arriba de los DJs.
       look.idle += dt;
-      if (walk.size) {
-        // Adelante es para donde mira la cámara.
-        const f = (walk.has('KeyW') ? 1 : 0) - (walk.has('KeyS') ? 1 : 0), r = (walk.has('KeyD') ? 1 : 0) - (walk.has('KeyA') ? 1 : 0);
-        const at = look.at ?? { x: 0, z: -0.6, y: 0 }, s = Math.sin(look.yaw), c = Math.cos(look.yaw), step = 3 * dt;
+      const push = Math.min(1, Math.hypot(pad.x, pad.y));
+      if (walk.size || push) {
+        // Adelante es para donde mira la cámara. Con la palanca, además, va más despacio si se la lleva poco.
+        const f = push ? -pad.y / push : (walk.has('KeyW') ? 1 : 0) - (walk.has('KeyS') ? 1 : 0), r = push ? pad.x / push : (walk.has('KeyD') ? 1 : 0) - (walk.has('KeyA') ? 1 : 0);
+        const power = push || 1;
+        const at = look.at ?? { x: 0, z: -0.6, y: 0 }, s = Math.sin(look.yaw), c = Math.cos(look.yaw), step = 3 * dt * power;
         if (hasFirst) {
-          crowd.steer(-s * f + c * r, -c * f - s * r);
+          crowd.steer(-s * f + c * r, -c * f - s * r, power);
           follow = steering = true;
           look.idle = 0;
         } else stand(at.x + (-s * f + c * r) * step, at.z + (-c * f - s * r) * step);
@@ -777,6 +786,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     onVolume: null,
     volume: () => tele.level,
     setVolume: (v) => (tele.level = v),
+    steer(x, y) {
+      pad.x = x;
+      pad.y = y;
+    },
     act(kind) {
       if (mode !== 'pista' || !hasFirst) return;
       crowd.act(0, kind);
