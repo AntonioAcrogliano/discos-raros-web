@@ -22,6 +22,8 @@ interface YTPlayer {
   mute(): void;
   isMuted(): boolean;
   getPlayerState(): number;
+  getCurrentTime(): number;
+  getPlaybackRate(): number;
 }
 interface YTNamespace {
   Player: new (el: HTMLElement, o: Record<string, unknown>) => YTPlayer;
@@ -192,6 +194,15 @@ export class Tele {
     if (v === this.vol) return;
     this.vol = v;
     this.send();
+  }
+
+  /** Por dónde va el set, en segundos (-1 si todavía no hay player). Con esto las luces siguen la música (luces.ts). */
+  get time() {
+    return this.player?.getCurrentTime?.() ?? -1;
+  }
+  /** Velocidad de reproducción (1 = normal). */
+  get rate() {
+    return this.player?.getPlaybackRate?.() ?? 1;
   }
 
   /** En los juegos y en el creador la tele no recibe toques: si no, se comería los de los menús que le pasan por delante. */

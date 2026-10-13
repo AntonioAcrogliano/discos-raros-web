@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Music } from './luces';
 import {
   DR,
   DR_CYCLE,
@@ -62,8 +63,11 @@ export interface Club {
   fx: THREE.Group;
   /** La luz del boliche: la violeta de siempre, que late un poco con el bombo. La aplica el boiler. */
   light: { ambient: THREE.Color; key: THREE.Color; fog: THREE.Color };
-  /** @param beats tiempo de baile en beats · @param energy 0–1 · @param t segundos */
-  update(beats: number, energy: number, t: number): void;
+  /**
+   * @param beats tiempo de baile en beats · @param energy 0–1 · @param t segundos
+   * @param music lo que suena de verdad, si el set está analizado (luces.ts): ahí el bombo y los platillos salen de la música.
+   */
+  update(beats: number, energy: number, t: number, music?: Music | null): void;
 }
 
 const TAU = Math.PI * 2;
@@ -86,9 +90,10 @@ export function buildClub(): Club {
 
   // El golpe del bombo, que comparten todas las luces, y la luz general que late con él.
   let kick = 0;
+  let music: Music | null = null;
   const light = { ambient: new THREE.Color(), key: new THREE.Color(), fog: new THREE.Color('#120a1f') };
   updaters.push((beats, energy) => {
-    kick = Math.max(0, 1 - (beats - Math.floor(beats)) * 2.5) * energy;
+    kick = music ? music.kick : Math.max(0, 1 - (beats - Math.floor(beats)) * 2.5) * energy;
     light.ambient.setRGB(0.4 + 0.04 * kick, 0.36 + 0.03 * kick, 0.5 + 0.05 * kick);
     light.key.setRGB(0.62, 0.58, 0.56).multiplyScalar(1 + 0.14 * kick);
   });
@@ -166,8 +171,8 @@ export function buildClub(): Club {
     }
   });
   updaters.push((beats, energy) => {
-    // Los de un lado laten con el bombo y los del otro a contratiempo.
-    const off = Math.max(0, 1 - (beats + 0.5 - Math.floor(beats + 0.5)) * 2.5) * energy;
+    // Los de un lado laten con el bombo y los del otro a contratiempo (con los platillos, si se sabe qué suena).
+    const off = music ? music.high : Math.max(0, 1 - (beats + 0.5 - Math.floor(beats + 0.5)) * 2.5) * energy;
     tubes.forEach(({ tube, halo, color }, i) => {
       const b = 0.35 + 0.65 * (i % 2 ? off : kick);
       tube.uniforms.uColor.value.copy(color).multiplyScalar(b);
@@ -328,7 +333,7 @@ export function buildClub(): Club {
     beams.push({ beam, pool, mat, poolMat });
   });
   updaters.push((beats, energy) => {
-    const pulse = 1 - (beats - Math.floor(beats));
+    const pulse = music ? music.kick : 1 - (beats - Math.floor(beats));
     beams.forEach(({ beam, pool, mat, poolMat }, i) => {
       const o = beam.position;
       const rz = -o.x * 0.05 + 0.5 * Math.sin(TAU * beats * 0.0625 + i * 1.7);
@@ -377,7 +382,7 @@ export function buildClub(): Club {
   }
   updaters.push((_b, energy, t) => {
     ball.rotation.y = t * 0.6;
-    sparkMat.uniforms.uOpacity.value = 0.12 + 0.4 * energy;
+    sparkMat.uniforms.uOpacity.value = music ? 0.12 + 0.2 * energy + 0.3 * music.high : 0.12 + 0.4 * energy;
     const o = ball.position;
     for (const { mesh, a, e } of sparks) {
       const dx = Math.cos(a + t * 0.6) * Math.cos(e), dy = Math.sin(e), dz = Math.sin(a + t * 0.6) * Math.cos(e);
@@ -434,7 +439,7 @@ export function buildClub(): Club {
   }
   for (const x of [-0.12, 0, 0.12]) booth.add(box(0.05, 0.05, 0.05, makePSXMaterial({ color: DR.crema }), x, boothH + 0.11, boothZ + 0.2));
   updaters.push((beats, energy) => {
-    const level = (1 - (beats - Math.floor(beats))) * energy * 3.4;
+    const level = music ? music.kick * 3.4 : (1 - (beats - Math.floor(beats))) * energy * 3.4;
     leds.forEach((m, i) => m.uniforms.uColor.value.set(Math.floor(i / 2) < level ? (i < 4 ? DR.verdeClaro : DR.rojo) : '#202020'));
   });
 
@@ -474,7 +479,8 @@ export function buildClub(): Club {
     booth,
     fx,
     light,
-    update(beats, energy, t) {
+    update(beats, energy, t, m = null) {
+      music = m;
       for (const u of updaters) u(beats, energy, t);
     },
   };

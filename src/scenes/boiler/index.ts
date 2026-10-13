@@ -9,6 +9,7 @@ import { PASTI } from './dances';
 import { Crowd, MAX_DANCERS } from './crowd';
 import { loadGlbRig } from '../../characters/glbRig';
 import { buildPlaceholderDjs, makeDjs } from './djs';
+import { Luces } from './luces';
 import { Tele } from './tele';
 
 /** La luz de la calle (vereda y patio): de noche, tirando a violeta. Adentro manda `club.light`, que es la misma pero late con el bombo. */
@@ -280,6 +281,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let bpm = 126;
   let beats = 0;
   let energy = 0.7;
+  /** La música de verdad, para los sets que están analizados. */
+  const luces = new Luces();
   tele.onState = (p) => room.onPlayState?.(p);
   tele.onLevel = (v) => room.onVolume?.(v);
   tele.onEnded = () => {
@@ -333,11 +336,19 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   stage.onAfterRender = () => tele.render();
   stage.onUpdate = (t, dt) => {
     // Sin video (o si YouTube no cargó) la pista baila igual; con el video en pausa, se frena.
-    const target = mode === 'creador' ? 0.8 : mode === 'pelea' ? 1 : tele.videoId ? (tele.playing ? 1 : 0.12) : 0.7;
+    const music = tele.playing ? luces.follow(dt, tele.time, tele.rate) : null;
+    // Si se sabe qué suena, la pista afloja en los cortes y explota en los drops.
+    const target = mode === 'creador' ? 0.8 : mode === 'pelea' ? 1 : tele.videoId ? (tele.playing ? (music ? 0.45 + 0.55 * Math.min(1, music.loud * 1.3) : 1) : 0.12) : 0.7;
     energy += (target - energy) * Math.min(1, dt * 3);
     const danceBpm = danceBpmOf(bpm);
-    beats += (dt * danceBpm) / 60 * (0.25 + 0.75 * Math.min(1, energy * 1.4));
-    club.update(beats, energy, t);
+    if (music) {
+      // Se baila al tempo del momento, y el paso se va acomodando para caer justo en el beat.
+      const half = danceBpm / bpm;
+      let off = music.beat * half - beats;
+      off -= Math.round(off);
+      beats += Math.max(0, (dt / music.period) * half + off * Math.min(1, dt * 5));
+    } else beats += (dt * danceBpm) / 60 * (0.25 + 0.75 * Math.min(1, energy * 1.4));
+    club.update(beats, energy, t, music);
     if (mode !== 'afuera') inClub += ((mode === 'pista' || mode === 'creador' ? 1 : 0) - inClub) * Math.min(1, dt * 3);
     relight(Math.min(1, dt * 12));
     if (mode === 'pista') crowd.wander(dt, energy);
@@ -347,7 +358,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (patio.group.visible) patio.update(beats, energy, t);
     // El volumen del set va llegando de a poco a donde tiene que estar.
     if (!fixedVolume) tele.volume = tele.volume + Math.sign(wantVolume - tele.volume) * Math.min(Math.abs(wantVolume - tele.volume), dt * 1.2);
-    stage.post.pulse = Math.max(0, 1 - (beats - Math.floor(beats)) * 2) * energy;
+    stage.post.pulse = music ? music.kick * energy : Math.max(0, 1 - (beats - Math.floor(beats)) * 2) * energy;
 
     if (mode === 'pista' && namesLeft > 0) namesLeft -= dt;
     clock = t;
@@ -778,6 +789,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       if (list) playlist = list;
       current = set;
       bpm = set.bpm;
+      luces.load(set.id);
       room.onNowPlaying?.(set);
       void tele.play(set.id);
     },
