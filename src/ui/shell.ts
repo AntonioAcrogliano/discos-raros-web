@@ -73,6 +73,41 @@ navbar.setAttribute('aria-label', 'Secciones');
 const avisos = el('div', 'avisos');
 ui.append(hud, navbar, avisos);
 
+/** Botones de lo que puede hacer el raro del visitante en la pista (también van con las teclas 1, 2, 3...). */
+const acciones = el('div', 'acciones');
+acciones.setAttribute('role', 'group');
+acciones.setAttribute('aria-label', 'Acciones de tu raro');
+acciones.hidden = true;
+ui.append(acciones);
+let runAction: ((kind: number) => void) | null = null;
+
+export interface ActionButton {
+  kind: number;
+  label: string;
+  icon: string[];
+}
+
+/** Pone (o saca, con null) los botones de acciones. La tecla de cada una es su lugar en la lista: 1, 2, 3... */
+export function setActions(list: ActionButton[] | null, run?: (kind: number) => void) {
+  runAction = list && run ? run : null;
+  acciones.hidden = !runAction;
+  acciones.replaceChildren(
+    ...(list ?? []).map((a, i) => {
+      const b = el('button', 'btn chico', [pixIcon(a.icon), el('span', 'tecla', String(i + 1)), el('span', 'nombre', a.label)]);
+      b.type = 'button';
+      b.dataset.kind = String(a.kind);
+      b.setAttribute('aria-label', `${a.label} (tecla ${i + 1})`);
+      b.addEventListener('click', () => {
+        sfx.select();
+        runAction?.(a.kind);
+        // Que el foco no se quede en el botón: si no, el espacio o el Enter lo repiten sin querer.
+        b.blur();
+      });
+      return b;
+    }),
+  );
+}
+
 /** Saca un cartelito titilando. */
 function dismiss(box: HTMLElement) {
   box.classList.add('chau');
@@ -107,6 +142,7 @@ let leave: (() => void) | null = null;
 /** Mostrar u ocultar la barra y el cartel (la pelea usa toda la pantalla). */
 export function setChrome(visible: boolean) {
   navbar.hidden = hud.hidden = !visible;
+  acciones.classList.toggle('fuera', !visible);
   // Al volver a la pista (de un juego, por ejemplo) el cartel puede haber cambiado de ancho.
   if (visible) requestAnimationFrame(marquee);
 }
@@ -270,6 +306,15 @@ function onKey(e: KeyboardEvent) {
   }
   const typing = t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || (t.tagName === 'INPUT' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown');
   if (typing) return;
+  // En la pista, los números son las acciones del raro.
+  if (!panel && runAction && !navbar.hidden && /^[1-9]$/.test(e.key)) {
+    const b = acciones.children[Number(e.key) - 1] as HTMLElement | undefined;
+    if (b && !e.repeat) {
+      sfx.select();
+      runAction(Number(b.dataset.kind));
+    }
+    return;
+  }
   // En la barra se va de costado; en las ventanas, para arriba y abajo.
   const fwd = panel ? e.key === 'ArrowDown' : e.key === 'ArrowRight' || e.key === 'ArrowDown';
   const back = panel ? e.key === 'ArrowUp' : e.key === 'ArrowLeft' || e.key === 'ArrowUp';

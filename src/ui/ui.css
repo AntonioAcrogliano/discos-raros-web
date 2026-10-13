@@ -64,6 +64,21 @@
 .avisos .chau { animation: dr-blink 0.16s steps(1) 4 forwards; }
 .ui.con-ventana .avisos, .navbar[hidden] ~ .avisos { display: none; }
 
+/* --- Acciones del raro: a la derecha, arriba de la barra --------------------------- */
+.acciones { position: fixed; right: 10px; bottom: calc(74px + env(safe-area-inset-bottom)); display: grid; gap: 6px; }
+.acciones .btn { display: flex; align-items: center; gap: 7px; padding: 6px 8px 5px; }
+.acciones .pix { width: 16px; height: 16px; }
+.acciones .tecla { color: var(--dr-amarillo); }
+.acciones .btn:hover .tecla, .acciones .btn:focus-visible .tecla { color: inherit; }
+.acciones .btn:focus-visible::before { content: none; }
+.ui.con-ventana .acciones, .acciones.fuera { display: none; }
+/* En pantallas táctiles no hay teclas: solo el dibujito, más grande para el dedo. */
+@media (pointer: coarse) {
+  .acciones .tecla, .acciones .nombre { display: none; }
+  .acciones .btn { padding: 9px; }
+  .acciones .pix { width: 20px; height: 20px; }
+}
+
 /* --- Compartir tu raro ---------------------------------------------------------------- */
 .compartir { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; }
 .compartir .foto { display: block; width: 158px; height: auto; image-rendering: pixelated; border: 2px solid var(--dr-crema); box-shadow: 3px 3px 0 #000; }
@@ -229,7 +244,8 @@
   /* Barra de pestañas: cuatro casilleros iguales, con el dibujito arriba. */
   .navbar { left: 0; right: 0; bottom: 0; transform: none; max-width: none; border-width: 2px 0 0; box-shadow: none; padding-bottom: env(safe-area-inset-bottom); }
   .navbar .btn { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 5px; padding: 9px 3px 7px; font-size: 7px; line-height: 1.5; text-align: center; white-space: normal; }
-  .ui > .avisos { bottom: calc(70px + env(safe-area-inset-bottom)); }
+  .ui > .avisos { bottom: calc(70px + env(safe-area-inset-bottom)); max-width: calc(100% - 120px); }
+  .acciones { right: 6px; bottom: calc(70px + env(safe-area-inset-bottom)); }
   .ayuda { font-size: 7px; }
   .compartir .foto { width: 118px; }
   .suena { width: 100%; }

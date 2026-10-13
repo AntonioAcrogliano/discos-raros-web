@@ -53,6 +53,8 @@ export interface BoilerRoom {
   isPlaying(): boolean;
   /** Prende el sonido del set. Hay que llamarlo adentro del primer click (PRESS START): en iPhone, después ya no deja. */
   unlockSound(): void;
+  /** El raro del visitante hace algo en la pista (1 pucho, 2 agua, 3 saludo, 4 salto). */
+  act(kind: number): void;
   /** Pausa o reanuda el set. */
   toggle(): void;
   /** Pasa al set siguiente (1) o al anterior (-1) de la lista. */
@@ -477,29 +479,43 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       if (look.at) {
         // Parado en un lugar de la pista: la cámara le gira alrededor, de cerca.
         // Siguiendo al raro se mira un poco más de arriba, por encima de las cabezas de los que se cruzan.
-        const pitch = clamp((follow ? 0.42 : 0.22) + look.pitch, 0.05, 0.95);
-        const dx = Math.sin(look.yaw) * Math.cos(pitch), dy = Math.sin(pitch), dz = Math.cos(look.yaw) * Math.cos(pitch);
+        let pitch = clamp((follow ? 0.42 : 0.22) + look.pitch, 0.05, 0.95);
         // Contra una pared (o el techo) la cámara se acerca, en vez de quedar del otro lado.
         const room = (from: number, d: number, min: number, max: number) => (d > 1e-4 ? (max - from) / d : d < -1e-4 ? (min - from) / d : Infinity);
-        // Lo mismo con la cabina y sus parlantes: si quedan entre la cámara y lo que se mira, la
-        // cámara se para de este lado (salvo que ya pase por arriba de todo).
         const at = look.at;
         // La altura de los ojos acompaña al piso: arriba de un palco se mira desde arriba.
         eyeY += (1.3 + at.y - eyeY) * Math.min(1, dt * 6);
         const eye = eyeY;
-        const wall = (from: number, d: number, plane: number, other: number, od: number, lo: number, hi: number) => {
-          const t = (plane - from) / d;
-          const o = other + od * t;
-          return t > 0 && o > lo && o < hi && eye + dy * t < 3 ? Math.max(0.9, t) : Infinity;
+        // Lo mismo con la cabina y sus parlantes: si quedan entre la cámara y lo que se mira, la
+        // cámara se para de este lado (salvo que ya pase por arriba de todo).
+        let dx = 0, dy = 0, dz = 0, booth = Infinity;
+        const aim = () => {
+          dx = Math.sin(look.yaw) * Math.cos(pitch);
+          dy = Math.sin(pitch);
+          dz = Math.cos(look.yaw) * Math.cos(pitch);
+          const wall = (from: number, d: number, plane: number, other: number, od: number, lo: number, hi: number) => {
+            const t = (plane - from) / d;
+            const o = other + od * t;
+            return t > 0 && o > lo && o < hi && eye + dy * t < 3 ? Math.max(0.9, t) : Infinity;
+          };
+          booth =
+            at.z < BOOTH.back && dz > 1e-4
+              ? wall(at.z, dz, BOOTH.back, at.x, dx, -BOOTH.halfX, BOOTH.halfX)
+              : at.z > BOOTH.front && dz < -1e-4
+                ? wall(at.z, dz, BOOTH.front, at.x, dx, -BOOTH.halfX, BOOTH.halfX)
+                : Math.abs(at.x) > BOOTH.halfX && dx * at.x < -1e-4
+                  ? wall(at.x, dx, Math.sign(at.x) * BOOTH.halfX, at.z, dz, BOOTH.back, BOOTH.front)
+                  : Infinity;
         };
-        const booth =
-          at.z < BOOTH.back && dz > 1e-4
-            ? wall(at.z, dz, BOOTH.back, at.x, dx, -BOOTH.halfX, BOOTH.halfX)
-            : at.z > BOOTH.front && dz < -1e-4
-              ? wall(at.z, dz, BOOTH.front, at.x, dx, -BOOTH.halfX, BOOTH.halfX)
-              : Math.abs(at.x) > BOOTH.halfX && dx * at.x < -1e-4
-                ? wall(at.x, dx, Math.sign(at.x) * BOOTH.halfX, at.z, dz, BOOTH.back, BOOTH.front)
-                : Infinity;
+        aim();
+        if (booth < 3.2) {
+          // Muy cerca de la cabina, antes que quedar pegada al raro la cámara sube y mira por arriba.
+          const over = Math.atan2(3.15 - eye, booth * Math.cos(pitch)) + 0.02;
+          if (over <= 0.95) {
+            pitch = Math.max(pitch, over);
+            aim();
+          }
+        }
         const dist = Math.min(4.6 - 2.6 * look.zoom, booth, room(at.x, dx, -CLUB.halfW + 0.4, CLUB.halfW - 0.4), room(eye, dy, 0, CLUB.ceilY - 0.5), room(at.z, dz, CLUB.backZ + 0.4, CLUB.frontZ - 0.4));
         wantTarget.set(at.x, eye, at.z);
         wantPos.set(at.x + dx * dist, eye + dy * dist, at.z + dz * dist);
@@ -699,6 +715,13 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       void tele.play(set.id);
     },
     unlockSound: () => tele.enableSound(),
+    act(kind) {
+      if (mode !== 'pista' || !hasFirst) return;
+      crowd.act(0, kind);
+      // Que se vea: la cámara va con él.
+      follow = true;
+      look.idle = 0;
+    },
     isPlaying: () => tele.playing,
     playing: () => current,
     drawOverlay(ctx, w, h, t) {

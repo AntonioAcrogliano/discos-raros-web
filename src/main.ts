@@ -8,7 +8,7 @@ import { askAtDoor } from './sections/puerta';
 import { openSets } from './sections/sets';
 import { PSXStage, fontsReady, makeLogoCanvas, setLogoSprite } from './style-kit';
 import { isTouch, sinTildes } from './ui/dom';
-import { go, hudContador, mountUi, pistaHint, player, setChrome, setRouteLabel, showCall, showHint } from './ui/shell';
+import { type ActionButton, go, hudContador, mountUi, pistaHint, player, setActions, setChrome, setRouteLabel, showCall, showHint } from './ui/shell';
 import { showStartScreen } from './ui/startScreen';
 
 /** Dibujitos de la barra: un disco, un raro, un joystick y un sobre. */
@@ -18,6 +18,14 @@ const ICONS = {
   juegos: ['.........', '.XXXXXXX.', 'XXXXXXXXX', 'XX.XXX.XX', 'X...X.X.X', 'XX.XXX.XX', 'XXXXXXXXX', 'XXX...XXX', '.X.....X.'],
   sobre: ['.........', 'XXXXXXXXX', 'XX.....XX', 'X.X...X.X', 'X..X.X..X', 'X...X...X', 'X.......X', 'XXXXXXXXX', '.........'],
 };
+
+/** Lo que puede hacer tu raro en la pista. `kind` es el de `action` en dances.ts. */
+const ACTIONS: ActionButton[] = [
+  { kind: 1, label: 'PUCHO', icon: ['.........', '......X..', '.....X...', '......X..', '.........', 'XXXXXX.XX', 'XXXXXX.XX', '.........', '.........'] },
+  { kind: 2, label: 'AGUA', icon: ['...XXX...', '...XXX...', '..XXXXX..', '..X...X..', '..X...X..', '..XXXXX..', '..XXXXX..', '..XXXXX..', '..XXXXX..'] },
+  { kind: 3, label: 'HOLA', icon: ['..X.X.X..', '..X.X.X.X', '..X.X.X.X', 'X.XXXXXXX', 'X.XXXXXXX', 'XXXXXXXXX', '.XXXXXXX.', '..XXXXX..', '..XXXXX..'] },
+  { kind: 4, label: 'SALTO', icon: ['....X....', '...XXX...', '..XXXXX..', '.XXXXXXX.', '...XXX...', '...XXX...', '...XXX...', '.........', 'XXXXXXXXX'] },
+];
 
 async function main() {
   const stage = new PSXStage(document.querySelector<HTMLCanvasElement>('#stage')!);
@@ -70,6 +78,8 @@ async function main() {
     room.setPista(d);
     contador(d.total);
     setRouteLabel('crear', d.mine ? 'TU RARO' : d.total ? 'CREA TU RARO' : 'ENTRA A LA PISTA', !d.mine && d.total === 0);
+    // Las acciones son del que tiene raro.
+    setActions(d.mine ? ACTIONS : null, (kind) => room.act(kind));
   };
   void pista.then((d) => d && setPista(d));
   // Raro recién armado (en la puerta o en el creador): se invita a compartirlo, una vez adentro.

@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { LOOK, type Look, type Raro } from '../../../shared/look';
 import { DETAIL, type DetailCell, detailUv, make3DGlassesTexture, makeDetailTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
 import { CLUB, PALCO, floorAt } from './club';
-import { EN_LA_FILA, dance, makePose, stride } from './dances';
+import { ACTION_SECONDS, AGUA, EN_LA_FILA, PUCHO as FUMAR, SALUDO, action, dance, makePose, stride } from './dances';
 
 /**
  * La pista: hasta MAX personajes dibujados con instancing (una malla instanciada por parte del
@@ -432,6 +432,9 @@ export const CELU = HAND_GEOS.length;
 HAND_GEOS.push(merge(bx(0.075, 0.15, 0.016, 0, HAND_Y - 0.035, 0.06, K), bx(0.06, 0.125, 0.006, 0, HAND_Y - 0.035, 0.07, W)));
 /** El pucho del que fuma en la fila: blanco, con la brasa en la punta. */
 export const PUCHO = HAND_GEOS.length;
+const FUMAR_GEO = PUCHO;
+/** Cuántos pueden estar fumando o tomando a la vez (los que sobran lo hacen igual, pero sin nada en la mano). */
+const PROPS = 40;
 HAND_GEOS.push(merge(bx(0.016, 0.016, 0.075, 0.03, HAND_Y - 0.02, 0.085, W), bx(0.018, 0.018, 0.018, 0.03, HAND_Y - 0.02, 0.13, R)));
 /** Lo que va en las dos manos; el resto, solo en la derecha. */
 const BOTH_HANDS = new Set([1, 4]);
@@ -502,6 +505,11 @@ interface Dancer {
   path: Spot[];
   /** Cuánto hace que quiere caminar y no avanza (para que no se quede empujando una pared). */
   stall: number;
+  /** Lo que está haciendo además de bailar (ver `action` en dances.ts; 0 = nada) y hace cuánto. */
+  act: number;
+  actT: number;
+  /** Cuánto falta para que le pinte hacer algo por su cuenta. */
+  mood: number;
 }
 
 type Spot = { x: number; z: number };
@@ -670,6 +678,9 @@ export class Crowd {
   private slots = makeSlots();
   private dancers: Dancer[] = [];
   private solo = false;
+  private cigs: THREE.InstancedMesh;
+  private bottles: THREE.InstancedMesh;
+  private puffs: THREE.InstancedMesh;
   private thighs: THREE.InstancedMesh;
   private shins: THREE.InstancedMesh;
   private upperArms: THREE.InstancedMesh;
@@ -745,6 +756,10 @@ export class Crowd {
     const glow = makePSXMaterial({ map: detail, detail: true, lit: false });
     this.held = parts(HAND_GEOS, (i) => (i === 1 || i === CELU || i === PUCHO ? glow : plain), capacity * 2);
     this.parts = [this.shoes, this.torsos, this.heads, this.hair, this.acc, this.glasses, this.mouth, this.over, this.tops, this.skirts, this.held];
+    // Lo de las acciones: el pucho y la botella (para cualquiera, tenga lo que tenga en la mano) y el humo.
+    this.cigs = mesh(HAND_GEOS[FUMAR_GEO]!, PROPS, glow);
+    this.bottles = mesh(merge(bx(0.06, 0.17, 0.06, 0.01, HAND_Y + 0.01, 0.07, C), bx(0.03, 0.035, 0.03, 0.01, HAND_Y + 0.115, 0.07, W)), PROPS);
+    this.puffs = mesh(new THREE.BoxGeometry(1, 1, 1), PROPS * 3, makePSXMaterial({ color: '#d9d2e6', lit: false, opacity: 0.5 }));
   }
 
   get count() {
@@ -780,6 +795,9 @@ export class Crowd {
         wait: r() * 8,
         path: [],
         stall: 0,
+        act: 0,
+        actT: 0,
+        mood: 6 + r() * 80,
       };
     });
     spread(this.dancers, this.slots);
@@ -848,6 +866,31 @@ export class Crowd {
     d.tz = d.z + this.vel.z * 0.12;
   }
 
+  /**
+   * El bailarín `i` hace algo (fuma, toma agua, saluda, salta). Si el que saluda es el del
+   * visitante, el que tenga más cerca se da vuelta y le devuelve el saludo.
+   */
+  act(i: number, kind: number) {
+    const d = this.dancers[i];
+    if (!d || !ACTION_SECONDS[kind]) return;
+    d.act = kind;
+    d.actT = 0;
+    if (i !== 0 || !this.mine || kind !== SALUDO) return;
+    let near = -1, best = 3.4;
+    for (let j = 1; j < this.dancers.length; j++) {
+      const o = this.dancers[j];
+      const far = Math.hypot(o.x - d.x, o.z - d.z);
+      if (far < best && Math.abs(floorAt(o.x, o.z) - floorAt(d.x, d.z)) < 0.7 && !o.act) {
+        best = far;
+        near = j;
+      }
+    }
+    if (near < 0) return;
+    const o = this.dancers[near];
+    // Tarda un cachito en reaccionar; mientras tanto lo mira y se queda donde está.
+    Object.assign(o, { act: SALUDO, actT: -0.7, buddy: 0, path: [], tx: o.x, tz: o.z, wait: Math.max(o.wait, 5) });
+  }
+
   /** Dónde está parado el bailarín `i` (`y` = altura del piso ahí: 0 en la pista, más arriba en un palco). */
   spot(i = 0) {
     const d = this.dancers[i];
@@ -897,7 +940,8 @@ export class Crowd {
   /** Para dónde mira parado: a su compañero de baile si lo tiene al lado; si no, a la cabina, cada uno un poco a su manera. */
   private facing(d: Dancer) {
     const b = d.buddy >= 0 ? this.dancers[d.buddy] : null;
-    if (b && Math.hypot(b.x - d.x, b.z - d.z) < 1.9) return Math.atan2(b.x - d.x, b.z - d.z);
+    // (El que está devolviendo un saludo mira al que lo saludó aunque no lo tenga pegado.)
+    if (b && Math.hypot(b.x - d.x, b.z - d.z) < (d.act === SALUDO ? 4 : 1.9)) return Math.atan2(b.x - d.x, b.z - d.z);
     return Math.atan2(-d.x * 0.5, CLUB.djZ - d.z) + d.bias;
   }
 
@@ -980,6 +1024,18 @@ export class Crowd {
     ds.forEach((d, i) => {
       this.prev[i * 2] = d.x;
       this.prev[i * 2 + 1] = d.z;
+    });
+    // Las acciones corren su tiempo; a los que pasean cada tanto les pinta hacer una, parados.
+    ds.forEach((d, i) => {
+      if (d.act) {
+        d.actT += dt;
+        if (d.actT >= ACTION_SECONDS[d.act]) d.act = 0;
+      } else if (!(i === 0 && this.mine) && d.walk < 0.1 && (d.mood -= dt) <= 0) {
+        const pick = Math.random();
+        d.act = pick < 0.34 ? FUMAR : pick < 0.68 ? AGUA : pick < 0.8 ? SALUDO : 4;
+        d.actT = 0;
+        d.mood = 30 + Math.random() * 80;
+      }
     });
     const me = ds[0];
     this.walking = false;
@@ -1139,6 +1195,8 @@ export class Crowd {
 
   // Temporales para no generar basura en cada frame.
   private pose = makePose();
+  /** Matriz que no dibuja nada (para esconder una pieza sin correr de lugar a las demás). */
+  private hidden = new THREE.Matrix4().makeScale(0, 0, 0);
   private root = new THREE.Matrix4();
   private joint = new THREE.Matrix4();
   private local = new THREE.Matrix4();
@@ -1185,6 +1243,7 @@ export class Crowd {
     const e = energy;
     const p = this.pose;
     for (const part of this.parts) part.reset();
+    this.cigs.count = this.bottles.count = this.puffs.count = 0;
     this.shown().forEach((d, i) => {
       const l = d.look;
       const b = BUILDS[l.cuerpo] ?? BUILDS[0];
@@ -1192,6 +1251,8 @@ export class Crowd {
       dance(l.baile, beats + d.phase * (l.baile >= EN_LA_FILA ? 1.7 : 0.012), e, p);
       // El que va caminando da pasos de verdad (el del visitante, más largos).
       if (d.walk > 0.01 && !this.solo) stride(p, d.stride, d.walk, i === 0 && this.mine ? 0.62 : 0.36);
+      const doing = this.solo || d.actT <= 0 ? 0 : d.act;
+      if (doing) action(p, doing, d.actT);
       // En el creador gira despacio para verlo de todos lados (o mira para donde lo dejaron).
       const facing = this.solo ? (this.spin ?? Math.sin(t * 0.7) * 0.9) : d.yaw + Math.sin(t * 0.9 + d.phase) * 0.08 * (1 - e);
       const h = b.h * d.vary;
@@ -1214,7 +1275,10 @@ export class Crowd {
       if (both) this.held.matrix(l.mano, hand);
       hand = this.limb(this.upperArms, this.foreArms, i * 2 + 1, -shoulder, SHOULDER_Y, UPPER, p.aRx, p.aRz, p.eR, b.limb);
       this.hands.setMatrixAt(i * 2 + 1, hand);
-      this.held.matrix(l.mano, hand);
+      // Fumando o tomando, en esa mano va el pucho o la botella (lo que llevaba se guarda un rato).
+      const prop = doing === FUMAR ? this.cigs : doing === AGUA ? this.bottles : null;
+      if (prop && prop.count < PROPS) prop.setMatrixAt(prop.count++, hand);
+      this.held.matrix(l.mano, prop ? this.hidden : hand);
 
       const torso = this.wide.copy(this.root).scale(this.scale.set(b.w, 1, b.d));
       this.torsos.matrix(l.estampa, torso);
@@ -1233,6 +1297,16 @@ export class Crowd {
         this.mouth.matrix(l.boca, head);
       }
       d.headY = y + (NECK_Y + 0.3 * b.head) * h;
+      // El humo: después de cada pitada salen tres bocanadas que suben y se agrandan.
+      if (doing === FUMAR) {
+        const u = ((d.actT % 2.6) / 2.6 - 0.5) / 0.45;
+        for (let k = 0; k < 3 && u > 0 && u < 1 && this.puffs.count < PROPS * 3; k++) {
+          const age = Math.min(1, u + k * 0.18), size = (0.05 + 0.13 * age) * (1 - 0.6 * Math.max(0, age - 0.7) / 0.3);
+          const out = 0.2 + age * 0.35 + k * 0.05;
+          this.out.makeScale(size, size, size).setPosition(d.x + Math.sin(facing) * out, d.headY - 0.12 * h + age * 0.45 + k * 0.06, d.z + Math.cos(facing) * out);
+          this.puffs.setMatrixAt(this.puffs.count++, this.out);
+        }
+      }
     });
     for (const m of this.all) if (m.count) m.instanceMatrix.needsUpdate = true;
   }

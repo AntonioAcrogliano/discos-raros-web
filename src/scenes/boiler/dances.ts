@@ -43,6 +43,53 @@ export const makePose = (): Pose => ({ hop: 0, yaw: 0, lean: 0, roll: 0, sway: 0
 
 const TAU = Math.PI * 2;
 
+/** Lo que un raro puede hacer en la pista además de bailar (el visitante con una tecla; los demás, cuando les pinta). */
+export const PUCHO = 1, AGUA = 2, SALUDO = 3, SALTO = 4;
+/** Cuánto dura cada una (segundos). */
+export const ACTION_SECONDS = [0, 5.2, 3.6, 2.4, 1.5];
+
+/** Sube de 0 a 1 y vuelve, entre `a` y `b` (con los bordes suaves). */
+const pulse = (x: number, a: number, b: number, edge = 0.12) => Math.max(0, Math.min(1, (x - a) / edge, (b - x) / edge));
+
+/**
+ * Una acción encima del baile (y del caminar: se puede fumar caminando).
+ * @param t segundos desde que arrancó
+ */
+export function action(p: Pose, kind: number, t: number) {
+  const dur = ACTION_SECONDS[kind];
+  // Entra y sale de a poco.
+  const w = Math.max(0, Math.min(1, t / 0.25, (dur - t) / 0.3));
+  const mix = (from: number, to: number) => from + (to - from) * w;
+  if (kind === PUCHO || kind === AGUA) {
+    // La mano derecha va a la boca: dos pitadas, o un trago largo con la cabeza para atrás.
+    const m = kind === PUCHO ? pulse((t % 2.6) / 2.6, 0.12, 0.5) : pulse(t / dur, 0.15, 0.82, 0.14);
+    p.aRx = mix(p.aRx, -(0.45 + 0.85 * m));
+    p.aRz = mix(p.aRz, -0.1 + 0.3 * m);
+    p.eR = mix(p.eR, -(0.5 + 1.75 * m));
+    if (kind === AGUA) p.headRx = mix(p.headRx, -0.5 * m);
+  } else if (kind === SALUDO) {
+    const wave = Math.sin(t * 13);
+    p.aRx = mix(p.aRx, 0);
+    p.aRz = mix(p.aRz, -(2.45 + 0.28 * wave));
+    p.eR = mix(p.eR, -0.25 - 0.3 * Math.max(0, wave));
+    p.headRy = mix(p.headRy, 0);
+  } else if (kind === SALTO) {
+    // Se agacha, salta con los brazos arriba y cae.
+    const u = t / dur;
+    const air = pulse(u, 0.28, 0.82, 0.2), squat = Math.max(pulse(u, 0, 0.32, 0.14), pulse(u, 0.8, 1, 0.1)) * 0.9;
+    p.hop = mix(p.hop, Math.sin(Math.PI * Math.max(0, Math.min(1, (u - 0.28) / 0.54))) * 0.6);
+    p.kL = mix(p.kL, squat);
+    p.kR = mix(p.kR, squat);
+    p.tL = mix(p.tL, -squat * 0.5);
+    p.tR = mix(p.tR, -squat * 0.5);
+    p.aLz = mix(p.aLz, 0.1 + 2.5 * air);
+    p.aRz = mix(p.aRz, -0.1 - 2.5 * air);
+    p.aLx = mix(p.aLx, 0);
+    p.aRx = mix(p.aRx, 0);
+    p.sway = mix(p.sway, 0);
+  }
+}
+
 /**
  * Caminar: mezcla el paso de baile con un ciclo de pasos de verdad (una pierna adelante y la
  * otra atrás, la rodilla que se dobla al pasar, los brazos al revés que las piernas).
