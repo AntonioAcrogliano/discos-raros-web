@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type Look, type LookView, type Raro, type SetInfo, validLook } from '../../../shared/look';
 import type { PistaData } from '../../api';
-import { DR, type PSXStage, audioLive, outlined, psxUniforms, street, titleUnit } from '../../style-kit';
+import { DR, FONT, type PSXStage, audioLive, outlined, psxUniforms, street, titleUnit, sfx } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
 import { CLUB, buildClub } from './club';
@@ -111,6 +111,9 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let draft: Raro | null = null;
   /** ¿El primer lugar de la pista es el del visitante? */
   let hasFirst = false;
+  /** El raro que está diciendo su frase (lo tocaron) y hasta cuándo se ve el globito. */
+  const talk = { i: -1, until: 0 };
+  const TALK_SECONDS = 4.5;
   const rebuild = () => {
     const first = draft ?? pista.mine;
     hasFirst = Boolean(first);
@@ -118,6 +121,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     // Solo baila gente que se sumó de verdad: si no hay nadie, la pista está vacía.
     crowd.mine = hasFirst;
     crowd.setDancers([...(first ? [first] : []), ...others]);
+    talk.until = 0;
     pickShowcase();
   };
 
@@ -203,7 +207,13 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (!f || fingers.size > 1 || mode !== 'pista' || performance.now() - f.t0 > 350 || Math.hypot(e.clientX - f.sx, e.clientY - f.sy) > 8) return;
     const i = pointed();
     if (i >= 0 && crowd.headTop(i, v)) {
-      // Tocó a un raro: se le para al lado (tocarse a uno mismo no hace nada).
+      // Tocó a un raro: dice su frase (el propio también, para ver cómo queda)...
+      if (crowd.phraseOf(i)) {
+        talk.i = i;
+        talk.until = performance.now() + TALK_SECONDS * 1000;
+        sfx.select();
+      }
+      // ...y el del visitante se le para al lado.
       const me = hasFirst ? crowd.spot() : null;
       if (!me) return goTo(v.x, v.z);
       const far = Math.hypot(v.x - me.x, v.z - me.z);
@@ -528,6 +538,39 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     }
     if (name) outlined(ctx, name, x, y, unit, color);
   };
+  /** Globito con la frase, arriba de la cabeza del raro que habla: letras negras sobre crema, con su piquito. */
+  const bubble = (ctx: CanvasRenderingContext2D, w: number, h: number, i: number) => {
+    const says = sinTildes(crowd.phraseOf(i));
+    if (!says || !crowd.headTop(i, v)) return false;
+    v.project(stage.camera);
+    if (v.z > 1 || v.z < -1) return false;
+    const unit = Math.max(6, Math.round(titleUnit(w, h) * 0.5));
+    // En renglones de hasta 16 letras, cortando por palabra.
+    const lines: string[] = [];
+    for (const word of says.split(' ')) {
+      const last = lines[lines.length - 1];
+      if (last !== undefined && last.length + 1 + word.length <= 16) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    const pad = Math.round(unit * 0.6), gap = Math.round(unit * 0.4);
+    const bw = Math.max(...lines.map((l) => l.length)) * unit + pad * 2, bh = lines.length * unit + (lines.length - 1) * gap + pad * 2;
+    const hx = Math.round((v.x * 0.5 + 0.5) * w), hy = Math.round((-v.y * 0.5 + 0.5) * h);
+    const x = Math.max(2, Math.min(w - bw - 2, hx - Math.round(bw / 2))), y = Math.max(unit * 2, hy - unit * 2 - bh);
+    ctx.fillStyle = DR.negro;
+    ctx.fillRect(x - 1, y - 1, bw + 2, bh + 2);
+    // Piquito hacia la cabeza.
+    for (let k = 0; k < 4; k++) ctx.fillRect(Math.max(x + 2, Math.min(x + bw - 8, hx - 3)) + k, y + bh + 1 + k, 7 - k * 2 > 0 ? 7 - k * 2 : 1, 1);
+    ctx.fillStyle = DR.crema;
+    ctx.fillRect(x, y, bw, bh);
+    for (let k = 0; k < 3; k++) ctx.fillRect(Math.max(x + 2, Math.min(x + bw - 8, hx - 3)) + 1 + k, y + bh + k, 5 - k * 2, 1);
+    ctx.fillStyle = DR.negro;
+    ctx.font = `${unit}px ${FONT}`;
+    lines.forEach((l, n) => ctx.fillText(l, x + Math.round(bw / 2), y + pad + Math.round(unit / 2) + n * (unit + gap)));
+    // El nombre de quien habla, arriba del globito.
+    const name = sinTildes(crowd.nameOf(i));
+    if (name) outlined(ctx, name, x + Math.round(bw / 2), y - unit, unit, i === 0 && hasFirst ? DR.amarillo : DR.crema);
+    return true;
+  };
   /** El raro que está abajo del puntero (el de más adelante, si se tapan), o -1. */
   const feet = new THREE.Vector3();
   const pointed = () => {
@@ -674,9 +717,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         if (hasFirst) label(ctx, w, h, 0, DR.amarillo, true, t);
         ctx.globalAlpha = 1;
       }
+      const talking = performance.now() < talk.until && bubble(ctx, w, h, talk.i) ? talk.i : -1;
       const i = pointed();
       const mine = hasFirst && i === 0;
-      if (i >= 0 && !(namesLeft > 0.5 && (mine || showcase.includes(i)))) label(ctx, w, h, i, mine ? DR.amarillo : DR.crema, mine, t);
+      if (i >= 0 && i !== talking && !(namesLeft > 0.5 && (mine || showcase.includes(i)))) label(ctx, w, h, i, mine ? DR.amarillo : DR.crema, mine, t);
     },
   };
   return room;

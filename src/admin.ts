@@ -15,7 +15,7 @@ import { el } from './ui/dom';
 interface AdminData {
   total: number;
   supabase: boolean;
-  raros: { id: string; name: string; look: Look; created_at: string }[];
+  raros: { id: string; name: string; look: Look; phrase?: string; created_at: string }[];
   mensajes: { id: string; name: string; email: string; kind: string; message: string; created_at: string }[];
 }
 
@@ -79,7 +79,8 @@ async function load() {
   for (const r of data.raros) {
     const row = el('div', 'admin-fila');
     const look = `${LOOK.cuerpo[r.look.cuerpo]} · ${LOOK.pelo[r.look.pelo]} · ${LOOK.accesorio[r.look.accesorio]}`;
-    row.append(el('b', '', r.name), el('span', 'aviso', look), el('span', 'aviso', fecha(r.created_at)), borrar(`/api/admin?id=${r.id}`, row));
+    // La frase también hay que mirarla: es texto libre, como el nombre.
+    row.append(el('b', '', r.name), el('span', 'aviso', [el('span', 'ok', r.phrase ? `"${r.phrase}" ` : ''), look]), el('span', 'aviso', fecha(r.created_at)), borrar(`/api/admin?id=${r.id}`, row));
     raros.append(row);
   }
 

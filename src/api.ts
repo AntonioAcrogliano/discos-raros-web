@@ -41,8 +41,8 @@ export interface PistaData {
 }
 export const fetchPista = () => api<PistaData>(`/api/raros?device=${deviceId()}`);
 
-export const saveRaro = (name: string, look: Look, token?: string) =>
-  api<{ raro: Raro; total: number }>('/api/raros', { method: 'POST', body: JSON.stringify({ device: deviceId(), name, look, token }) });
+export const saveRaro = (name: string, look: Look, phrase: string, token?: string) =>
+  api<{ raro: Raro; total: number }>('/api/raros', { method: 'POST', body: JSON.stringify({ device: deviceId(), name, look, phrase, token }) });
 
 export const sendContact = (data: Record<string, string | undefined>) =>
   api<{ ok: true }>('/api/contact', { method: 'POST', body: JSON.stringify(data) });

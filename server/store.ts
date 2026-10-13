@@ -23,7 +23,7 @@ export interface Store {
   sample(recent: number, random: number): Promise<Raro[]>;
   byDevice(deviceId: string): Promise<RaroRow | null>;
   /** Crea el personaje del dispositivo, o lo pisa si ya tenía uno. */
-  upsert(row: { device_id: string; ip_hash: string; name: string; look: Look }): Promise<Raro>;
+  upsert(row: NewRaro): Promise<Raro>;
   createdSince(ipHash: string, sinceIso: string): Promise<number>;
   list(limit: number, offset: number): Promise<RaroRow[]>;
   remove(id: string): Promise<void>;
@@ -33,7 +33,29 @@ export interface Store {
   removeMessage(id: string): Promise<void>;
 }
 
-const pub = ({ id, name, look }: Raro): Raro => ({ id, name, look });
+export interface NewRaro {
+  device_id: string;
+  ip_hash: string;
+  name: string;
+  look: Look;
+  phrase: string;
+}
+
+/**
+ * La frase se guarda adentro de la columna `look` (un JSON), como `frase`: así no hubo que
+ * tocar las tablas ni la función de la pista. De acá para afuera viaja aparte, como `phrase`.
+ */
+type Packed = Look & { frase?: unknown };
+const pack = ({ phrase, look, ...row }: NewRaro) => ({ ...row, look: { ...look, frase: phrase } });
+function unpack(packed: Look): { look: Look; phrase: string } {
+  const { frase, ...look } = packed as Packed;
+  return { look: look as Look, phrase: typeof frase === 'string' ? frase : '' };
+}
+
+/** Lo que sale del servidor de un personaje. */
+export const pub = ({ id, name, look }: Raro): Raro => ({ id, name, ...unpack(look) });
+/** La fila entera, con la frase ya separada del look. */
+const full = (r: RaroRow): RaroRow => ({ ...r, ...unpack(r.look) });
 
 // --- Supabase (producción) --------------------------------------------------------
 // Se habla directo con la API REST (PostgREST) usando la service key, que solo vive en el
@@ -72,14 +94,15 @@ class SupabaseStore implements Store {
 
   async byDevice(deviceId: string) {
     const res = await this.call(`raros?device_id=eq.${encodeURIComponent(deviceId)}&limit=1`);
-    return ((await res.json()) as RaroRow[])[0] ?? null;
+    const row = ((await res.json()) as RaroRow[])[0];
+    return row ? full(row) : null;
   }
 
-  async upsert(row: { device_id: string; ip_hash: string; name: string; look: Look }) {
+  async upsert(row: NewRaro) {
     const res = await this.call('raros?on_conflict=device_id', {
       method: 'POST',
       prefer: 'resolution=merge-duplicates,return=representation',
-      body: JSON.stringify(row),
+      body: JSON.stringify(pack(row)),
     });
     return pub(((await res.json()) as Raro[])[0]);
   }
@@ -90,7 +113,7 @@ class SupabaseStore implements Store {
 
   async list(limit: number, offset: number) {
     const res = await this.call(`raros?order=created_at.desc&limit=${limit}&offset=${offset}`);
-    return (await res.json()) as RaroRow[];
+    return ((await res.json()) as RaroRow[]).map(full);
   }
 
   async remove(id: string) {
@@ -154,11 +177,14 @@ class FileStore implements Store {
   }
 
   async byDevice(deviceId: string) {
-    return (await this.load()).raros.find((r) => r.device_id === deviceId) ?? null;
+    const row = (await this.load()).raros.find((r) => r.device_id === deviceId);
+    return row ? full(row) : null;
   }
 
-  async upsert(row: { device_id: string; ip_hash: string; name: string; look: Look }) {
+  async upsert(input: NewRaro) {
     const db = await this.load();
+    // Igual que en Supabase: la frase va adentro del look.
+    const row = pack(input);
     let r = db.raros.find((x) => x.device_id === row.device_id);
     if (r) Object.assign(r, { name: row.name, look: row.look });
     else {
@@ -175,7 +201,7 @@ class FileStore implements Store {
 
   async list(limit: number, offset: number) {
     const all = [...(await this.load()).raros].sort((a, b) => b.created_at.localeCompare(a.created_at));
-    return all.slice(offset, offset + limit);
+    return all.slice(offset, offset + limit).map(full);
   }
 
   async remove(id: string) {

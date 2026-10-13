@@ -481,6 +481,8 @@ interface Dancer {
   /** Variación de altura propia (para que dos iguales no queden clavados a la misma altura). */
   vary: number;
   name: string;
+  /** Lo que dice cuando lo tocan ('' = nada). */
+  phrase: string;
   /** Altura de la cabeza en el último frame (para los cartelitos). */
   headY: number;
   id: string;
@@ -708,6 +710,7 @@ export class Crowd {
         look: raro.look,
         vary: 0.96 + r() * 0.08,
         name: raro.name,
+        phrase: raro.phrase ?? '',
         headY: 1.7,
         id: raro.id,
         tx: this.slots[i].x,
@@ -1085,5 +1088,9 @@ export class Crowd {
 
   nameOf(i: number) {
     return this.dancers[i]?.name ?? '';
+  }
+
+  phraseOf(i: number) {
+    return this.dancers[i]?.phrase ?? '';
   }
 }

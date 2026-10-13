@@ -6,7 +6,7 @@ create table if not exists raros (
   device_id uuid not null unique,          -- 1 personaje por dispositivo
   ip_hash text not null,                   -- IP hasheada, para el límite por conexión
   name text not null check (char_length(name) between 1 and 12),
-  look jsonb not null,
+  look jsonb not null,                     -- las opciones del personaje y, como "frase", lo que dice cuando lo tocan
   created_at timestamptz not null default now()
 );
 create index if not exists raros_created_at on raros (created_at desc);

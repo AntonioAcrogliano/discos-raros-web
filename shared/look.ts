@@ -110,6 +110,41 @@ export const NAME_MAX = 12;
 
 const BLOCKED = ['PUTO', 'PUTA', 'TROLO', 'TROLA', 'NAZI', 'HITLER', 'VIOLA', 'PEDOFIL', 'NEGRO DE M', 'MOGOLIC', 'RETRASAD', 'SIDOSO', 'MARICON', 'JUDIO DE M', 'CONCHA', 'PIJA', 'VERGA', 'NIGGER', 'NIGGA', 'FAGGOT'];
 
+/** La frase que dice un raro cuando lo tocan. */
+export const PHRASE_MAX = 40;
+
+/**
+ * ¿Tiene algún insulto de la lista? Compara sin tildes ni separadores, y con los números que se
+ * usan como letras. Con `glued` también junta las palabras (P U T O); en una frase larga eso
+ * daría falsos positivos entre palabra y palabra, así que ahí no se usa.
+ */
+function blocked(s: string, glued = true) {
+  const flat = s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/0/g, 'O').replace(/1/g, 'I').replace(/3/g, 'E').replace(/4/g, 'A').replace(/5/g, 'S')
+    .replace(/[^A-Z ]/g, '');
+  const tight = flat.replace(/ /g, '');
+  return BLOCKED.some((w) => flat.includes(w) || (glued && tight.includes(w.replace(/ /g, ''))));
+}
+
+/**
+ * La frase del raro: mayúsculas y sin símbolos raros, como el nombre. Es opcional: devuelve ''
+ * si no puso nada, y null si es un insulto.
+ */
+export function cleanPhrase(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return '';
+  if (typeof raw !== 'string') return null;
+  const s = raw
+    .toLocaleUpperCase('es')
+    .replace(/[^A-Z0-9ÑÁÉÍÓÚÜ _\-!?.,¿¡]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, PHRASE_MAX)
+    .trim();
+  return blocked(s, false) ? null : s;
+}
+
 /** Nombre visible: mayúsculas, sin símbolos raros. Devuelve null si queda vacío o es un insulto. */
 export function cleanName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
@@ -121,15 +156,7 @@ export function cleanName(raw: unknown): string | null {
     .slice(0, NAME_MAX)
     .trim();
   if (!s) return null;
-  // Comparar sin tildes ni separadores, y con los números que se usan como letras.
-  const flat = s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/0/g, 'O').replace(/1/g, 'I').replace(/3/g, 'E').replace(/4/g, 'A').replace(/5/g, 'S')
-    .replace(/[^A-Z ]/g, '');
-  const tight = flat.replace(/ /g, '');
-  if (BLOCKED.some((w) => flat.includes(w) || tight.includes(w.replace(/ /g, '')))) return null;
-  return s;
+  return blocked(s) ? null : s;
 }
 
 /** Un personaje guardado, como viaja entre el servidor y la pista. */
@@ -137,6 +164,8 @@ export interface Raro {
   id: string;
   name: string;
   look: Look;
+  /** Lo que dice cuando lo tocan en la pista ('' o nada = no dice nada). */
+  phrase?: string;
 }
 
 export interface SetInfo {

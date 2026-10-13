@@ -179,7 +179,11 @@
   width: 100%; min-width: 0; padding: 8px; font: inherit; text-transform: uppercase; color: var(--dr-negro); background: var(--dr-crema);
   border: 2px solid var(--dr-negro); outline: 2px solid var(--dr-crema); border-radius: 0;
 }
-.creador-nombre input:focus { outline-color: var(--dr-amarillo); background: #fff; }
+.creador-nombre input:focus, .creador-frase input:focus { outline-color: var(--dr-amarillo); background: #fff; }
+.creador-frase input {
+  width: 100%; min-width: 0; padding: 7px 8px 6px; font: inherit; font-size: 8px; text-transform: uppercase; color: var(--dr-negro); background: var(--dr-crema);
+  border: 2px solid var(--dr-negro); outline: 2px solid var(--dr-crema); border-radius: 0;
+}
 .pestanas { display: flex; flex-wrap: wrap; gap: 6px; }
 .pestanas .btn { flex: 1 0 auto; text-align: center; padding: 7px 6px 6px; }
 .opciones { display: grid; gap: 6px; min-height: 250px; align-content: start; }

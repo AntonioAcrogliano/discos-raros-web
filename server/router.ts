@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { cleanName, validLook } from '../shared/look.js';
+import { cleanName, cleanPhrase, validLook } from '../shared/look.js';
 import { getSets } from './sets.js';
 import { getStore, usingSupabase } from './store.js';
 
@@ -74,7 +74,7 @@ export async function handleApi(req: Request, ip = clientIp(req)): Promise<Respo
         store.sample(RECENT, RANDOM),
         UUID.test(device) ? store.byDevice(device) : null,
       ]);
-      const me = mine ? { id: mine.id, name: mine.name, look: mine.look } : null;
+      const me = mine ? { id: mine.id, name: mine.name, look: mine.look, phrase: mine.phrase ?? '' } : null;
       return json({ total, raros, mine: me }, 200, { 'cache-control': 'no-store' });
     }
 
@@ -86,6 +86,8 @@ export async function handleApi(req: Request, ip = clientIp(req)): Promise<Respo
       const name = cleanName(b.name);
       if (typeof device !== 'string' || !UUID.test(device) || !look) return fail(400, 'Pedido inválido.');
       if (!name) return fail(422, 'Ese nombre no va. Probá con otro.');
+      const phrase = cleanPhrase(b.phrase);
+      if (phrase === null) return fail(422, 'Esa frase no va. Probá con otra.');
       if (!(await humanOk(b.token, ip))) return fail(403, 'No pasaste el control anti-robots. Probá de nuevo.');
       const ipHash = hashIp(ip);
       const existing = await store.byDevice(device);
@@ -93,7 +95,7 @@ export async function handleApi(req: Request, ip = clientIp(req)): Promise<Respo
       if (!existing && (await store.createdSince(ipHash, new Date(Date.now() - DAY).toISOString())) >= 5) {
         return fail(429, 'Demasiados personajes desde esta conexión. Volvé mañana.');
       }
-      const raro = await store.upsert({ device_id: device, ip_hash: ipHash, name, look });
+      const raro = await store.upsert({ device_id: device, ip_hash: ipHash, name, look, phrase });
       return json({ raro, total: await store.count() });
     }
 

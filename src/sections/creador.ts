@@ -1,4 +1,4 @@
-import { LOOK, LOOK_GROUPS, LOOK_HIDDEN, LOOK_LABELS, type Look, type LookKey, NAME_MAX, type Raro, cleanName, randomLook, validLook } from '../../shared/look';
+import { LOOK, LOOK_GROUPS, LOOK_HIDDEN, LOOK_LABELS, type Look, type LookKey, NAME_MAX, type Raro, cleanName, randomLook, validLook, PHRASE_MAX, cleanPhrase } from '../../shared/look';
 import { saveRaro } from '../api';
 import type { BoilerRoom } from '../scenes/boiler';
 import { makeFaceTexture, makePrintTexture, sfx } from '../style-kit';
@@ -9,11 +9,11 @@ import { OUTFIT_NAMES, outfit } from './outfits';
 
 const DRAFT_KEY = 'dr-raro';
 
-function loadDraft(): { name: string; look: Look } | null {
+function loadDraft(): { name: string; look: Look; phrase: string } | null {
   try {
     const d = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? 'null');
     const look = validLook(d?.look);
-    return look ? { name: typeof d.name === 'string' ? d.name : '', look } : null;
+    return look ? { name: typeof d.name === 'string' ? d.name : '', look, phrase: typeof d.phrase === 'string' ? d.phrase : '' } : null;
   } catch {
     return null;
   }
@@ -45,9 +45,10 @@ export function openCreador(o: CreadorOptions) {
   const mine = o.mine();
   // Un guardado viejo puede no traer las opciones nuevas: validLook las completa.
   const saved = mine && validLook(mine.look);
-  const start = (mine && saved ? { name: mine.name, look: saved } : null) ?? loadDraft();
+  const start = (mine && saved ? { name: mine.name, look: saved, phrase: mine.phrase ?? '' } : null) ?? loadDraft();
   const look: Look = { ...(start?.look ?? randomLook()) };
   let name = start?.name ?? '';
+  let phrase = start?.phrase ?? '';
 
   // Girar al personaje arrastrando afuera del menú.
   let spin = 0;
@@ -89,7 +90,7 @@ export function openCreador(o: CreadorOptions) {
   const preview = () => {
     o.room.setDraft({ name: cleanName(name) ?? '', look });
     try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ name, look }));
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ name, look, phrase }));
     } catch {
       /* sin almacenamiento */
     }
@@ -104,6 +105,19 @@ export function openCreador(o: CreadorOptions) {
   input.setAttribute('aria-label', `Nombre (hasta ${NAME_MAX} letras)`);
   input.addEventListener('input', () => {
     name = input.value;
+    preview();
+  });
+
+  // La frase: lo que dice el raro cuando alguien lo toca en la pista. Es opcional.
+  const frase = el('input');
+  frase.maxLength = PHRASE_MAX;
+  frase.value = phrase;
+  frase.placeholder = 'TU FRASE (LA DECIS CUANDO TE TOCAN)';
+  frase.autocomplete = 'off';
+  frase.spellcheck = false;
+  frase.setAttribute('aria-label', `Frase que dice tu raro cuando lo tocan (opcional, hasta ${PHRASE_MAX} letras)`);
+  frase.addEventListener('input', () => {
+    phrase = frase.value;
     preview();
   });
 
@@ -257,6 +271,7 @@ export function openCreador(o: CreadorOptions) {
 
   const form = el('form', 'form creador', [
     el('div', 'creador-nombre', [input, random]),
+    el('div', 'creador-frase', [frase]),
     tabs,
     ...sections.map((g) => g.page),
     el('div', 'creador-pie', [captcha, el('div', 'fila', mine ? [save, share] : [save]), status]),
@@ -270,11 +285,18 @@ export function openCreador(o: CreadorOptions) {
       status.textContent = name.trim() ? 'ESE NOMBRE NO VA. PROBA CON OTRO.' : 'TE FALTA EL NOMBRE.';
       return input.focus();
     }
+    const said = cleanPhrase(phrase);
+    if (said === null) {
+      sfx.error();
+      status.className = 'error';
+      status.textContent = 'ESA FRASE NO VA. PROBA CON OTRA.';
+      return frase.focus();
+    }
     save.disabled = true;
     status.className = 'aviso';
     status.textContent = 'NOW SAVING...';
     try {
-      const res = await saveRaro(clean, look, turnstile.token());
+      const res = await saveRaro(clean, look, said, turnstile.token());
       sfx.start();
       o.onSaved(res.raro, res.total);
       if (o.door) {
