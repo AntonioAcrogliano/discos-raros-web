@@ -174,6 +174,77 @@ export function stride(p: Pose, phase: number, w: number, amp: number) {
 }
 
 /**
+ * La onda: lo que hace cualquiera que baila de verdad, encima de su paso. El pecho y la cabeza
+ * marcan cada beat (más fuerte el 2 y el 4), las rodillas rebotan, el peso va de una pierna a
+ * la otra y la mirada pasea. Y cada 8 beats, en los dos últimos, un remate: manos arriba con
+ * salto, una vuelta entera, irse al piso o señalar a la cabina. Cuál toca depende del paso y de
+ * la frase, así en la pista se ven varios a la vez y no siempre el mismo.
+ * El robot y el tieso no: su gracia es no tener onda. El zombie, apenas.
+ */
+function groove(kind: number, f: number, e: number, p: Pose) {
+  if (kind === 3 || kind === 13) return;
+  const g = e * (kind === 14 ? 0.4 : 1);
+  const b = f - Math.floor(f), hit = b < 0.08 ? b / 0.08 : Math.exp(-(b - 0.08) * 5);
+  const accent = Math.floor(f) & 1 ? 1 : 0.55;
+  const side = Math.sin(Math.PI * f * 0.5);
+  p.lean += 0.06 * hit * accent * g;
+  p.headRx += 0.13 * hit * accent * g;
+  p.headRy += 0.13 * side * g;
+  p.sway += 0.035 * side * g;
+  p.roll += 0.03 * side * g;
+  const dip = 0.14 * hit * accent * g;
+  p.kL += dip;
+  p.kR += dip;
+  p.tL -= dip * 0.5;
+  p.tR -= dip * 0.5;
+
+  // El remate (solo bailando a full: con la música baja no da).
+  const x = ((f % 8) + 8) % 8, k = pulse(x, 6, 8, 0.3) * Math.max(0, Math.min(1, (e - 0.5) * 4));
+  if (k <= 0 || kind === 14) return;
+  const mix = (from: number, to: number) => from + (to - from) * k;
+  const u = Math.max(0, Math.min(1, (x - 6) / 2));
+  let which = (kind * 3 + Math.floor(f / 8)) & 3;
+  // El helicóptero y el molino ya dan vueltas: a esos les toca manos arriba.
+  if (which === 1 && (kind === 11 || kind === 7)) which = 0;
+  if (which === 0) {
+    p.aLx = mix(p.aLx, 0);
+    p.aRx = mix(p.aRx, 0);
+    p.aLz = mix(p.aLz, 2.6);
+    p.aRz = mix(p.aRz, -2.6);
+    p.eL = mix(p.eL, -0.2 - 0.4 * hit);
+    p.eR = mix(p.eR, -0.2 - 0.4 * hit);
+    p.headRx = mix(p.headRx, -0.25);
+    p.hop = Math.max(p.hop, 0.22 * Math.abs(Math.sin(Math.PI * f)) * k);
+  } else if (which === 1) {
+    p.yaw += TAU * u * u * (3 - 2 * u);
+    p.aLz = mix(p.aLz, 1.2);
+    p.aRz = mix(p.aRz, -1.2);
+    p.eL = mix(p.eL, -0.3);
+    p.eR = mix(p.eR, -0.3);
+  } else if (which === 2) {
+    const d = Math.sin(Math.PI * u);
+    p.kL = mix(p.kL, 1.4 * d);
+    p.kR = mix(p.kR, 1.4 * d);
+    p.tL = mix(p.tL, -0.87 * d);
+    p.tR = mix(p.tR, -0.87 * d);
+    p.lean = mix(p.lean, 0.25 * d);
+    p.aLx = mix(p.aLx, -1.3);
+    p.aRx = mix(p.aRx, -1.3);
+    p.eL = mix(p.eL, -0.3);
+    p.eR = mix(p.eR, -0.3);
+  } else {
+    p.aRx = mix(p.aRx, -2.0);
+    p.aRz = mix(p.aRz, -0.15);
+    p.eR = mix(p.eR, -0.05 - 0.35 * hit);
+    p.aLx = mix(p.aLx, 0.15);
+    p.aLz = mix(p.aLz, 0.55);
+    p.eL = mix(p.eL, -1.25);
+    p.lean = mix(p.lean, -0.1);
+    p.headRx = mix(p.headRx, -0.1 + 0.2 * hit);
+  }
+}
+
+/**
  * @param kind índice de LOOK.baile
  * @param f tiempo en beats
  * @param e energía: 0 = parado, 1 = bailando a full
@@ -195,17 +266,21 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
   };
   switch (kind) {
     case 1: // manos arriba
-      p.hop = hop01 * 0.07;
-      p.aLz = 0.1 + (2.55 + 0.25 * w) * e;
-      p.aRz = -0.1 - (2.55 + 0.25 * w) * e;
+      // Los brazos se hamacan los dos para el mismo lado, y el cuerpo los acompaña.
+      p.hop = hop01 * 0.09;
+      p.aLz = 0.1 + (2.45 + 0.35 * s) * e;
+      p.aRz = -0.1 - (2.45 - 0.35 * s) * e;
+      p.roll = 0.09 * s * e;
+      p.sway = 0.06 * s * e;
       p.eL = p.eR = -0.15 - 0.35 * Math.max(0, w) * e;
       p.headRx = -0.15 * e;
       squat((1 - hop01) * 0.3 * e);
       break;
     case 2: // puño
-      p.hop = hop01 * 0.1;
+      p.hop = hop01 * 0.13;
       p.aRz = -0.1 - 2.2 * e;
-      p.eR = -0.2 - 1.1 * (1 - hop01) * e;
+      p.eR = -0.2 - 1.4 * (1 - hop01) * e;
+      p.yaw = 0.18 * s * e;
       p.aLx = -0.35 * e;
       p.eL = -1.3 * e;
       p.headRx = 0.2 * hop01 * e;
@@ -229,9 +304,10 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
       break;
     }
     case 4: // cabeceo
-      p.hop = hop01 * 0.03;
-      p.headRx = 0.55 * Math.max(0, w) * e;
-      p.lean = 0.12 * e;
+      p.hop = hop01 * 0.04;
+      p.headRx = 0.7 * Math.max(0, w) * e;
+      p.lean = (0.12 + 0.1 * Math.max(0, w)) * e;
+      p.yaw = 0.2 * Math.sin(Math.PI * f * 0.5) * e;
       p.aLx = p.aRx = -0.3 * e;
       p.eL = p.eR = -1.1 * e;
       squat(Math.max(0, w) * 0.4 * e);
@@ -248,15 +324,16 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
       p.eL = p.eR = -1.2 * e;
       break;
     case 6: // pasito: un paso a cada lado
-      p.hop = hop01 * 0.04;
-      p.sway = 0.13 * s * e;
-      p.roll = -0.07 * s * e;
+      p.hop = hop01 * 0.05;
+      p.sway = 0.2 * s * e;
+      p.roll = -0.1 * s * e;
+      p.yaw = 0.2 * s * e;
       p.headRy = 0.25 * s * e;
       squat((1 - hop01) * 0.25 * e);
       p.tLz = 0.18 * up * e;
       p.tRz = -0.18 * dn * e;
-      p.aLx = (-0.2 + 0.25 * w) * e;
-      p.aRx = (-0.2 - 0.25 * w) * e;
+      p.aLx = (-0.25 + 0.45 * w) * e;
+      p.aRx = (-0.25 - 0.45 * w) * e;
       p.eL = p.eR = -1.3 * e;
       break;
     case 7: { // molino: los brazos dan la vuelta entera
@@ -274,12 +351,12 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
     }
     case 8: // twist: la cadera para un lado y la cabeza queda mirando al frente
       p.hop = hop01 * 0.03;
-      p.yaw = 0.55 * s * e;
-      p.headRy = -0.5 * s * e;
+      p.yaw = 0.75 * s * e;
+      p.headRy = -0.65 * s * e;
       p.roll = 0.05 * w * e;
       p.lean = 0.08 * e;
-      p.aLx = (-0.2 + 0.45 * s) * e;
-      p.aRx = (-0.2 - 0.45 * s) * e;
+      p.aLx = (-0.2 + 0.7 * s) * e;
+      p.aRx = (-0.2 - 0.7 * s) * e;
       p.eL = p.eR = -1.4 * e;
       squat((0.45 + 0.2 * hop01) * e);
       break;
@@ -430,9 +507,10 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
       p.roll = 0.025 * Math.sin(f * 0.33);
       break;
     default: // saltito
-      p.hop = hop01 * 0.14;
-      p.aLx = 0.5 * s * e;
-      p.aRx = -0.5 * s * e;
+      p.hop = hop01 * 0.17;
+      p.aLx = 0.75 * s * e;
+      p.aRx = -0.75 * s * e;
+      p.yaw = 0.14 * s * e;
       p.eL = p.eR = -0.9 * e;
       p.tL = 0.3 * s * e;
       p.tR = -0.3 * s * e;
@@ -440,5 +518,6 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
       p.kR = up * 0.6 * e;
       p.headRx = 0.1 * w * e;
   }
+  if (kind < EN_LA_FILA) groove(kind, f, e, p);
   if (kind !== 10) p.hop *= e;
 }
