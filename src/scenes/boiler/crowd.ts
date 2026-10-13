@@ -903,6 +903,9 @@ export class Crowd {
    */
   private pick(d: Dancer, i: number, social = true): Spot {
     const ds = this.dancers;
+    // Con poca gente no se desparraman por todo el boliche (quedaría desierto): se quedan en
+    // la pista, cerca de la cabina, y recién cuando se va llenando ocupan el fondo y los palcos.
+    const fill = Math.min(1, ds.length / 110), upstairs = 0.32 * fill * fill;
     const where = Math.random();
     const to = { x: 0, z: 0 };
     d.buddy = -1;
@@ -914,10 +917,10 @@ export class Crowd {
       d.buddy = j;
       to.x = ds[j].x + Math.cos(a) * 0.9;
       to.z = ds[j].z + Math.sin(a) * 0.9;
-    } else if (where < 0.56) {
-      to.x = (Math.random() * 2 - 1) * PIT.halfW;
-      to.z = PIT.back + Math.random() * (FLOOR.front - PIT.back);
-    } else if (where < 0.76) {
+    } else if (where < 0.88 - upstairs) {
+      to.x = (Math.random() * 2 - 1) * PIT.halfW * (0.38 + 0.62 * fill);
+      to.z = FLOOR.front - Math.random() * (FLOOR.front - PIT.back) * (0.5 + 0.5 * fill);
+    } else if (where < 0.88 - upstairs * 0.375) {
       // Arriba, al fondo: la tribuna de abajo de la tele.
       to.x = (Math.random() * 2 - 1) * FLOOR.halfW;
       to.z = FLOOR.back + Math.random() * (PALCO.deep - 1.1);

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Raro } from '../../shared/look';
 import { Crowd } from '../scenes/boiler/crowd';
-import { DR, DR_CYCLE, fitSize, makeCanvas, makeLogoCanvas, outlined, psxUniforms, sfx } from '../style-kit';
+import { DR, DR_CYCLE, FONT, fitSize, makeCanvas, makeLogoCanvas, outlined, psxUniforms, sfx } from '../style-kit';
 import { el, sinTildes } from '../ui/dom';
 import { go, openPanel } from '../ui/shell';
 
@@ -127,6 +127,27 @@ export async function makeShareImage(raro: Raro): Promise<HTMLCanvasElement> {
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  // Su frase, en un globito al lado de la cabeza (como cuando lo tocan en la pista).
+  const says = sinTildes((raro.phrase ?? '').toUpperCase());
+  if (says) {
+    const unit = 8, lines: string[] = [];
+    for (const word of says.split(' ')) {
+      const last = lines[lines.length - 1];
+      if (last !== undefined && last.length + 1 + word.length <= 12) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    const bw = Math.max(...lines.map((l) => l.length)) * unit + 10, bh = lines.length * (unit + 3) + 7;
+    const x = W - bw - 8, y = 150;
+    ctx.fillStyle = DR.negro;
+    ctx.fillRect(x - 2, y - 2, bw + 4, bh + 4);
+    for (let k = 0; k < 6; k++) ctx.fillRect(x + 4 - k, y + bh + 2 + k, 9 - k, 1);
+    ctx.fillStyle = DR.crema;
+    ctx.fillRect(x, y, bw, bh);
+    for (let k = 0; k < 4; k++) ctx.fillRect(x + 5 - k, y + bh + k, 6 - k, 1);
+    ctx.fillStyle = DR.negro;
+    ctx.font = `${unit}px ${FONT}`;
+    lines.forEach((l, n) => ctx.fillText(l, x + bw / 2, y + 5 + unit / 2 + n * (unit + 3)));
+  }
   const name = sinTildes(raro.name.toUpperCase());
   outlined(ctx, name, W / 2, 390, fitSize(name, 18, W), DR.amarillo, DR.rojo);
   outlined(ctx, 'ESTA BAILANDO EN LA PISTA', W / 2, 407, 7, DR.crema);

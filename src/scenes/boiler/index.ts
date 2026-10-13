@@ -116,6 +116,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   /** El raro que está diciendo su frase (lo tocaron) y hasta cuándo se ve el globito. */
   const talk = { i: -1, until: 0 };
   const TALK_SECONDS = 4.5;
+  /** Cuánto falta para que alguno de los que están cerca diga su frase sin que lo toquen. */
+  let chat = 9;
   const rebuild = () => {
     const first = draft ?? pista.mine;
     hasFirst = Boolean(first);
@@ -320,6 +322,20 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     stage.post.pulse = Math.max(0, 1 - (beats - Math.floor(beats)) * 2) * energy;
 
     if (mode === 'pista' && namesLeft > 0) namesLeft -= dt;
+    if (mode === 'pista' && (chat -= dt) <= 0 && performance.now() > talk.until) {
+      // Cada tanto, alguno de los que están cerca (del raro del visitante, o de adonde mira la cámara) dice lo suyo.
+      const here = (hasFirst && crowd.spot()) || look.at || { x: 0, z: -3 };
+      const near: number[] = [];
+      for (let i = 1; i < crowd.count; i++) {
+        const p = crowd.phraseOf(i) && crowd.spot(i);
+        if (p && Math.hypot(p.x - here.x, p.z - here.z) < 7.5) near.push(i);
+      }
+      chat = near.length ? 7 + Math.random() * 9 : 4;
+      if (near.length) {
+        talk.i = near[Math.floor(Math.random() * near.length)];
+        talk.until = performance.now() + TALK_SECONDS * 1000;
+      }
+    }
 
     if (mode === 'pelea') return room.takeover?.update(t, dt);
 
@@ -548,6 +564,19 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   };
 
   const v = new THREE.Vector3();
+  /** Los carteles ya dibujados en este frame (en píxeles): el que viene después se corre para no pisarlos. */
+  const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+  /** Busca lugar para un cartel de `bw`×`bh` centrado en `x` con el borde de abajo en `y`: si pisa a otro, sube. */
+  const fit = (x: number, y: number, bw: number, bh: number) => {
+    const x0 = x - bw / 2 - 2, x1 = x + bw / 2 + 2;
+    for (let tries = 0; tries < 8; tries++) {
+      const hit = placed.find((r) => x0 < r.x1 && x1 > r.x0 && y - bh < r.y1 && y > r.y0);
+      if (!hit) break;
+      y = hit.y0 - 2;
+    }
+    placed.push({ x0, x1, y0: y - bh, y1: y });
+    return y;
+  };
   const label = (ctx: CanvasRenderingContext2D, w: number, h: number, i: number, color: string, arrow: boolean, t: number) => {
     const name = sinTildes(crowd.nameOf(i));
     if (!crowd.headTop(i, v) || (!name && !arrow)) return;
@@ -562,7 +591,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
       outlined(ctx, 'V', x, y - bob, unit, DR.rojo);
       y -= unit + 4;
     }
-    if (name) outlined(ctx, name, x, y, unit, color);
+    // El nombre se escribe centrado en `y`: si ahí ya hay otro cartel, va más arriba.
+    if (name) outlined(ctx, name, x, fit(x, y + Math.ceil(unit / 2) + 1, name.length * unit, unit + 2) - Math.ceil(unit / 2) - 1, unit, color);
   };
   /** Globito con la frase, arriba de la cabeza del raro que habla: letras negras sobre crema, con su piquito. */
   const bubble = (ctx: CanvasRenderingContext2D, w: number, h: number, i: number) => {
@@ -582,6 +612,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     const bw = Math.max(...lines.map((l) => l.length)) * unit + pad * 2, bh = lines.length * unit + (lines.length - 1) * gap + pad * 2;
     const hx = Math.round((v.x * 0.5 + 0.5) * w), hy = Math.round((-v.y * 0.5 + 0.5) * h);
     const x = Math.max(2, Math.min(w - bw - 2, hx - Math.round(bw / 2))), y = Math.max(unit * 2, hy - unit * 2 - bh);
+    // El globito y su nombre reservan su lugar: los demás carteles los esquivan.
+    placed.push({ x0: x - 3, x1: x + bw + 3, y0: y - unit * 2, y1: y + bh + 5 });
     ctx.fillStyle = DR.negro;
     ctx.fillRect(x - 1, y - 1, bw + 2, bh + 2);
     // Piquito hacia la cabeza.
@@ -743,14 +775,16 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         const y = v.z > 1 || v.z < -1 ? h * 0.3 : (-v.y * 0.5 + 0.5) * h;
         outlined(ctx, says, w / 2, Math.round(Math.max(h * 0.12, Math.min(h * 0.8, y))), Math.min(titleUnit(w, h), Math.floor((w * 0.92) / says.length)), DR.amarillo);
       }
+      placed.length = 0;
+      // Primero el globito y el propio (que se quedan con su lugar); los demás se acomodan.
+      const talking = performance.now() < talk.until && bubble(ctx, w, h, talk.i) ? talk.i : -1;
       if (namesLeft > 0) {
         // Al final se van apagando.
         ctx.globalAlpha = Math.min(1, namesLeft);
-        for (const i of showcase) label(ctx, w, h, i, DR.crema, false, t);
-        if (hasFirst) label(ctx, w, h, 0, DR.amarillo, true, t);
+        if (hasFirst && talking !== 0) label(ctx, w, h, 0, DR.amarillo, true, t);
+        for (const i of showcase) if (i !== talking) label(ctx, w, h, i, DR.crema, false, t);
         ctx.globalAlpha = 1;
       }
-      const talking = performance.now() < talk.until && bubble(ctx, w, h, talk.i) ? talk.i : -1;
       const i = pointed();
       const mine = hasFirst && i === 0;
       if (i >= 0 && i !== talking && !(namesLeft > 0.5 && (mine || showcase.includes(i)))) label(ctx, w, h, i, mine ? DR.amarillo : DR.crema, mine, t);
