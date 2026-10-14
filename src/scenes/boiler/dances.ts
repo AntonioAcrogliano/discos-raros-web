@@ -34,10 +34,10 @@ export interface Pose {
 }
 
 /**
- * No son pasos de baile: es lo que hace la gente de la fila de afuera mientras espera.
- * Van de 100 para arriba (cada uno a su tiempo, no al compás).
+ * No son pasos de baile: es lo que hace la gente de la fila de afuera mientras espera (y el
+ * barman, atrás de la barra). Van de 100 para arriba (cada uno a su tiempo, no al compás).
  */
-export const EN_LA_FILA = 100, CHARLANDO = 101, FUMANDO = 102, ESPERANDO = 103;
+export const EN_LA_FILA = 100, CHARLANDO = 101, FUMANDO = 102, ESPERANDO = 103, BARMAN = 104;
 
 export const makePose = (): Pose => ({ hop: 0, yaw: 0, lean: 0, roll: 0, sway: 0, headRx: 0, headRy: 0, aLx: 0, aLz: 0, aRx: 0, aRz: 0, eL: 0, eR: 0, tL: 0, tR: 0, tLz: 0, tRz: 0, kL: 0, kR: 0 });
 
@@ -492,6 +492,24 @@ export function dance(kind: number, f: number, e: number, p: Pose) {
       p.roll = -0.04 + 0.02 * Math.sin(f * 0.4);
       p.kR = 0.14;
       p.tR = -0.07;
+      break;
+    }
+    case BARMAN: {
+      // Un rato bate la coctelera arriba del hombro, y otro repasa la barra con el trapo, mirando para abajo.
+      const c = (((f * 0.11) % 1) + 1) % 1;
+      const k = c < 0.42 ? Math.min(1, c / 0.05, (0.42 - c) / 0.05) : 0, w = 1 - k;
+      const shake = Math.sin(f * 26);
+      p.aRx = -1.25 * k - 0.7 * w + 0.15 * w * Math.sin(f * 3.2);
+      p.aRz = 0.15 * k - 0.12 * w + 0.18 * w * Math.cos(f * 3.2);
+      p.eR = (-1.55 + 0.3 * shake) * k - 0.5 * w;
+      p.aLx = -1.15 * k + 0.1 * w;
+      p.aLz = -0.4 * k + 0.15 * w;
+      p.eL = (-1.65 + 0.3 * shake) * k - 0.3 * w;
+      p.hop = 0.012 * shake * k;
+      p.headRx = 0.32 * w - 0.08 * k;
+      p.headRy = 0.15 * Math.sin(f * 0.5) * w - 0.15 * k;
+      p.lean = 0.14 * w;
+      p.roll = 0.03 * Math.sin(f * 0.6);
       break;
     }
     case ESPERANDO:

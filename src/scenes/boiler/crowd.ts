@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LOOK, type Look, type Raro } from '../../../shared/look';
 import { DETAIL, type DetailCell, detailUv, make3DGlassesTexture, makeDetailTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
-import { ARM, CLUB, PALCO, PISO2, floorAt } from './club';
+import { ARM, BANO, BARRA, CLUB, LOUNGE, PALCO, PASILLO, PISO2, floorAt, inBack } from './club';
 import { ACTION_SECONDS, AGUA, EN_LA_FILA, PUCHO as FUMAR, SALTO, SALUDO, action, dance, hype, makePose, sipReach, sipTip, stride } from './dances';
 
 /**
@@ -512,6 +512,26 @@ interface Dancer {
   actT: number;
   /** Cuánto falta para que le pinte hacer algo por su cuenta. */
   mood: number;
+  /** El lugar con dueño al que fue (un asiento, la barra, el espejo del baño), o null. */
+  place: Place | null;
+  /** Lo que va a hacer cuando llegue (ver `Place.then`; 0 = nada). */
+  then: number;
+}
+
+/**
+ * Lugares para uno solo: los asientos de los sillones, la barra, el espejo del baño, las mesas
+ * altas y las paredes del pasillo. Se va, se mira para donde dice `yaw` y, al llegar, se hace
+ * `then` (tomar algo, fumar). `stay` multiplica el rato que se queda.
+ */
+interface Place {
+  x: number;
+  z: number;
+  yaw: number;
+  sit: boolean;
+  then: number;
+  stay: number;
+  kind: 'barra' | 'sillon' | 'mesa' | 'bano' | 'pasillo';
+  who: Dancer | null;
 }
 
 type Spot = { x: number; z: number };
@@ -554,10 +574,53 @@ const PIT = { halfW: SIDE - 0.5, back: REAR + 0.5 };
 const STEP_UP = 0.3;
 /** Aire que se dejan entre ellos, además del ancho de cada uno: no se pisan ni con los brazos. */
 const GAP = 0.2;
-/** Saca un punto de adentro de la cabina (al borde que tenga más cerca) y de afuera del boliche. */
+/** Lo que ocupa medio cuerpo, para no meterse en las paredes ni en los muebles. */
+const BODY = 0.4;
+/** Muebles macizos (x0, x1, z0, z1): la barra, los cubículos y las piletas del baño, las mesas altas. */
+const BLOCKS: [number, number, number, number][] = [
+  [BARRA.x0 - 0.1, BARRA.x1 + 0.1, CLUB.backZ, BARRA.front + 0.05],
+  [BANO.x0, BANO.stalls, BANO.back, PASILLO.end],
+  [BANO.sinks.x0, BANO.sinks.x1, BANO.back, BANO.back + BANO.sinks.deep],
+  ...LOUNGE.tables.flatMap((z) => [-1, 1].map((s): [number, number, number, number] => [s * LOUNGE.tableX - LOUNGE.tableR, s * LOUNGE.tableX + LOUNGE.tableR, z - LOUNGE.tableR, z + LOUNGE.tableR])),
+];
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+/** Del pasillo y el baño no se sale por las paredes: se queda en el lugar permitido más cercano. */
+function inWalls(p: Spot) {
+  const cx0 = PASILLO.x - PASILLO.halfW + BODY, cx1 = PASILLO.x + PASILLO.halfW - BODY;
+  const bx0 = BANO.x0 + BODY, bx1 = BANO.x1 - BODY;
+  if (p.z >= FLOOR.back) return;
+  if (p.z > PASILLO.end - BODY) {
+    // En el pasillo (o en la puerta del baño): si se va contra una pared, vuelve por donde entró.
+    if (p.x >= cx0 && p.x <= cx1) return;
+    const side = p.x < cx0 ? cx0 - p.x : p.x - cx1, toClub = FLOOR.back - p.z;
+    const toBath = p.x >= bx0 && p.x <= bx1 && p.z < PASILLO.end ? p.z - (PASILLO.end - BODY) : Infinity;
+    if (toClub <= side && toClub <= toBath) p.z = FLOOR.back;
+    else if (toBath <= side) p.z = PASILLO.end - BODY;
+    else p.x = clamp(p.x, cx0, cx1);
+    return;
+  }
+  p.x = clamp(p.x, bx0, bx1);
+  p.z = Math.max(p.z, BANO.back + BODY);
+}
+/** Saca un punto de adentro de un mueble, al borde que tenga más cerca. */
+function offBlocks(p: Spot) {
+  for (const [x0, x1, z0, z1] of BLOCKS) {
+    if (p.x <= x0 - BODY * 0.7 || p.x >= x1 + BODY * 0.7 || p.z <= z0 - BODY * 0.7 || p.z >= z1 + BODY * 0.7) continue;
+    const l = p.x - (x0 - BODY * 0.7), r = x1 + BODY * 0.7 - p.x, b = p.z - (z0 - BODY * 0.7), f = z1 + BODY * 0.7 - p.z;
+    const m = Math.min(l, r, b, f);
+    if (m === l) p.x -= l;
+    else if (m === r) p.x += r;
+    else if (m === b) p.z -= b;
+    else p.z += f;
+  }
+}
+/** Saca un punto de adentro de la cabina (al borde que tenga más cerca), de los muebles y de afuera del boliche. */
 function offBooth(p: Spot) {
   p.x = Math.max(-FLOOR.halfW, Math.min(FLOOR.halfW, p.x));
-  p.z = Math.max(FLOOR.back, Math.min(FLOOR.far, p.z));
+  p.z = Math.max(BANO.back + BODY, Math.min(FLOOR.far, p.z));
+  inWalls(p);
+  offBlocks(p);
+  inWalls(p);
   if (p.z <= BOOTH_BACK || p.z >= FLOOR.boothFront || Math.abs(p.x) >= FLOOR.aisle) return;
   const toBack = p.z - BOOTH_BACK, toFront = FLOOR.boothFront - p.z, toSide = FLOOR.aisle - Math.abs(p.x);
   if (toSide <= toBack && toSide <= toFront) p.x = Math.sign(p.x || 1) * FLOOR.aisle;
@@ -592,8 +655,19 @@ const landing = (s: number): Spot => ({ x: s * (SIDE + PALCO.deep / 2), z: PISO2
  */
 const across = (s: number, p: Spot) => p.z >= FLOOR.front && p.x * s < -1;
 
+/** La puerta del pasillo (del lado del palco y del lado de adentro) y la entrada del baño. */
+const DOOR_OUT: Spot = { x: PASILLO.x, z: CLUB.backZ + 0.55 };
+const DOOR_IN: Spot = { x: PASILLO.x, z: CLUB.backZ - 0.3 };
+const HALL: Spot = { x: PASILLO.x, z: PASILLO.end - 0.6 };
+const inBath = (p: Spot) => p.z < PASILLO.end;
+
 /** Los puntos por los que hay que pasar para ir de `from` a `to` (el último es `to`). */
 function route(from: Spot, to: Spot): Spot[] {
+  // Al pasillo y al baño se entra por la puerta del palco del fondo (y al baño, derecho por el pasillo).
+  const backFrom = inBack(from.z), backTo = inBack(to.z);
+  if (backFrom && backTo) return inBath(from) !== inBath(to) ? [HALL, to] : [to];
+  if (backFrom) return [...(inBath(from) ? [HALL] : []), DOOR_IN, DOOR_OUT, ...route(DOOR_OUT, to)];
+  if (backTo) return [...route(from, DOOR_OUT), DOOR_IN, ...(inBath(to) ? [HALL] : []), to];
   // Al segundo piso se llega por el palco de ese lado: se arma el camino hasta ahí (o desde ahí) y se le suma la escalera.
   const fs = Math.sign(from.x), ts = Math.sign(to.x);
   // El que quedó en la escalera (lo frenaron, cambió de idea) sale por la punta que le sirve, no por el costado.
@@ -665,13 +739,45 @@ function makeSlots(): Spot[] {
       for (const side of [1, -1]) slots.push({ x: side * (SIDE + 0.6 + col * 0.85), z: z + (r() - 0.5) * 0.1, score: 11 + col * 0.3 + z * 0.1 });
     }
   }
-  // Y el segundo piso, contra las paredes.
-  for (let col = 0; col < 2; col++) {
-    for (let z = FLOOR.back + 0.3; z <= PISO2.frontZ - 0.6; z += 0.85) {
-      for (const side of [1, -1]) slots.push({ x: side * (UP + 0.7 + col * 0.95), z: z + (r() - 0.5) * 0.1, score: 13 + col * 0.3 + (z - FLOOR.back) * 0.1 });
+  // Y el segundo piso, delante de los sillones.
+  for (let z = FLOOR.back + 0.3; z <= PISO2.frontZ - 0.6; z += 0.85) {
+    for (const side of [1, -1]) slots.push({ x: side * (UP + 0.7), z: z + (r() - 0.5) * 0.1, score: 13 + (z - FLOOR.back) * 0.1 });
+  }
+  // (Ninguno adentro de un mueble.)
+  return slots
+    .filter((p) => {
+      const q = { ...p };
+      offBlocks(q);
+      return q.x === p.x && q.z === p.z;
+    })
+    .sort((a, b) => a.score - b.score);
+}
+
+/** Los lugares para uno solo (ver `Place`). */
+function makePlaces(): Place[] {
+  const out: Place[] = [];
+  const add = (kind: Place['kind'], x: number, z: number, yaw: number, then = 0, stay = 1, sit = false) => out.push({ kind, x, z, yaw, then, stay, sit, who: null });
+  // En la barra, acodados, tomando algo.
+  for (let x = BARRA.x0 + 0.45; x <= BARRA.x1 - 0.4; x += 0.8) add('barra', x, BARRA.front + 0.5, Math.PI, AGUA, 1.2);
+  for (const s of [-1, 1]) {
+    // Sentados en los sillones del segundo piso, mirando para la pista.
+    for (const z of LOUNGE.sofas) for (const o of [-0.72, 0, 0.72]) add('sillon', s * LOUNGE.seatX, z + o, (-s * Math.PI) / 2, 0, 3, true);
+    // Parados alrededor de las mesas altas, del lado de adentro.
+    for (const z of LOUNGE.tables) {
+      for (const o of [-0.36, 0.36]) {
+        const x = s * (LOUNGE.tableX - 0.66), zz = z + o;
+        add('mesa', x, zz, Math.atan2(s * LOUNGE.tableX - x, z - zz), AGUA, 1.6);
+      }
     }
   }
-  return slots.sort((a, b) => a.score - b.score);
+  // En el baño, frente al espejo (se saludan solos).
+  const sinkW = (BANO.sinks.x1 - BANO.sinks.x0) / 3;
+  for (let k = 0; k < 3; k++) add('bano', BANO.sinks.x0 + sinkW * (k + 0.5), BANO.back + BANO.sinks.deep + 0.4, Math.PI, SALUDO, 0.6);
+  // Y en el pasillo, contra la pared, fumando a escondidas.
+  for (let z = CLUB.backZ - 1.1; z > PASILLO.end + 0.6; z -= 1.3) {
+    for (const e of [-1, 1]) add('pasillo', PASILLO.x + e * (PASILLO.halfW - BODY - 0.05), z, (-e * Math.PI) / 2, FUMAR, 1.2);
+  }
+  return out;
 }
 
 /** Pasos que se bailan con los brazos abiertos: necesitan más lugar. */
@@ -829,6 +935,7 @@ export class Crowd {
     let seed = 99;
     const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
     const before = new Map(this.dancers.map((d) => [d.id, d]));
+    for (const p of this.places) p.who = null;
     const first = this.dancers[0];
     this.dancers = list.slice(0, Math.min(this.capacity, this.slots.length)).map((raro, i) => {
       const bias = (r() - 0.5) * 0.5;
@@ -857,6 +964,8 @@ export class Crowd {
         act: 0,
         actT: 0,
         mood: 6 + r() * 80,
+        place: null,
+        then: 0,
       };
     });
     spread(this.dancers, this.slots);
@@ -870,7 +979,12 @@ export class Crowd {
         }
         const was = before.get(d.id);
         // Los que ya andaban paseando siguen donde estaban (si no, pegarían un salto a su lugar).
-        if (was) return void Object.assign(d, { x: was.x, z: was.z, tx: was.tx, tz: was.tz, wait: was.wait, yaw: was.yaw, path: was.path });
+        if (was) {
+          // (Con su lugar: el que estaba sentado sigue sentado.)
+          Object.assign(d, { x: was.x, z: was.z, tx: was.tx, tz: was.tz, wait: was.wait, yaw: was.yaw, path: was.path, then: was.then });
+          if (was.place && !was.place.who) (d.place = was.place).who = d;
+          return;
+        }
         // Los demás arrancan repartidos por todo el boliche, no formados en filas, y cada uno
         // sale a pasear a su tiempo.
         const at = this.pick(d, i, false);
@@ -975,6 +1089,20 @@ export class Crowd {
     const to = { x: 0, z: 0 };
     d.buddy = -1;
     this.leave(d);
+    this.release(d);
+    // A veces va a un lugar con dueño: la barra, el baño o el pasillo, los sillones o las mesas de arriba.
+    const pr = Math.random();
+    const kind: Place['kind'] | null =
+      pr < 0.08 ? 'barra' : pr < 0.08 + 0.07 * fill ? (Math.random() < 0.5 ? 'bano' : 'pasillo') : pr < 0.15 + 0.35 * upstairs ? (Math.random() < 0.6 ? 'sillon' : 'mesa') : null;
+    const free = kind ? this.places.filter((p) => p.kind === kind && !p.who) : [];
+    if (free.length) {
+      const place = free[Math.floor(Math.random() * free.length)];
+      place.who = d;
+      d.place = place;
+      d.then = place.then;
+      this.send(d, place);
+      return place;
+    }
     if (social && where < 0.2 && ds.length > 2) {
       // Se le para al lado a otro (puede ser el del visitante) y bailan enfrentados.
       let j = Math.floor(Math.random() * ds.length);
@@ -992,7 +1120,8 @@ export class Crowd {
       to.z = FLOOR.back + Math.random() * (PALCO.deep - 1.1);
     } else if (where < 0.88 - upstairs * 0.3) {
       // En el segundo piso, mirando todo desde arriba.
-      to.x = Math.sign(Math.random() - 0.5) * (UP + 0.6 + Math.random() * (PISO2.deep - 1.2));
+      // (Del lado de adentro: contra la pared están los sillones.)
+      to.x = Math.sign(Math.random() - 0.5) * (UP + 0.5 + Math.random() * 0.6);
       to.z = FLOOR.back + Math.random() * (PISO2.frontZ - 0.6 - FLOOR.back);
     } else if (where < 0.88) {
       // Arriba, en uno de los brazos.
@@ -1006,14 +1135,30 @@ export class Crowd {
       to.x = Math.sign(Math.random() - 0.5) * (4.6 + Math.random() * (PIT.halfW - 4.6));
       to.z = FLOOR.boothFront + 0.2 + Math.random() * (FLOOR.end - FLOOR.boothFront - 0.2);
     }
+    offBooth(to);
     this.send(d, to);
     return to;
+  }
+
+  private places = makePlaces();
+  /** Deja libre el lugar con dueño que tenía. */
+  private release(d: Dancer) {
+    if (d.place?.who === d) d.place.who = null;
+    d.place = null;
+    d.then = 0;
+  }
+  /** ¿Está sentado en un sillón? (Ya llegó: no se lo empuja.) */
+  private seated(d: Dancer) {
+    const p = d.place;
+    return Boolean(p?.sit && Math.hypot(p.x - d.x, p.z - d.z) < 0.25);
   }
 
   /** Para dónde mira parado: a su compañero de baile si lo tiene al lado; si no, a la cabina, cada uno un poco a su manera. */
   private facing(d: Dancer) {
     // En una ronda se mira al centro (cuando ya llegó).
     if (d.group && Math.hypot(d.group.x - d.x, d.group.z - d.z) < 2.6) return Math.atan2(d.group.x - d.x, d.group.z - d.z);
+    // En la barra, sentado o en el baño, mira para donde va ese lugar.
+    if (d.place && Math.hypot(d.place.x - d.x, d.place.z - d.z) < 0.6) return d.place.yaw;
     const b = d.buddy >= 0 ? this.dancers[d.buddy] : null;
     // (El que está devolviendo un saludo mira al que lo saludó aunque no lo tenga pegado.)
     if (b && Math.hypot(b.x - d.x, b.z - d.z) < (d.act === SALUDO ? 4 : 1.9)) return Math.atan2(b.x - d.x, b.z - d.z);
@@ -1045,7 +1190,7 @@ export class Crowd {
     });
     if ((this.groupIn -= dt) > 0 || ds.length < 8) return;
     this.groupIn = GROUP_EVERY * (0.6 + Math.random() * 0.8);
-    const free = (d: Dancer, i: number) => !d.group && !d.act && !(i === 0 && this.mine);
+    const free = (d: Dancer, i: number) => !d.group && !d.act && !d.place && !(i === 0 && this.mine);
     if (ds.filter((d) => d.group).length > ds.length * GROUPED) return;
     const seed = ds[1 + Math.floor(Math.random() * (ds.length - 1))];
     if (!seed || !free(seed, 1) || onStair2(seed)) return;
@@ -1100,7 +1245,10 @@ export class Crowd {
           if (Math.abs(dx) > 1.6 || Math.abs(dz) > 1.6 || Math.abs(hs[i] - hs[j]) > 0.7) continue;
           const min = this.radius[i] + this.radius[j] + GAP, dist = Math.hypot(dx, dz) || 0.001;
           if (dist >= min) continue;
-          const ux = dx / dist, uz = dz / dist, push = min - dist, ka = i === 0 ? 0 : 0.5, kb = 1 - ka;
+          // El del visitante y los que están sentados no se mueven: los demás se corren.
+          const fa = i === 0 || this.seated(a), fb = this.seated(b);
+          if (fa && fb) continue;
+          const ux = dx / dist, uz = dz / dist, push = min - dist, ka = fa ? 0 : fb ? 1 : 0.5, kb = 1 - ka;
           const around = pass === 0 && moving && (moving[i] || moving[j]) ? slide : 0;
           a.x -= (ux * push + -uz * around) * ka;
           a.z -= (uz * push + ux * around) * ka;
@@ -1228,11 +1376,15 @@ export class Crowd {
         far = Math.hypot(dx, dz);
       }
       // El rato que se queda bailando en un lugar corre recién cuando llega (subir a un palco lleva lo suyo).
-      if (far <= 0.15 && !d.path.length && !d.group) d.wait -= dt;
+      if (far <= 0.15 && !d.path.length && !d.group) {
+        d.wait -= dt;
+        // Llegó a la barra, al pasillo, al espejo: hace lo suyo.
+        if (d.then && !d.act) Object.assign(d, { act: d.then, actT: 0, then: 0, mood: 20 + Math.random() * 30 });
+      }
       if (d.wait <= 0 && !d.group) {
         // El que sube se queda un buen rato arriba: el viaje es largo, y si no los palcos quedan vacíos.
         const up = high(this.pick(d, i));
-        d.wait = ((7 + Math.random() * 14) / d.pace) * (up ? 2 : 1);
+        d.wait = ((7 + Math.random() * 14) / d.pace) * (d.place ? d.place.stay : up ? 2 : 1);
         this.wanted[i] = 0;
         continue;
       }
@@ -1410,6 +1562,17 @@ export class Crowd {
       if (d.walk > 0.01 && !this.solo) stride(p, d.stride, d.walk, i === 0 && this.mine ? 0.62 : 0.36);
       const doing = this.solo || d.actT <= 0 ? 0 : d.act;
       if (doing) action(p, doing, d.actT);
+      // Sentado en un sillón: las piernas para adelante y la cadera en el asiento; de la cintura para arriba sigue bailando.
+      if (this.roam && !this.solo && this.seated(d)) {
+        p.tL = p.tR = -1.45;
+        p.kL = p.kR = 1.4;
+        p.tLz = p.tRz = 0;
+        p.hop = 0;
+        p.lean = -0.12;
+        p.sway *= 0.3;
+        p.roll *= 0.3;
+        p.yaw *= 0.4;
+      }
       // En el creador gira despacio para verlo de todos lados (o mira para donde lo dejaron).
       const facing = this.solo ? (this.spin ?? Math.sin(t * 0.7) * 0.9) : d.yaw + Math.sin(t * 0.9 + d.phase) * 0.08 * (1 - e);
       const h = b.h * d.vary;

@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { type Look, type LookView, type Raro, type SetInfo, validLook } from '../../../shared/look';
+import { type Look, type LookView, type Raro, type SetInfo, randomLook, validLook } from '../../../shared/look';
 import type { PistaData } from '../../api';
 import { DR, FONT, type PSXStage, audioLive, outlined, psxUniforms, street, titleUnit, sfx } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
-import { CLUB, PALCO, PISO2, buildClub, floorAt } from './club';
-import { PASTI } from './dances';
+import { BARRA, CLUB, PALCO, PISO2, buildClub, floorAt, roomAt } from './club';
+import { BARMAN, PASTI } from './dances';
 import { Crowd, MAX_DANCERS } from './crowd';
 import { loadGlbRig } from '../../characters/glbRig';
 import { buildPlaceholderDjs, makeDjs } from './djs';
@@ -116,7 +116,15 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   const afuera = buildAfuera();
   const patio = buildPatio();
   patio.group.visible = false;
-  scene.add(club.group, crowd.group, djGroup, tele.object, afuera.group, patio.group);
+  // Los dos de la barra: atienden de espaldas a la pared, mirando a la pista.
+  const barra = new Crowd(2);
+  let bseed = 31;
+  const br = () => ((bseed = (bseed * 16807) % 2147483647) - 1) / 2147483646;
+  barra.setDancers([0, 1].map((i) => ({ id: `barman${i}`, name: '', look: { ...randomLook(br), encima: 0, mano: 0, baile: BARMAN } })));
+  [BARRA.x0 + 1.6, BARRA.x1 - 1.9].forEach((x, i) => barra.place(i, x, BARRA.barmanZ, 0));
+  barra.group.position.y = PALCO.h;
+  if (import.meta.env.DEV) (window as unknown as { drPista: unknown }).drPista = { crowd, barra };
+  scene.add(club.group, crowd.group, barra.group, djGroup, tele.object, afuera.group, patio.group);
 
   // --- Quién baila ---------------------------------------------------------------------
   let pista: PistaData = { total: 0, raros: [], mine: null };
@@ -357,6 +365,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (mode === 'pista') crowd.wander(dt, energy);
     crowd.hype = music && mode === 'pista' ? music.drop : 0;
     crowd.update(beats, energy, t);
+    barra.update(t * 1.3, 1, t);
     const drop = music && mode === 'pista' ? music.drop : 0;
     djs.update(beats, energy, drop);
     // Cuando cae el drop, la pista grita (no más de una vez cada tanto).
@@ -589,7 +598,9 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
             aim();
           }
         }
-        const dist = Math.min(4.6 - 2.6 * look.zoom, booth, room(at.x, dx, -CLUB.halfW + 0.4, CLUB.halfW - 0.4), room(eye, dy, 0, CLUB.ceilY - 0.5), room(at.z, dz, CLUB.backZ + 0.4, CLUB.frontZ - 0.4));
+        // (En el pasillo y en el baño, las paredes son las de ahí.)
+        const box = roomAt(at.x, at.z);
+        const dist = Math.min(4.6 - 2.6 * look.zoom, booth, room(at.x, dx, box.x0 + 0.4, box.x1 - 0.4), room(eye, dy, 0, box.y1 - 0.5), room(at.z, dz, box.z0 + 0.4, box.z1 - 0.4));
         wantTarget.set(at.x, eye, at.z);
         wantPos.set(at.x + dx * dist, eye + dy * dist, at.z + dz * dist);
       } else if (Math.abs(look.yaw) + Math.abs(look.pitch) + look.zoom > 0.002) {

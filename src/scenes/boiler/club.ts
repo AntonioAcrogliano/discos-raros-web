@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Music } from './luces';
 import {
   DR,
@@ -9,6 +10,7 @@ import {
   box,
   fontsReady,
   makeCanvas,
+  makeCheckerTexture,
   makeLogoCanvas,
   makePSXMaterial,
   makeRecordTexture,
@@ -61,6 +63,36 @@ export const PISO2 = {
 /** Ancho total de cada costado levantado: el palco más el segundo piso. */
 export const ARM = PALCO.deep + PISO2.deep;
 
+/** La barra: en el palco del fondo, a la derecha de la tele, de frente a la pista. El barman atiende de espaldas a la pared. */
+export const BARRA = { x0: 4.8, x1: 11.8, front: -10.95, h: 1.05, barmanZ: -12.0 };
+
+/**
+ * El pasillo del fondo: sale por la pared, a la izquierda de la tele, a la altura del palco, y
+ * termina en el baño. `end` es donde arranca el baño. Ninguno de los dos se ve desde la pista:
+ * hay que ir.
+ */
+export const PASILLO = { x: -8, halfW: 1.6, end: -17.5, ceil: PALCO.h + 3.5 };
+/** El baño, al final del pasillo: los cubículos contra la pared de la izquierda (hasta `stalls`) y las piletas contra la del fondo. */
+export const BANO = { x0: -12, x1: -4, back: -21.5, stalls: -10.8, sinks: { x0: -10.2, x1: -5.0, deep: 0.55 } };
+
+/** Sillones y mesas altas del segundo piso, contra cada pared (z de cada uno; los sillones van entre las pilastras). */
+export const LOUNGE = { sofas: [-9.1, -5.9], sofaLen: 2.4, seatX: CLUB.halfW - 0.65, tables: [-11.7, -3.0], tableX: CLUB.halfW - 1.7, tableR: 0.32 };
+
+/** ¿Está atrás de la pared del fondo (en el pasillo o en el baño)? */
+export const inBack = (z: number) => z < CLUB.backZ;
+
+/**
+ * La caja en la que está un punto (la cámara no sale de ahí): el salón, o el pasillo y el baño.
+ * Desde el pasillo, la cámara puede quedar en el salón, mirando por la puerta.
+ */
+export function roomAt(x: number, z: number) {
+  const { halfW, backZ, frontZ, ceilY } = CLUB;
+  if (!inBack(z)) return { x0: -halfW, x1: halfW, z0: backZ, z1: frontZ, y1: ceilY };
+  const door = Math.abs(x - PASILLO.x) < PASILLO.halfW;
+  if (z > PASILLO.end) return { x0: PASILLO.x - PASILLO.halfW, x1: PASILLO.x + PASILLO.halfW, z0: BANO.back, z1: frontZ, y1: PASILLO.ceil };
+  return { x0: BANO.x0, x1: BANO.x1, z0: BANO.back, z1: door ? frontZ : PASILLO.end, y1: PASILLO.ceil };
+}
+
 /** Altura del piso en un punto del boliche: 0 en la pista, `PALCO.h` o `PISO2.h` arriba, y lo que toque en las escaleras. */
 export function floorAt(x: number, z: number) {
   if (Math.abs(x) >= CLUB.halfW - PISO2.deep && z < PISO2.frontZ + PISO2.stairs) {
@@ -97,6 +129,25 @@ function glow(color: THREE.ColorRepresentation, opacity: number) {
   const m = makePSXMaterial({ color, lit: false, opacity, side: THREE.DoubleSide });
   m.blending = THREE.AdditiveBlending;
   return m;
+}
+
+/** Junta las mallas quietas que comparten material en una sola: muchas menos llamadas de dibujo (importa en el celu). */
+function bake(src: THREE.Group) {
+  const out = new THREE.Group();
+  const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  for (const o of [...src.children]) {
+    const m = o as THREE.Mesh;
+    // (Los grupos, los de varios materiales y los resplandores, que se dibujan en su orden, quedan como están.)
+    if (!m.isMesh || Array.isArray(m.material) || m.renderOrder) {
+      out.add(o);
+      continue;
+    }
+    m.updateMatrix();
+    const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+    byMat.set(m.material, [...(byMat.get(m.material) ?? []), g.applyMatrix4(m.matrix)]);
+  }
+  for (const [mat, geos] of byMat) out.add(new THREE.Mesh(mergeGeometries(geos)!, mat));
+  return out;
 }
 
 export function buildClub(): Club {
@@ -170,8 +221,20 @@ export function buildClub(): Club {
   };
   /** Cuántas veces se repite el ladrillo por metro de pared (a lo ancho y a lo largo). */
   const perW = 12 / 23, perD = 7 / 18;
-  const back = wall(halfW * 2, ceilY, perW * halfW * 2, 4);
-  back.position.set(0, ceilY / 2, backZ);
+  /** Un pedazo de la pared del fondo, con el ladrillo donde estaría si la pared fuera entera. */
+  const backPart = (x0: number, x1: number, y0: number, y1: number) => {
+    const geo = new THREE.PlaneGeometry(x1 - x0, y1 - y0, Math.ceil((x1 - x0) / 2), Math.ceil((y1 - y0) / 2));
+    geo.translate((x0 + x1) / 2, (y0 + y1) / 2, 0);
+    const p = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (p.getX(i) + halfW) * perW, (p.getY(i) / ceilY) * 4);
+    const m = new THREE.Mesh(geo, makePSXMaterial({ map: wallTex }));
+    m.position.z = backZ;
+    return m;
+  };
+  // Con el hueco de la puerta del pasillo (que arranca a la altura del palco).
+  const doorL = PASILLO.x - PASILLO.halfW, doorR = PASILLO.x + PASILLO.halfW;
+  const back = new THREE.Group();
+  back.add(backPart(-halfW, doorL, 0, ceilY), backPart(doorR, halfW, 0, ceilY), backPart(doorL, doorR, PASILLO.ceil, ceilY), backPart(doorL, doorR, 0, PALCO.h));
   const left = wall(depth, ceilY, perD * depth, 4);
   left.rotation.y = Math.PI / 2;
   left.position.set(-halfW, ceilY / 2, (frontZ + backZ) / 2);
@@ -275,6 +338,8 @@ export function buildClub(): Club {
   });
 
   // --- Palcos y segundo piso: en U, con sus escaleras y barandas -------------------------
+  /** Lo que no se mueve de acá para abajo (barra, sillones, baño, leds): al final se junta por material. */
+  const deco = new THREE.Group();
   const sideX = halfW - ARM, rearZ = backZ + PALCO.deep, armLen = PALCO.frontZ - rearZ;
   /** Dónde arranca el segundo piso (x) y el centro de esa franja. */
   const upX = halfW - PISO2.deep, upMid = halfW - PISO2.deep / 2;
@@ -292,11 +357,11 @@ export function buildClub(): Club {
   const edgeTex = toPSXTexture(edge.canvas);
   edgeTex.wrapS = THREE.RepeatWrapping;
   const edgeMat = makePSXMaterial({ map: edgeTex, lit: false });
-  // Escalones: oscuros, con el filo amarillo.
+  // Escalones: oscuros, con el filo apenas marcado (la luz la ponen los leds).
   const step = makeCanvas(8, 1);
   step.ctx.fillStyle = '#2a2038';
   step.ctx.fillRect(0, 0, 8, 1);
-  step.ctx.fillStyle = DR.amarillo;
+  step.ctx.fillStyle = '#3d3050';
   step.ctx.fillRect(0, 0, 1, 1);
   const stepTex = toPSXTexture(step.canvas);
   stepTex.wrapS = THREE.RepeatWrapping;
@@ -328,7 +393,24 @@ export function buildClub(): Club {
     const m = new THREE.Mesh(wedge, [palcoFront, palcoFront, stepMat, palcoFront, palcoFront, palcoFront]);
     m.position.set(x, base + rise / 2, z0 + run / 2);
     group.add(m);
+    // Una tira de led en el filo de cada escalón (arriba de la raya pintada).
+    for (let k = 1; k < STEPS; k++) {
+      const t = k / STEPS - 1 / 144;
+      deco.add(box(w - 0.1, 0.03, run / 36, stepLeds[k], x, base + rise * (1 - t) + 0.012, z0 + run * t));
+    }
   };
+  /** Los leds de los escalones: uno por escalón, compartido por todas las escaleras (el 1 es el de más arriba). */
+  const STEPS = 9;
+  const stepLeds = Array.from({ length: STEPS }, () => makePSXMaterial({ color: DR.amarillo, lit: false }));
+  updaters.push((beats, energy) => {
+    // Con cada bombo una ola de luz sube la escalera, del primer escalón al último.
+    const color = DR_CYCLE[Math.floor(beats / 8) % DR_CYCLE.length];
+    stepLeds.forEach((m, k) => {
+      const ph = beats - (STEPS - k) / 18;
+      const b = 0.22 + 0.78 * Math.pow(1 - (ph - Math.floor(ph)), 3) * Math.min(1, energy + 0.2);
+      m.uniforms.uColor.value.set(color).multiplyScalar(b);
+    });
+  });
   /**
    * Pasamanos del costado abierto de una escalera: baja con los escalones, de `top` a `bottom`,
    * y llega hasta `upTo` (0 a 1) del largo, que es donde el escalón de costado se puede bajar.
@@ -361,6 +443,302 @@ export function buildClub(): Club {
     // Del lado del palco la escalera queda en el aire: pasamanos que sigue a la baranda de arriba.
     handrail(s * (upX - 0.012), PISO2.frontZ, PISO2.stairs, PISO2.h, PALCO.h, railTo(PISO2.h - PALCO.h));
   }
+
+  /** Cartel de neón con un texto: se dibuja en un canvas chiquito (y otra vez cuando carga la fuente). */
+  const neonSign = (text: string, color: string, w: number, h: number) => {
+    const cv = makeCanvas(text.length * 9 + 8, 16);
+    const tex = toPSXTexture(cv.canvas);
+    const draw = () => {
+      const { ctx, canvas } = cv;
+      ctx.fillStyle = '#0a0a0e';
+      ctx.fillRect(0, 0, canvas.width, 16);
+      ctx.strokeStyle = color;
+      ctx.strokeRect(0.5, 0.5, canvas.width - 1, 15);
+      ctx.fillStyle = color;
+      ctx.font = `8px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, 9);
+      tex.needsUpdate = true;
+    };
+    draw();
+    void fontsReady().then(draw);
+    const mat = makePSXMaterial({ map: tex, lit: false });
+    const halo = glow(color, 0.08);
+    const sign = new THREE.Group();
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    const glowPlane = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.5, h * 2.2), halo);
+    glowPlane.position.z = 0.02;
+    glowPlane.renderOrder = 1;
+    sign.add(face, glowPlane);
+    return { sign, mat, halo };
+  };
+  /** Un neón que titila a veces (como los de verdad) y late un poco con el bombo. */
+  const flicker = (mat: PSXMaterial, halo: PSXMaterial, seed: number) =>
+    updaters.push((_b, _e, t) => {
+      const off = Math.sin(t * 13.7 + seed) > 0.985 || (Math.sin(t * 0.37 + seed) > 0.96 && Math.sin(t * 31 + seed) > 0);
+      const b = off ? 0.25 : 0.85 + 0.15 * kick;
+      mat.uniforms.uColor.value.setScalar(b);
+      halo.uniforms.uOpacity.value = off ? 0.01 : 0.05 + 0.07 * kick;
+    });
+
+  // --- La barra: en el palco del fondo, de frente a la pista --------------------------------
+  {
+    const { x0, x1, front, h } = BARRA;
+    const cx = (x0 + x1) / 2, len = x1 - x0, top = PALCO.h + h, deep = 0.55, cz = front - deep / 2;
+    const counter = makePSXMaterial({ color: '#1d1626' });
+    const wood = makePSXMaterial({ color: '#5a3320' });
+    deco.add(box(len, h, deep, counter, cx, PALCO.h + h / 2, cz));
+    deco.add(box(len + 0.2, 0.07, deep + 0.18, wood, cx, top + 0.035, cz + 0.04));
+    // La franja de la marca arriba del frente y una tira de led abajo, que late con el bombo.
+    const stripeGeo = new THREE.PlaneGeometry(len, 0.09, Math.ceil(len / 2), 1);
+    const suv = stripeGeo.attributes.uv;
+    for (let i = 0; i < suv.count; i++) suv.setX(i, suv.getX(i) * len * 0.9);
+    const stripeMesh = new THREE.Mesh(stripeGeo, edgeMat);
+    stripeMesh.position.set(cx, top - 0.1, front + 0.005);
+    deco.add(stripeMesh);
+    const barLed = makePSXMaterial({ color: DR.rojo, lit: false });
+    deco.add(box(len - 0.1, 0.04, 0.02, barLed, cx, PALCO.h + 0.12, front + 0.01));
+    const barGlow = glow(DR.rojo, 0.1);
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(len, 0.8), barGlow);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.set(cx, PALCO.h + 0.02, front + 0.4);
+    pool.renderOrder = 1;
+    fx.add(pool);
+    const ledColor = new THREE.Color(DR.rojo);
+    updaters.push(() => {
+      barLed.uniforms.uColor.value.copy(ledColor).multiplyScalar(0.45 + 0.55 * kick);
+      barGlow.uniforms.uOpacity.value = 0.04 + 0.1 * kick;
+    });
+    // Sobre la barra: vasos, una coctelera y las canillas de la birra.
+    const glass = makePSXMaterial({ color: '#a8d8e8', lit: false });
+    const metalBar = makePSXMaterial({ color: '#9a9aa8' });
+    for (const gx of [0.4, 1.3, 1.45, 2.9, 4.6, 4.75, 6.2]) deco.add(box(0.07, 0.12, 0.07, glass, x0 + gx, top + 0.13, cz + 0.08 - (gx % 0.3) * 0.3));
+    deco.add(box(0.1, 0.24, 0.1, metalBar, x0 + 3.6, top + 0.19, cz - 0.05));
+    for (const k of [0, 1, 2]) {
+      deco.add(box(0.05, 0.3, 0.05, metalBar, x0 + 5.2 + k * 0.22, top + 0.22, cz - 0.15));
+      deco.add(box(0.04, 0.12, 0.08, makePSXMaterial({ color: [DR.amarillo, DR.rojo, DR.verdeClaro][k] }), x0 + 5.2 + k * 0.22, top + 0.42, cz - 0.15));
+    }
+    // Atrás, contra la pared: un espejo oscuro con dos estantes llenos de botellas de colores.
+    const backY = PALCO.h + 1.35;
+    deco.add(box(len - 0.4, 1.5, 0.04, makePSXMaterial({ color: '#232838', lit: false }), cx, backY + 0.65, backZ + 0.03));
+    const shelf = makePSXMaterial({ color: '#3a2418' });
+    const bottleColors = [DR.verdeClaro, DR.amarillo, '#c25a1a', DR.rosa, '#3a8fd0', DR.crema];
+    const byColor = bottleColors.map(() => [] as THREE.BufferGeometry[]);
+    let bseed = 5;
+    const br = () => ((bseed = (bseed * 16807) % 2147483647) - 1) / 2147483646;
+    for (const sy of [backY, backY + 0.62]) {
+      deco.add(box(len - 0.3, 0.04, 0.26, shelf, cx, sy, backZ + 0.15));
+      for (let bx = x0 + 0.35; bx < x1 - 0.3; bx += 0.17 + br() * 0.08) {
+        const bh = 0.22 + br() * 0.14;
+        byColor[Math.floor(br() * bottleColors.length)].push(new THREE.BoxGeometry(0.08, bh, 0.08).translate(bx, sy + 0.02 + bh / 2, backZ + 0.15), new THREE.BoxGeometry(0.03, 0.07, 0.03).translate(bx, sy + 0.02 + bh + 0.035, backZ + 0.15));
+      }
+    }
+    byColor.forEach((geos, i) => geos.length && deco.add(new THREE.Mesh(mergeGeometries(geos)!, makePSXMaterial({ color: bottleColors[i], lit: false }))));
+    // El cartel, y lámparas colgando del techo sobre la barra.
+    const { sign, mat, halo } = neonSign('BARRA', DR.rosa, 2.4, 0.6);
+    sign.position.set(cx, PALCO.h + 3.15, backZ + 0.05);
+    deco.add(sign);
+    flicker(mat, halo, 1.3);
+    const lamp = makePSXMaterial({ color: DR.amarillo, lit: false });
+    const shade = makePSXMaterial({ color: '#15101c' });
+    for (const lx of [cx - 2.4, cx, cx + 2.4]) {
+      const ly = top + 1.55;
+      deco.add(box(0.02, ceilY - ly, 0.02, metalBar, lx, (ceilY + ly) / 2, cz));
+      deco.add(box(0.36, 0.16, 0.36, shade, lx, ly, cz), box(0.24, 0.04, 0.24, lamp, lx, ly - 0.09, cz));
+      const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.6, 1.4, 6, 1, true).translate(0, -0.7, 0), glow(DR.amarillo, 0.06));
+      cone.position.set(lx, ly - 0.1, cz);
+      cone.renderOrder = 2;
+      fx.add(cone);
+    }
+  }
+
+  // --- Segundo piso: sillones entre las pilastras y mesas altas --------------------------------
+  {
+    const { sofas, sofaLen, tables, tableX, tableR } = LOUNGE;
+    const fabrics = [makePSXMaterial({ color: '#4a2a6a' }), makePSXMaterial({ color: DR.rojoOscuro })];
+    const dark2 = makePSXMaterial({ color: '#15101c' });
+    const lampOn = makePSXMaterial({ color: DR.amarillo, lit: false });
+    const floorY = PISO2.h;
+    for (const s of [-1, 1]) {
+      sofas.forEach((z, i) => {
+        const fab = fabrics[(i + (s > 0 ? 1 : 0)) % 2];
+        // Asiento, respaldo contra la pared y los dos apoyabrazos. La gente se sienta en `seatX`.
+        deco.add(box(0.75, 0.42, sofaLen, fab, s * (halfW - 0.35 - 0.75 / 2), floorY + 0.21, z));
+        deco.add(box(0.3, 0.95, sofaLen, fab, s * (halfW - 0.2), floorY + 0.475, z));
+        for (const e of [-1, 1]) deco.add(box(0.95, 0.62, 0.18, fab, s * (halfW - 0.5), floorY + 0.31, z + e * (sofaLen / 2 - 0.09)));
+        // Almohadones de colores.
+        deco.add(box(0.12, 0.3, 0.32, makePSXMaterial({ color: [DR.amarillo, DR.verdeClaro, DR.rosa][(i * 2 + (s > 0 ? 1 : 0)) % 3] }), s * (halfW - 0.42), floorY + 0.6, z - sofaLen / 2 + 0.45));
+      });
+      for (const z of tables) {
+        // Mesa alta redonda con una velita.
+        deco.add(box(0.07, 1.05, 0.07, dark2, s * tableX, floorY + 0.525, z));
+        deco.add(box(0.4, 0.04, 0.4, dark2, s * tableX, floorY + 0.02, z));
+        const topMesh = new THREE.Mesh(new THREE.CylinderGeometry(tableR, tableR, 0.05, 8), makePSXMaterial({ color: '#2e2438' }));
+        topMesh.position.set(s * tableX, floorY + 1.07, z);
+        deco.add(topMesh, box(0.06, 0.09, 0.06, lampOn, s * tableX, floorY + 1.14, z));
+        const halo = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5), glow(DR.amarillo, 0.12));
+        halo.position.set(s * tableX, floorY + 1.16, z);
+        halo.rotation.y = s > 0 ? -Math.PI / 2 : Math.PI / 2;
+        halo.renderOrder = 1;
+        fx.add(halo);
+      }
+    }
+  }
+
+  // --- El pasillo del fondo y el baño --------------------------------------------------------
+  {
+    const { x: px, halfW: hw, end, ceil } = PASILLO;
+    const floorY = PALCO.h, tall = ceil - floorY;
+    const len = backZ - end;
+    /** Una pared que mira hacia adentro, con la textura repetida cada `tile` metros. */
+    const side = (w: number, mat: PSXMaterial, x: number, z: number, rotY: number, h = tall, y = floorY + h / 2) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h, Math.ceil(w / 2), 2), mat);
+      const uv = m.geometry.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w * 0.5, uv.getY(i) * h * 0.5);
+      m.position.set(x, y, z);
+      m.rotation.y = rotY;
+      deco.add(m);
+      return m;
+    };
+    // Paredes del pasillo: pintadas con aerosol.
+    const tag = makeCanvas(64, 64);
+    const tagTex = toPSXTexture(tag.canvas);
+    tagTex.wrapS = tagTex.wrapT = THREE.RepeatWrapping;
+    const drawTags = () => {
+      const { ctx } = tag;
+      ctx.fillStyle = '#2b2236';
+      ctx.fillRect(0, 0, 64, 64);
+      let seed = 19;
+      const r = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+      // Chorreaduras y garabatos.
+      for (let i = 0; i < 28; i++) {
+        ctx.fillStyle = [DR.rosa, DR.amarillo, DR.verdeClaro, DR.rojo, '#5a4a70'][i % 5];
+        const x = Math.floor(r() * 64), y = Math.floor(r() * 64);
+        ctx.fillRect(x, y, 1 + Math.floor(r() * 5), 1);
+        if (r() > 0.6) ctx.fillRect(x, y, 1, 2 + Math.floor(r() * 6));
+      }
+      ctx.font = `8px ${FONT}`;
+      ctx.textBaseline = 'top';
+      const words: [string, string][] = [['DR', DR.rojo], ['RAROS', DR.amarillo], ['<3', DR.rosa], ['TECHNO', DR.verdeClaro], ['PUM PUM', DR.crema]];
+      words.forEach(([w, c], i) => {
+        ctx.fillStyle = c;
+        ctx.fillText(w, 2 + Math.floor(r() * 30), 4 + i * 12);
+      });
+      tagTex.needsUpdate = true;
+    };
+    drawTags();
+    void fontsReady().then(drawTags);
+    const tagMat = makePSXMaterial({ map: tagTex });
+    side(len, tagMat, px - hw, backZ - len / 2, Math.PI / 2);
+    side(len, tagMat, px + hw, backZ - len / 2, -Math.PI / 2);
+    // Piso de baldosas gastadas y techo bajo.
+    const floorTile = makeCheckerTexture('#3a3046', '#1c1624', 2, 8);
+    floorTile.wrapS = floorTile.wrapT = THREE.RepeatWrapping;
+    const floorMat = makePSXMaterial({ map: floorTile });
+    const plane = (w: number, d: number, mat: PSXMaterial, x: number, y: number, z: number, up: boolean, rep = 1) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+      const uv = m.geometry.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w * rep, uv.getY(i) * d * rep);
+      m.rotation.x = up ? -Math.PI / 2 : Math.PI / 2;
+      m.position.set(x, y, z);
+      deco.add(m);
+    };
+    plane(hw * 2, len, floorMat, px, floorY + 0.005, backZ - len / 2, true);
+    const ceilMat = makePSXMaterial({ map: wallTex, color: '#6a6080' });
+    plane(hw * 2, len, ceilMat, px, ceil, backZ - len / 2, false, 0.4);
+    // El marco de la puerta, visto desde la pista, y el cartel de BAÑOS arriba.
+    const frame = makePSXMaterial({ color: '#0a0a0e' });
+    for (const e of [-1, 1]) deco.add(box(0.18, tall, 0.2, frame, px + e * (hw + 0.09), floorY + tall / 2, backZ + 0.08));
+    deco.add(box(hw * 2 + 0.36, 0.18, 0.2, frame, px, ceil + 0.09, backZ + 0.08));
+    const { sign, mat, halo } = neonSign('BAÑOS', DR.verdeClaro, 1.9, 0.5);
+    sign.position.set(px, ceil + 0.6, backZ + 0.05);
+    deco.add(sign);
+    flicker(mat, halo, 4.1);
+    // Un tubo en el techo del pasillo que anda mal: titila todo el tiempo.
+    const tube = makePSXMaterial({ color: DR.crema, lit: false });
+    const tubeGlow = glow('#cfe8ff', 0.1);
+    deco.add(box(0.08, 0.06, 1.4, tube, px, ceil - 0.05, backZ - len * 0.55));
+    const tubePool = new THREE.Mesh(new THREE.PlaneGeometry(hw * 1.6, 2.4), tubeGlow);
+    tubePool.rotation.x = -Math.PI / 2;
+    tubePool.position.set(px, floorY + 0.02, backZ - len * 0.55);
+    tubePool.renderOrder = 1;
+    fx.add(tubePool);
+    updaters.push((_b, _e, t) => {
+      const on = Math.sin(t * 23) > -0.6 || Math.sin(t * 2.1) > 0.3 ? 1 : 0.15;
+      tube.uniforms.uColor.value.set(DR.crema).multiplyScalar(on);
+      tubeGlow.uniforms.uOpacity.value = 0.09 * on;
+    });
+    // Tapas de discos pegadas en el pasillo, torcidas.
+    covers.slice(0, 3).forEach(([bg, label], i) => {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7), makePSXMaterial({ map: makeRecordTexture(bg, label), lit: false }));
+      const e = i % 2 ? 1 : -1;
+      p.position.set(px + e * (hw - 0.02), floorY + 1.7 + (i % 2) * 0.3, backZ - 1.2 - i * 1.5);
+      p.rotation.set(0, -e * (Math.PI / 2), 0.15 * e);
+      deco.add(p);
+    });
+
+    // El baño: azulejos, piletas con espejo y cubículos (uno ocupado: se le ven los pies).
+    const { x0, x1, back: bz, stalls, sinks } = BANO;
+    const tile = makeCanvas(16, 16);
+    tile.ctx.fillStyle = '#56625f';
+    tile.ctx.fillRect(0, 0, 16, 16);
+    tile.ctx.fillStyle = '#b8c6c0';
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) tile.ctx.fillRect(x * 4, y * 4, 3, 3);
+    tile.ctx.fillStyle = '#7d8a6a';
+    for (const [x, y] of [[2, 5], [9, 1], [13, 10], [5, 13]]) tile.ctx.fillRect(x, y, 1, 1);
+    const tileTex = toPSXTexture(tile.canvas);
+    tileTex.wrapS = tileTex.wrapT = THREE.RepeatWrapping;
+    const tileMat = makePSXMaterial({ map: tileTex });
+    const bw = x1 - x0, bd = end - bz, bcx = (x0 + x1) / 2, bcz = (end + bz) / 2;
+    side(bw, tileMat, bcx, bz, 0);
+    side(bd, tileMat, x0, bcz, Math.PI / 2);
+    side(bd, tileMat, x1, bcz, -Math.PI / 2);
+    side(px - hw - x0, tileMat, (x0 + px - hw) / 2, end, Math.PI);
+    side(x1 - px - hw, tileMat, (x1 + px + hw) / 2, end, Math.PI);
+    const bathTile = makeCheckerTexture('#d8d2c4', '#2a2a30', 2, 8);
+    bathTile.wrapS = bathTile.wrapT = THREE.RepeatWrapping;
+    plane(bw, bd, makePSXMaterial({ map: bathTile }), bcx, floorY + 0.005, bcz, true, 1.2);
+    plane(bw, bd, ceilMat, bcx, ceil, bcz, false, 0.4);
+    // Piletas y espejo.
+    const porcelain = makePSXMaterial({ color: '#e8e4dc' });
+    const chrome = makePSXMaterial({ color: '#9a9aa8' });
+    const scx = (sinks.x0 + sinks.x1) / 2, slen = sinks.x1 - sinks.x0;
+    deco.add(box(slen, 0.85, sinks.deep, makePSXMaterial({ color: '#2a2430' }), scx, floorY + 0.425, bz + sinks.deep / 2));
+    for (let k = 0; k < 3; k++) {
+      const sx = sinks.x0 + (slen / 3) * (k + 0.5);
+      deco.add(box(0.5, 0.06, 0.38, porcelain, sx, floorY + 0.88, bz + 0.3), box(0.04, 0.14, 0.04, chrome, sx, floorY + 0.98, bz + 0.1));
+    }
+    const mirror = makeCanvas(32, 16);
+    mirror.ctx.fillStyle = '#5d7184';
+    mirror.ctx.fillRect(0, 0, 32, 16);
+    mirror.ctx.fillStyle = '#8fa4b6';
+    for (let i = 0; i < 4; i++) mirror.ctx.fillRect(4 + i * 8, 2, 1, 12);
+    mirror.ctx.fillStyle = DR.rojo;
+    mirror.ctx.fillRect(20, 6, 6, 1);
+    mirror.ctx.fillRect(20, 6, 1, 4);
+    const mirrorMesh = new THREE.Mesh(new THREE.PlaneGeometry(slen - 0.3, 1.1), makePSXMaterial({ map: toPSXTexture(mirror.canvas), lit: false }));
+    mirrorMesh.position.set(scx, floorY + 1.75, bz + 0.02);
+    deco.add(mirrorMesh);
+    // Cubículos: paneles entre uno y otro y las puertas al frente, que no llegan ni al piso ni al techo.
+    const stallMat = makePSXMaterial({ color: '#2f5e52' });
+    const sd = stalls - x0, n = 3, each = bd / n;
+    for (let k = 0; k <= n; k++) deco.add(box(sd, 2.0, 0.05, stallMat, x0 + sd / 2, floorY + 1.2, bz + k * each));
+    for (let k = 0; k < n; k++) {
+      const z = bz + (k + 0.5) * each;
+      deco.add(box(0.05, 1.75, each - 0.12, stallMat, stalls, floorY + 1.125, z));
+      // Cartelito: libre o ocupado.
+      const busy = k === 1;
+      deco.add(box(0.02, 0.08, 0.16, makePSXMaterial({ color: busy ? DR.rojo : DR.verdeClaro, lit: false }), stalls + 0.03, floorY + 1.4, z - each / 2 + 0.25));
+      if (busy) for (const e of [-1, 1]) deco.add(box(0.2, 0.08, 0.11, makePSXMaterial({ color: '#15101c' }), stalls - 0.25, floorY + 0.04, z + e * 0.1));
+    }
+    // Un secamanos y una luz pelada.
+    deco.add(box(0.12, 0.35, 0.3, porcelain, x1 - 0.06, floorY + 1.35, bz + 1.6));
+    const bulb = makePSXMaterial({ color: '#fff3c4', lit: false });
+    deco.add(box(0.02, 0.4, 0.02, chrome, bcx, ceil - 0.2, bcz), box(0.1, 0.12, 0.1, bulb, bcx, ceil - 0.45, bcz));
+  }
+
+  group.add(bake(deco));
 
   // --- Tele del fondo: el marco y la pantalla "apagada" con el logo --------------------
   const { tele } = CLUB;
