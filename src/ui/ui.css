@@ -221,7 +221,13 @@
 .chat-msg { margin: 0; overflow-wrap: anywhere; }
 .chat-msg b { color: var(--dr-amarillo); font-weight: normal; }
 .chat-msg.propio b { color: var(--dr-rosa); }
-.chat-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px; }
+.chat-form { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; margin-top: 10px; }
+.btn.chico.chat-emoji { padding-inline: 8px; font-size: 16px; line-height: 1; }
+.chat-e { font-size: 14px; line-height: 1; vertical-align: -2px; }
+.chat-emojis { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-top: 8px; padding: 6px; background: var(--dr-negro); border: 2px solid var(--dr-crema); }
+.chat-emojis[hidden] { display: none; }
+.chat-emojis-uno { font-size: 20px; line-height: 1; padding: 4px 0; background: none; border: 2px solid transparent; cursor: pointer; }
+.chat-emojis-uno:hover, .chat-emojis-uno:focus-visible { border-color: var(--dr-amarillo); outline: none; }
 .chat-form input {
   width: 100%; min-width: 0; padding: 7px 8px 6px; font: inherit; font-size: 8px; text-transform: uppercase; color: var(--dr-negro); background: var(--dr-crema);
   border: 2px solid var(--dr-negro); outline: 2px solid var(--dr-crema); border-radius: 0;

@@ -159,20 +159,24 @@ export function cleanPhrase(raw: unknown): string | null {
 export const CHAT_MAX = 120;
 
 /**
- * Un mensaje del chat: como la frase (mayúsculas, sin símbolos raros: así tampoco entran links),
- * pero más largo. Devuelve null si queda vacío o es un insulto.
+ * Lo que puede ir en un mensaje del chat: letras, números, puntuación y emojis (con lo que los
+ * arma: el pegamento de los combinados, los tonos de piel, las banderas, las teclas).
+ * Sin `:` ni `/`: así no entran links.
+ */
+const CHAT_OK = /[A-Z0-9ÑÁÉÍÓÚÜ _\-!?.,¿¡\p{Extended_Pictographic}\u200D\uFE0F\u20E3\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}]/u;
+
+/**
+ * Un mensaje del chat: como la frase (mayúsculas, sin símbolos raros), pero más largo y con
+ * emojis. Devuelve null si queda vacío o es un insulto.
  */
 export function cleanChat(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
-  const s = raw
-    .toLocaleUpperCase('es')
-    .replace(/[^A-Z0-9ÑÁÉÍÓÚÜ _\-!?.,¿¡]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, CHAT_MAX)
-    .trim();
-  if (!s) return null;
-  return blocked(s, false) ? null : s;
+  // De a caracteres enteros (un emoji son dos "letras" de JavaScript: no se lo corta por la mitad).
+  const chars = Array.from(raw.toLocaleUpperCase('es')).filter((c) => CHAT_OK.test(c));
+  const s = chars.join('').replace(/\s+/g, ' ').trim();
+  const cut = Array.from(s).slice(0, CHAT_MAX).join('').trim();
+  if (!cut) return null;
+  return blocked(cut, false) ? null : cut;
 }
 
 /** Nombre visible: mayúsculas, sin símbolos raros. Devuelve null si queda vacío o es un insulto. */
