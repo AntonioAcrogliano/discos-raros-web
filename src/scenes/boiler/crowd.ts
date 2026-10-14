@@ -495,6 +495,8 @@ interface Dancer {
   wait: number;
   /** Con quién fue a bailar (su lugar en la lista; -1 = solo): parado al lado, lo mira. */
   buddy: number;
+  /** La ronda en la que está bailando (null = ninguna): mira al centro y no se va hasta que se desarma. */
+  group: Group | null;
   /** Cada uno a su manera: para dónde tuerce el cuerpo cuando mira a la cabina y qué tan inquieto es. */
   bias: number;
   pace: number;
@@ -513,6 +515,16 @@ interface Dancer {
 }
 
 type Spot = { x: number; z: number };
+
+/** Un grupito bailando en ronda: dónde está el centro, cuánto le queda y quiénes son. */
+interface Group extends Spot {
+  left: number;
+  members: Dancer[];
+}
+/** Qué parte de la pista anda en grupitos, cada cuánto se intenta armar uno y cuánto duran (segundos). */
+const GROUPED = 0.33, GROUP_EVERY = 1.2, GROUP_SECONDS: [number, number] = [18, 40];
+/** Radio de la ronda según cuántos son: que entren hombro con hombro, sin pisarse. */
+const ringRadius = (n: number) => 0.5 / Math.sin(Math.PI / n) + 0.12;
 
 /** A qué velocidad camina el raro que maneja el visitante (m/s): bastante más rápido que los que pasean. */
 const MY_SPEED = 2.3;
@@ -827,6 +839,7 @@ export class Crowd {
         bias,
         pace: 0.7 + r() * 0.7,
         buddy: -1,
+        group: null,
         walk: 0,
         stride: r() * 6,
         phase: r() * 10,
@@ -870,6 +883,7 @@ export class Crowd {
       for (let pass = 0; pass < 12; pass++) this.separate(null, 0);
     }
     this.hadMine = this.mine;
+    this.groups = [];
     this.paint();
   }
 
@@ -956,10 +970,11 @@ export class Crowd {
     const ds = this.dancers;
     // Con poca gente no se desparraman por todo el boliche (quedaría desierto): se quedan en
     // la pista, cerca de la cabina, y recién cuando se va llenando ocupan el fondo y los palcos.
-    const fill = Math.min(1, ds.length / 120), upstairs = 0.45 * fill * fill;
+    const fill = Math.min(1, ds.length / 90), upstairs = 0.4 * fill * fill;
     const where = Math.random();
     const to = { x: 0, z: 0 };
     d.buddy = -1;
+    this.leave(d);
     if (social && where < 0.2 && ds.length > 2) {
       // Se le para al lado a otro (puede ser el del visitante) y bailan enfrentados.
       let j = Math.floor(Math.random() * ds.length);
@@ -971,7 +986,7 @@ export class Crowd {
     } else if (where < 0.88 - upstairs) {
       to.x = (Math.random() * 2 - 1) * PIT.halfW * (0.38 + 0.62 * fill);
       to.z = FLOOR.front - Math.random() * (FLOOR.front - PIT.back) * (0.5 + 0.5 * fill);
-    } else if (where < 0.88 - upstairs * 0.6) {
+    } else if (where < 0.88 - upstairs * 0.65) {
       // Arriba, al fondo: la tribuna de abajo de la tele.
       to.x = (Math.random() * 2 - 1) * REAR_HALF;
       to.z = FLOOR.back + Math.random() * (PALCO.deep - 1.1);
@@ -997,10 +1012,74 @@ export class Crowd {
 
   /** Para dónde mira parado: a su compañero de baile si lo tiene al lado; si no, a la cabina, cada uno un poco a su manera. */
   private facing(d: Dancer) {
+    // En una ronda se mira al centro (cuando ya llegó).
+    if (d.group && Math.hypot(d.group.x - d.x, d.group.z - d.z) < 2.6) return Math.atan2(d.group.x - d.x, d.group.z - d.z);
     const b = d.buddy >= 0 ? this.dancers[d.buddy] : null;
     // (El que está devolviendo un saludo mira al que lo saludó aunque no lo tenga pegado.)
     if (b && Math.hypot(b.x - d.x, b.z - d.z) < (d.act === SALUDO ? 4 : 1.9)) return Math.atan2(b.x - d.x, b.z - d.z);
     return Math.atan2(-d.x * 0.5, CLUB.djZ - d.z) + d.bias;
+  }
+
+  private groups: Group[] = [];
+  private groupIn = 4;
+  /** Saca a un bailarín de su ronda (si se queda sola, se desarma). */
+  private leave(d: Dancer) {
+    const g = d.group;
+    if (!g) return;
+    d.group = null;
+    g.members = g.members.filter((m) => m !== d);
+    if (g.members.length < 2) g.left = 0;
+  }
+
+  /**
+   * Los grupitos: cada tanto, alguno junta a los que tiene cerca (en su mismo nivel) y bailan en
+   * ronda, mirándose. Al rato la ronda se desarma, cada uno sigue paseando y se arman otras.
+   */
+  private mingle(dt: number) {
+    const ds = this.dancers;
+    this.groups = this.groups.filter((g) => {
+      if ((g.left -= dt) > 0) return true;
+      // Se van yendo de a uno, no todos juntos.
+      for (const m of g.members) Object.assign(m, { group: null, wait: Math.random() * 6 });
+      return false;
+    });
+    if ((this.groupIn -= dt) > 0 || ds.length < 8) return;
+    this.groupIn = GROUP_EVERY * (0.6 + Math.random() * 0.8);
+    const free = (d: Dancer, i: number) => !d.group && !d.act && !(i === 0 && this.mine);
+    if (ds.filter((d) => d.group).length > ds.length * GROUPED) return;
+    const seed = ds[1 + Math.floor(Math.random() * (ds.length - 1))];
+    if (!seed || !free(seed, 1) || onStair2(seed)) return;
+    const h = floorAt(seed.x, seed.z);
+    // Los que tiene más cerca, sin escaleras de por medio.
+    const near = ds
+      .filter((d, i) => d !== seed && free(d, i) && Math.abs(floorAt(d.x, d.z) - h) < 0.05)
+      .map((d) => ({ d, far: Math.hypot(d.x - seed.x, d.z - seed.z) }))
+      .filter((o) => o.far < 7)
+      .sort((a, b) => a.far - b.far)
+      .slice(0, 2 + Math.floor(Math.random() * 4));
+    if (near.length < 2) return;
+    const members = [seed, ...near.map((o) => o.d)];
+    const r = ringRadius(members.length), turn = Math.random() * Math.PI * 2;
+    const spots = members.map((_, k) => {
+      const a = turn + (k / members.length) * Math.PI * 2;
+      return { x: seed.x + Math.sin(a) * r, z: seed.z + Math.cos(a) * r };
+    });
+    // La ronda tiene que entrar entera en ese piso: ni colgando de un borde ni adentro de la cabina.
+    const fits = spots.every((p) => {
+      const q = { ...p };
+      offBooth(q);
+      return Math.hypot(q.x - p.x, q.z - p.z) < 0.01 && Math.abs(floorAt(p.x, p.z) - h) < 0.05 && p.z < FLOOR.end;
+    });
+    if (!fits) return;
+    const group: Group = { x: seed.x, z: seed.z, left: GROUP_SECONDS[0] + Math.random() * (GROUP_SECONDS[1] - GROUP_SECONDS[0]), members };
+    // A cada uno, el lugar de la ronda que le queda más a mano.
+    for (const d of members) {
+      let best = 0;
+      spots.forEach((p, k) => Math.hypot(p.x - d.x, p.z - d.z) < Math.hypot(spots[best].x - d.x, spots[best].z - d.z) && (best = k));
+      const [p] = spots.splice(best, 1);
+      Object.assign(d, { group, buddy: -1, path: [], tx: p.x, tz: p.z, stall: 0 });
+    }
+    this.groups.push(group);
   }
 
   private heights: number[] = [];
@@ -1067,7 +1146,8 @@ export class Crowd {
         d.path = [];
         d.tx = d.x;
         d.tz = d.z;
-        d.wait = 0;
+        // (El que está en una ronda se queda ahí, un poco corrido, hasta que se desarme.)
+        if (!d.group) d.wait = 0;
       }
     });
   }
@@ -1075,14 +1155,15 @@ export class Crowd {
   /**
    * Un paso del paseo: cada uno va bailando hasta algún lugar del boliche (mirando para donde
    * camina, subiendo o bajando por la escalera si hace falta), se queda un rato de cara a la
-   * cabina o a quien fue a buscar, y elige otro. Los hay inquietos y los hay plantados. Se
+   * cabina o a quien fue a buscar, y elige otro. Cada tanto se juntan de a varios en una ronda (`mingle`). Los hay inquietos y los hay plantados. Se
    * esquivan entre ellos y no pisan la cabina. El primero, si es el del visitante, no pasea: va
    * adonde lo mandan, y los demás le abren paso.
    */
   wander(dt: number, energy: number) {
     if (!this.roam || this.solo) return;
     const ds = this.dancers;
-    const speed = 0.6 * (0.25 + 0.75 * Math.min(1, energy));
+    const speed = 1.0 * (0.25 + 0.75 * Math.min(1, energy));
+    this.mingle(dt);
     const moving: boolean[] = [false];
     ds.forEach((d, i) => {
       this.prev[i * 2] = d.x;
@@ -1147,11 +1228,11 @@ export class Crowd {
         far = Math.hypot(dx, dz);
       }
       // El rato que se queda bailando en un lugar corre recién cuando llega (subir a un palco lleva lo suyo).
-      if (far <= 0.15 && !d.path.length) d.wait -= dt;
-      if (d.wait <= 0) {
+      if (far <= 0.15 && !d.path.length && !d.group) d.wait -= dt;
+      if (d.wait <= 0 && !d.group) {
         // El que sube se queda un buen rato arriba: el viaje es largo, y si no los palcos quedan vacíos.
         const up = high(this.pick(d, i));
-        d.wait = ((7 + Math.random() * 14) / d.pace) * (up ? 2.5 : 1);
+        d.wait = ((7 + Math.random() * 14) / d.pace) * (up ? 2 : 1);
         this.wanted[i] = 0;
         continue;
       }
