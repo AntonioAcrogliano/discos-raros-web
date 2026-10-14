@@ -40,28 +40,15 @@ export const CLUB = {
 export const PALCO = {
   /** Altura del piso de arriba. */
   h: 1.5,
-  /** Cuánto se meten hacia adentro desde la pared. */
-  deep: 2.8,
+  /** Cuánto se meten hacia adentro desde la pared (el del fondo y los de los costados). */
+  deep: 3.0,
   /** Hasta dónde llegan los brazos (z); de ahí baja la escalera, hacia la entrada. */
   frontZ: 3.0,
   stairs: 2.8,
 };
 
-/**
- * El segundo piso: una franja más alta contra cada pared de costado, por afuera del palco, que
- * llega hasta el fondo. Se sube desde el palco, por una escalera que baja hacia la entrada y
- * termina en un descanso a la altura del palco. Al fondo no hay: ahí está la tele.
- */
-export const PISO2 = {
-  h: 3.0,
-  deep: 2.6,
-  /** Hasta dónde llega (z); de ahí baja la escalera al palco. */
-  frontZ: -1.4,
-  stairs: 2.8,
-};
-
-/** Ancho total de cada costado levantado: el palco más el segundo piso. */
-export const ARM = PALCO.deep + PISO2.deep;
+/** Ancho de cada brazo del palco, desde la pared. */
+export const ARM = PALCO.deep;
 
 /** La barra: en el palco del fondo, a la derecha de la tele, de frente a la pista. El barman atiende de espaldas a la pared. */
 export const BARRA = { x0: 4.8, x1: 11.8, front: -10.95, h: 1.05, barmanZ: -12.0 };
@@ -75,8 +62,11 @@ export const PASILLO = { x: -8, halfW: 1.6, end: -17.5, ceil: PALCO.h + 3.5 };
 /** El baño, al final del pasillo: los cubículos contra la pared de la izquierda (hasta `stalls`) y las piletas contra la del fondo. */
 export const BANO = { x0: -12, x1: -4, back: -21.5, stalls: -10.8, sinks: { x0: -10.2, x1: -5.0, deep: 0.55 } };
 
-/** Sillones y mesas altas del segundo piso, contra cada pared (z de cada uno; los sillones van entre las pilastras). */
-export const LOUNGE = { sofas: [-9.1, -5.9], sofaLen: 2.4, seatX: CLUB.halfW - 0.65, tables: [-11.7, -3.0], tableX: CLUB.halfW - 1.7, tableR: 0.32 };
+/**
+ * Sillones y mesas altas en los brazos del palco: los sillones contra la pared, entre las
+ * pilastras; las mesas cerca de la baranda (z de cada uno).
+ */
+export const LOUNGE = { sofas: [-9.1, -5.9, -2.7], sofaLen: 2.4, seatX: CLUB.halfW - 0.65, tables: [-11.9, 0.9], tableX: CLUB.halfW - ARM + 0.9, tableR: 0.32 };
 
 /** ¿Está atrás de la pared del fondo (en el pasillo o en el baño)? */
 export const inBack = (z: number) => z < CLUB.backZ;
@@ -93,12 +83,8 @@ export function roomAt(x: number, z: number) {
   return { x0: BANO.x0, x1: BANO.x1, z0: BANO.back, z1: door ? frontZ : PASILLO.end, y1: PASILLO.ceil };
 }
 
-/** Altura del piso en un punto del boliche: 0 en la pista, `PALCO.h` o `PISO2.h` arriba, y lo que toque en las escaleras. */
+/** Altura del piso en un punto del boliche: 0 en la pista, `PALCO.h` arriba, y lo que toque en las escaleras. */
 export function floorAt(x: number, z: number) {
-  if (Math.abs(x) >= CLUB.halfW - PISO2.deep && z < PISO2.frontZ + PISO2.stairs) {
-    if (z <= PISO2.frontZ) return PISO2.h;
-    return PALCO.h + (PISO2.h - PALCO.h) * (1 - (z - PISO2.frontZ) / PISO2.stairs);
-  }
   if (z <= CLUB.backZ + PALCO.deep) return PALCO.h;
   if (Math.abs(x) >= CLUB.halfW - ARM) {
     if (z <= PALCO.frontZ) return PALCO.h;
@@ -254,7 +240,7 @@ export function buildClub(): Club {
   // Pilastras entre tapa y tapa de disco, cada una con su tubo de neón que late con el bombo.
   const pilar = makePSXMaterial({ color: '#241a33' });
   const tubes: { tube: PSXMaterial; halo: PSXMaterial; color: THREE.Color }[] = [];
-  // (Los tubos van altos: abajo, contra la pared, está el segundo piso.)
+  // (Los tubos van altos: abajo, contra la pared, están los palcos.)
   for (let i = 0; backZ + 1.8 + i * 3.2 < frontZ - 3; i++) {
     const z = backZ + 1.8 + i * 3.2;
     group.add(box(halfW * 2, 0.26, 0.22, pilar, 0, ceilY - 0.13, z));
@@ -341,16 +327,14 @@ export function buildClub(): Club {
     }
   });
 
-  // --- Palcos y segundo piso: en U, con sus escaleras y barandas -------------------------
+  // --- Palcos: en U, con sus escaleras y barandas ---------------------------------------
   /** Lo que no se mueve de acá para abajo (barra, sillones, baño, leds): al final se junta por material. */
   const deco = new THREE.Group();
   const sideX = halfW - ARM, rearZ = backZ + PALCO.deep, armLen = PALCO.frontZ - rearZ;
-  /** Dónde arranca el segundo piso (x) y el centro de esa franja. */
-  const upX = halfW - PISO2.deep, upMid = halfW - PISO2.deep / 2;
   const palcoTop = makePSXMaterial({ color: '#2a2038' });
   const palcoFront = makePSXMaterial({ map: wallTex, color: '#c9bfe0' });
   const palcoMat = [palcoFront, palcoFront, palcoTop, palcoFront, palcoFront, palcoFront];
-  group.add(box(upX * 2, PALCO.h, PALCO.deep, palcoMat, 0, PALCO.h / 2, backZ + PALCO.deep / 2));
+  group.add(box(halfW * 2, PALCO.h, PALCO.deep, palcoMat, 0, PALCO.h / 2, backZ + PALCO.deep / 2));
   const rail = makePSXMaterial({ color: DR.amarillo });
   const post = makePSXMaterial({ color: '#0a0a0e' });
   const edge = makeCanvas(32, 2);
@@ -432,20 +416,12 @@ export function buildClub(): Club {
   /** Hasta dónde va el pasamanos: mientras el costado de la escalera sea más alto que un escalón. */
   const railTo = (rise: number) => 1 - 0.3 / rise;
   trim(sideX * 2, 0, rearZ + 0.012, false);
-  const up2 = PISO2.frontZ - backZ, landing = PALCO.frontZ - PISO2.frontZ;
   for (const s of [-1, 1]) {
     // El palco de ese lado y su escalera a la pista, que ocupa todo el ancho del brazo.
     group.add(box(PALCO.deep, PALCO.h, armLen, palcoMat, s * (sideX + PALCO.deep / 2), PALCO.h / 2, rearZ + armLen / 2));
     trim(armLen, s * (sideX - 0.012), rearZ + armLen / 2, true);
     stairs(ARM, PALCO.h, PALCO.stairs, s * (halfW - ARM / 2), 0, PALCO.frontZ);
     handrail(s * (sideX - 0.012), PALCO.frontZ, PALCO.stairs, PALCO.h, 0, railTo(PALCO.h));
-    // El segundo piso, contra la pared: llega hasta el fondo y baja al palco por su escalera.
-    group.add(box(PISO2.deep, PISO2.h, up2, palcoMat, s * upMid, PISO2.h / 2, backZ + up2 / 2));
-    trim(up2, s * (upX - 0.012), backZ + up2 / 2, true, PISO2.h);
-    group.add(box(PISO2.deep, PALCO.h, landing, palcoMat, s * upMid, PALCO.h / 2, PISO2.frontZ + landing / 2));
-    stairs(PISO2.deep, PISO2.h - PALCO.h, PISO2.stairs, s * upMid, PALCO.h, PISO2.frontZ);
-    // Del lado del palco la escalera queda en el aire: pasamanos que sigue a la baranda de arriba.
-    handrail(s * (upX - 0.012), PISO2.frontZ, PISO2.stairs, PISO2.h, PALCO.h, railTo(PISO2.h - PALCO.h));
   }
 
   /** Cartel de neón con un texto: se dibuja en un canvas chiquito (y otra vez cuando carga la fuente). */
@@ -557,13 +533,13 @@ export function buildClub(): Club {
     }
   }
 
-  // --- Segundo piso: sillones entre las pilastras y mesas altas --------------------------------
+  // --- Brazos del palco: sillones entre las pilastras y mesas altas -------------------------
   {
     const { sofas, sofaLen, tables, tableX, tableR } = LOUNGE;
     const fabrics = [makePSXMaterial({ color: '#4a2a6a' }), makePSXMaterial({ color: DR.rojoOscuro })];
     const dark2 = makePSXMaterial({ color: '#15101c' });
     const lampOn = makePSXMaterial({ color: DR.amarillo, lit: false });
-    const floorY = PISO2.h;
+    const floorY = PALCO.h;
     for (const s of [-1, 1]) {
       sofas.forEach((z, i) => {
         const fab = fabrics[(i + (s > 0 ? 1 : 0)) % 2];
@@ -797,7 +773,7 @@ export function buildClub(): Club {
       const len = Math.min(11, o.y / (Math.cos(rz) * Math.cos(rx)));
       beam.scale.y = len;
       const px = o.x + Math.sin(rz) * len, pz = o.z - Math.cos(rz) * Math.sin(rx) * len;
-      // Si cae en un palco o en el segundo piso, el charco queda arriba, no enterrado.
+      // Si cae en un palco, el charco queda arriba, no enterrado.
       pool.position.set(px, floorAt(px, pz) + 0.03, pz);
       const a = 0.03 + (0.07 + 0.2 * pulse) * energy;
       mat.uniforms.uOpacity.value = a;

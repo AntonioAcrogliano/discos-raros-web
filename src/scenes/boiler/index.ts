@@ -4,7 +4,7 @@ import type { PistaData } from '../../api';
 import { DR, FONT, type PSXStage, audioLive, outlined, psxUniforms, street, titleUnit, sfx } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
-import { BARRA, CLUB, PALCO, PISO2, buildClub, floorAt, roomAt } from './club';
+import { BARRA, CLUB, PALCO, buildClub, floorAt, roomAt } from './club';
 import { BARMAN, PASTI, SENTARSE } from './dances';
 import { Crowd, MAX_DANCERS } from './crowd';
 import { loadGlbRig } from '../../characters/glbRig';
@@ -267,8 +267,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     v.set((e.clientX / window.innerWidth) * 2 - 1, 1 - (e.clientY / window.innerHeight) * 2, 0.5).unproject(stage.camera).sub(stage.camera.position);
     if (v.y > -0.02) return;
     const cam = stage.camera.position;
-    // Primero se prueba con los pisos de arriba (el segundo y los palcos): si el toque cae ahí, es adonde se va.
-    for (const h of [PISO2.h, PALCO.h]) {
+    // Primero se prueba con los palcos: si el toque cae ahí, es adonde se va.
+    for (const h of [PALCO.h]) {
       const up = (h - cam.y) / v.y;
       if (up > 0 && Math.abs(floorAt(cam.x + v.x * up, cam.z + v.z * up) - h) < 0.01) return goTo(cam.x + v.x * up, cam.z + v.z * up);
     }
