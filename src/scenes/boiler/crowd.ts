@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LOOK, type Look, type Raro } from '../../../shared/look';
 import { DETAIL, type DetailCell, detailUv, make3DGlassesTexture, makeDetailTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
-import { ARM, BANO, BARRA, CLUB, LOUNGE, PALCO, PASILLO, floorAt, inBack } from './club';
+import { ARM, BANO, BARRA, CLUB, ESCALERA, LOUNGE, PALCO, PASILLO, SOTANO, floorAt, inBack } from './club';
 import { ACTION_SECONDS, AGUA, EN_LA_FILA, PUCHO as FUMAR, SALTO, SALUDO, action, dance, hype, makePose, sipReach, sipTip, stride } from './dances';
 
 /**
@@ -530,7 +530,7 @@ interface Place {
   sit: boolean;
   then: number;
   stay: number;
-  kind: 'barra' | 'sillon' | 'mesa' | 'bano' | 'pasillo';
+  kind: 'barra' | 'sillon' | 'mesa' | 'bano' | 'pasillo' | 'sotano';
   who: Dancer | null;
 }
 
@@ -586,6 +586,8 @@ const BLOCKS: [number, number, number, number][] = [
   [BARRA.x0 - 0.1, BARRA.x1 + 0.1, CLUB.backZ, BARRA.front + 0.05],
   [BANO.x0, BANO.stalls, BANO.back, PASILLO.end],
   [BANO.sinks.x0, BANO.sinks.x1, BANO.back, BANO.back + BANO.sinks.deep],
+  // Las tarimas de los caños del sótano.
+  ...SOTANO.poles.map(([x, z]): [number, number, number, number] => [x - 0.75, x + 0.75, z - 0.75, z + 0.75]),
   ...LOUNGE.tables.flatMap((z) => [-1, 1].map((s): [number, number, number, number] => [s * LOUNGE.tableX - LOUNGE.tableR, s * LOUNGE.tableX + LOUNGE.tableR, z - LOUNGE.tableR, z + LOUNGE.tableR])),
 ];
 /** Los sillones: macizos para los que pasan, no para el que va a sentarse. */
@@ -597,22 +599,27 @@ const SOFAS: [number, number, number, number][] = LOUNGE.sofas.flatMap((z) =>
 );
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Del pasillo y el baño no se sale por las paredes: se queda en el lugar permitido más cercano. */
+/**
+ * Lo que se camina atrás de la pared del fondo (x0, x1, z0, z1), ya con el medio cuerpo de margin:
+ * el pasillo, el baño, la escalera del sótano y el sótano. Se tocan solo en las puertas.
+ */
+const BACK_AREAS: [number, number, number, number][] = [
+  [PASILLO.x - PASILLO.halfW + BODY, PASILLO.x + PASILLO.halfW - BODY, PASILLO.end - BODY, CLUB.backZ + 1],
+  [BANO.x0 + BODY, BANO.x1 - BODY, BANO.back + BODY, PASILLO.end - BODY],
+  [PASILLO.x - PASILLO.halfW + BODY, SOTANO.x0 + BODY, ESCALERA.z0 + BODY, ESCALERA.z1 - BODY],
+  [SOTANO.x0 + BODY, SOTANO.x1 - BODY, SOTANO.z0 + BODY, SOTANO.z1 - BODY],
+];
+/** Atrás no se sale por las paredes: si quedó afuera de todo, va al lugar permitido más cercano (o vuelve al salón). */
 function inWalls(p: Spot) {
-  const cx0 = PASILLO.x - PASILLO.halfW + BODY, cx1 = PASILLO.x + PASILLO.halfW - BODY;
-  const bx0 = BANO.x0 + BODY, bx1 = BANO.x1 - BODY;
   if (p.z >= FLOOR.back) return;
-  if (p.z > PASILLO.end - BODY) {
-    // En el pasillo (o en la puerta del baño): si se va contra una pared, vuelve por donde entró.
-    if (p.x >= cx0 && p.x <= cx1) return;
-    const side = p.x < cx0 ? cx0 - p.x : p.x - cx1, toClub = FLOOR.back - p.z;
-    const toBath = p.x >= bx0 && p.x <= bx1 && p.z < PASILLO.end ? p.z - (PASILLO.end - BODY) : Infinity;
-    if (toClub <= side && toClub <= toBath) p.z = FLOOR.back;
-    else if (toBath <= side) p.z = PASILLO.end - BODY;
-    else p.x = clamp(p.x, cx0, cx1);
-    return;
+  if (BACK_AREAS.some(([x0, x1, z0, z1]) => p.x >= x0 && p.x <= x1 && p.z >= z0 && p.z <= z1)) return;
+  let best = { x: clamp(p.x, -FLOOR.halfW, FLOOR.halfW), z: FLOOR.back }, far = Math.hypot(best.x - p.x, best.z - p.z);
+  for (const [x0, x1, z0, z1] of BACK_AREAS) {
+    const q = { x: clamp(p.x, x0, x1), z: clamp(p.z, z0, z1) }, d = Math.hypot(q.x - p.x, q.z - p.z);
+    if (d < far) [best, far] = [q, d];
   }
-  p.x = clamp(p.x, bx0, bx1);
-  p.z = Math.max(p.z, BANO.back + BODY);
+  p.x = best.x;
+  p.z = best.z;
 }
 /** Saca un punto de adentro de un mueble, al borde que tenga más cerca (`seat`: el que va a sentarse pasa por los sillones). */
 function offBlocks(p: Spot, seat = false) {
@@ -629,7 +636,7 @@ function offBlocks(p: Spot, seat = false) {
 /** Saca un punto de adentro de la cabina (al borde que tenga más cerca), de los muebles y de afuera del boliche. */
 function offBooth(p: Spot, seat = false) {
   p.x = Math.max(-FLOOR.halfW, Math.min(FLOOR.halfW, p.x));
-  p.z = Math.max(BANO.back + BODY, Math.min(FLOOR.far, p.z));
+  p.z = Math.max(Math.min(BANO.back, SOTANO.z0) + BODY, Math.min(FLOOR.far, p.z));
   inWalls(p);
   offBlocks(p, seat);
   inWalls(p);
@@ -664,15 +671,27 @@ const across = (s: number, p: Spot) => p.z >= FLOOR.front && p.x * s < -1;
 const DOOR_OUT: Spot = { x: PASILLO.x, z: CLUB.backZ + 0.55 };
 const DOOR_IN: Spot = { x: PASILLO.x, z: CLUB.backZ - 0.3 };
 const HALL: Spot = { x: PASILLO.x, z: PASILLO.end - 0.6 };
-const inBath = (p: Spot) => p.z < PASILLO.end;
+/** Arriba y abajo de la escalera del sótano. */
+const STAIR_TOP: Spot = { x: PASILLO.x + 0.4, z: (ESCALERA.z0 + ESCALERA.z1) / 2 };
+const STAIR_BOTTOM: Spot = { x: SOTANO.x0 + 1.2, z: (ESCALERA.z0 + ESCALERA.z1) / 2 };
+/** Zonas de atrás, en fila: 0 = baño, 1 = pasillo, 2 = sótano (con su escalera). Para ir de una a otra se pasa por las del medio. */
+const zone = (p: Spot) => (p.x > ESCALERA.x0 ? 2 : p.z < PASILLO.end ? 0 : 1);
+/** Las puertas entre una zona y la siguiente: del baño al pasillo, y del pasillo al sótano (arriba y abajo de la escalera). */
+const GATES: Spot[][] = [[HALL], [STAIR_TOP, STAIR_BOTTOM]];
+function backPath(from: Spot, to: Spot): Spot[] {
+  const a = zone(from), b = zone(to), out: Spot[] = [];
+  for (let k = a; k < b; k++) out.push(...GATES[k]);
+  for (let k = a - 1; k >= b; k--) out.push(...[...GATES[k]].reverse());
+  return [...out, to];
+}
 
 /** Los puntos por los que hay que pasar para ir de `from` a `to` (el último es `to`). */
 function route(from: Spot, to: Spot): Spot[] {
   // Al pasillo y al baño se entra por la puerta del palco del fondo (y al baño, derecho por el pasillo).
   const backFrom = inBack(from.z), backTo = inBack(to.z);
-  if (backFrom && backTo) return inBath(from) !== inBath(to) ? [HALL, to] : [to];
-  if (backFrom) return [...(inBath(from) ? [HALL] : []), DOOR_IN, DOOR_OUT, ...route(DOOR_OUT, to)];
-  if (backTo) return [...route(from, DOOR_OUT), DOOR_IN, ...(inBath(to) ? [HALL] : []), to];
+  if (backFrom && backTo) return backPath(from, to);
+  if (backFrom) return [...backPath(from, DOOR_IN), DOOR_OUT, ...route(DOOR_OUT, to)];
+  if (backTo) return [...route(from, DOOR_OUT), DOOR_IN, ...backPath(DOOR_IN, to)];
   const up = high(from), goesUp = high(to);
   const out: Spot[] = [];
   if (up && goesUp) {
@@ -764,6 +783,13 @@ function makePlaces(): Place[] {
   // En el baño, frente al espejo (se saludan solos).
   const sinkW = (BANO.sinks.x1 - BANO.sinks.x0) / 3;
   for (let k = 0; k < 3; k++) add('bano', BANO.sinks.x0 + sinkW * (k + 0.5), BANO.back + BANO.sinks.deep + 0.4, Math.PI, SALUDO, 0.6);
+  // En el sótano, mirando los caños de cerca (y alentando).
+  for (const [px, pz] of SOTANO.poles) {
+    for (const a of [-1.1, -0.35, 0.35, 1.1]) {
+      const x = px + Math.sin(a) * 1.7, z = pz + Math.cos(a) * 1.7;
+      add('sotano', x, z, Math.atan2(px - x, pz - z), SALUDO, 1.4);
+    }
+  }
   // Y en el pasillo, contra la pared, fumando a escondidas.
   for (let z = CLUB.backZ - 1.1; z > PASILLO.end + 0.6; z -= 1.3) {
     for (const e of [-1, 1]) add('pasillo', PASILLO.x + e * (PASILLO.halfW - BODY - 0.05), z, (-e * Math.PI) / 2, FUMAR, 1.2);
@@ -1134,7 +1160,7 @@ export class Crowd {
     // A veces va a un lugar con dueño: la barra, el baño o el pasillo, los sillones o las mesas de arriba.
     const pr = Math.random();
     const kind: Place['kind'] | null =
-      pr < 0.08 ? 'barra' : pr < 0.08 + 0.07 * fill ? (Math.random() < 0.5 ? 'bano' : 'pasillo') : pr < 0.15 + 0.35 * upstairs ? (Math.random() < 0.6 ? 'sillon' : 'mesa') : null;
+      pr < 0.08 ? 'barra' : pr < 0.08 + 0.09 * fill ? (['bano', 'pasillo', 'sotano'] as const)[Math.floor(Math.random() * 3)] : pr < 0.15 + 0.35 * upstairs ? (Math.random() < 0.6 ? 'sillon' : 'mesa') : null;
     const free = kind ? this.places.filter((p) => p.kind === kind && !p.who) : [];
     if (free.length) {
       const place = free[Math.floor(Math.random() * free.length)];

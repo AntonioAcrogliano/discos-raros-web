@@ -7,6 +7,7 @@ import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
 import { BARRA, CLUB, PALCO, buildClub, floorAt, roomAt } from './club';
 import { BARMAN, PASTI, SENTARSE } from './dances';
 import { Crowd, MAX_DANCERS } from './crowd';
+import { buildSotano } from './sotano';
 import { loadGlbRig } from '../../characters/glbRig';
 import { buildPlaceholderDjs, makeDjs } from './djs';
 import { Luces } from './luces';
@@ -124,7 +125,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   [BARRA.x0 + 1.6, BARRA.x1 - 1.9].forEach((x, i) => barra.place(i, x, BARRA.barmanZ, 0));
   barra.group.position.y = PALCO.h;
   if (import.meta.env.DEV) (window as unknown as { drPista: unknown }).drPista = { crowd, barra };
-  scene.add(club.group, crowd.group, barra.group, djGroup, tele.object, afuera.group, patio.group);
+  const sotano = buildSotano();
+  scene.add(club.group, crowd.group, barra.group, sotano.group, djGroup, tele.object, afuera.group, patio.group);
 
   // --- Quién baila ---------------------------------------------------------------------
   let pista: PistaData = { total: 0, raros: [], mine: null };
@@ -368,6 +370,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     crowd.hype = music && mode === 'pista' ? music.drop : 0;
     crowd.update(beats, energy, t);
     barra.update(t * 1.3, 1, t);
+    sotano.update(beats, energy, t);
     const drop = music && mode === 'pista' ? music.drop : 0;
     djs.update(beats, energy, drop);
     // Cuando cae el drop, la pista grita (no más de una vez cada tanto).

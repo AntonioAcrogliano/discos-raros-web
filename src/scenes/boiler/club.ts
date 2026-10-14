@@ -68,8 +68,17 @@ export const BANO = { x0: -12, x1: -4, back: -21.5, stalls: -10.8, sinks: { x0: 
  */
 export const LOUNGE = { sofas: [-9.1, -5.9, -2.7], sofaLen: 2.4, seatX: CLUB.halfW - 0.65, tables: [-11.9, 0.9], tableX: CLUB.halfW - ARM + 0.9, tableR: 0.32 };
 
-/** ¿Está atrás de la pared del fondo (en el pasillo o en el baño)? */
+/**
+ * El sótano: un cuarto abajo del fondo del boliche, con dos caños. Se baja por una escalera que
+ * sale de la pared derecha del pasillo y va derecho hacia la derecha (`ESCALERA`).
+ */
+export const SOTANO = { x0: -0.4, x1: 11.6, z0: -22, z1: -14, y: -3.0, ceil: 0.6, poles: [[3.4, -18.8], [7.8, -18.8]] as [number, number][] };
+export const ESCALERA = { x0: PASILLO.x + PASILLO.halfW, x1: SOTANO.x0, z0: -16.8, z1: -14.8 };
+
+/** ¿Está atrás de la pared del fondo (en el pasillo, el baño o el sótano)? */
 export const inBack = (z: number) => z < CLUB.backZ;
+/** ¿Está en el sótano o en su escalera? */
+export const inCellar = (x: number, z: number) => inBack(z) && x > ESCALERA.x0;
 
 /**
  * La caja en la que está un punto (la cámara no sale de ahí): el salón, o el pasillo y el baño.
@@ -78,6 +87,11 @@ export const inBack = (z: number) => z < CLUB.backZ;
 export function roomAt(x: number, z: number) {
   const { halfW, backZ, frontZ, ceilY } = CLUB;
   if (!inBack(z)) return { x0: -halfW, x1: halfW, z0: backZ, z1: frontZ, y1: ceilY };
+  if (inCellar(x, z)) {
+    // En la escalera, la cámara puede quedar arriba, en el pasillo; abajo, no sale del sótano.
+    if (x < SOTANO.x0) return { x0: PASILLO.x - PASILLO.halfW, x1: SOTANO.x1, z0: ESCALERA.z0, z1: ESCALERA.z1, y1: PASILLO.ceil };
+    return { x0: ESCALERA.x0, x1: SOTANO.x1, z0: SOTANO.z0, z1: SOTANO.z1, y1: SOTANO.ceil };
+  }
   const door = Math.abs(x - PASILLO.x) < PASILLO.halfW;
   if (z > PASILLO.end) return { x0: PASILLO.x - PASILLO.halfW, x1: PASILLO.x + PASILLO.halfW, z0: BANO.back, z1: frontZ, y1: PASILLO.ceil };
   return { x0: BANO.x0, x1: BANO.x1, z0: BANO.back, z1: door ? frontZ : PASILLO.end, y1: PASILLO.ceil };
@@ -85,6 +99,12 @@ export function roomAt(x: number, z: number) {
 
 /** Altura del piso en un punto del boliche: 0 en la pista, `PALCO.h` arriba, y lo que toque en las escaleras. */
 export function floorAt(x: number, z: number) {
+  if (inBack(z)) {
+    // Atrás: el sótano, su escalera (que baja derecho hacia la derecha) o, si no, la altura del palco.
+    if (x >= SOTANO.x0 && x <= SOTANO.x1 && z >= SOTANO.z0 && z <= SOTANO.z1) return SOTANO.y;
+    if (x > ESCALERA.x0 && x < ESCALERA.x1 && z >= ESCALERA.z0 && z <= ESCALERA.z1) return PALCO.h + ((SOTANO.y - PALCO.h) * (x - ESCALERA.x0)) / (ESCALERA.x1 - ESCALERA.x0);
+    return PALCO.h;
+  }
   if (z <= CLUB.backZ + PALCO.deep) return PALCO.h;
   if (Math.abs(x) >= CLUB.halfW - ARM) {
     if (z <= PALCO.frontZ) return PALCO.h;
@@ -111,7 +131,7 @@ export interface Club {
 const TAU = Math.PI * 2;
 
 /** Material de luz: no pinta, suma (haces, charcos en el piso, resplandor de los tubos). */
-function glow(color: THREE.ColorRepresentation, opacity: number) {
+export function glow(color: THREE.ColorRepresentation, opacity: number) {
   const m = makePSXMaterial({ color, lit: false, opacity, side: THREE.DoubleSide });
   m.blending = THREE.AdditiveBlending;
   return m;
@@ -123,7 +143,7 @@ function glow(color: THREE.ColorRepresentation, opacity: number) {
  * Quedan como están las de `keep` (las que se mueven o se prenden y apagan), los grupos, las de
  * varios materiales y los resplandores, que se dibujan en su orden.
  */
-function bake(parent: THREE.Object3D, keep: THREE.Object3D[] = []) {
+export function bake(parent: THREE.Object3D, keep: THREE.Object3D[] = []) {
   const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
   for (const o of [...parent.children]) {
     const m = o as THREE.Mesh;
@@ -612,7 +632,9 @@ export function buildClub(): Club {
     void fontsReady().then(drawTags);
     const tagMat = makePSXMaterial({ map: tagTex });
     side(len, tagMat, px - hw, backZ - len / 2, Math.PI / 2);
-    side(len, tagMat, px + hw, backZ - len / 2, -Math.PI / 2);
+    // (La de la derecha tiene la puerta de la escalera del sótano.)
+    side(backZ - ESCALERA.z1, tagMat, px + hw, (backZ + ESCALERA.z1) / 2, -Math.PI / 2);
+    side(ESCALERA.z0 - end, tagMat, px + hw, (ESCALERA.z0 + end) / 2, -Math.PI / 2);
     // Piso de baldosas gastadas y techo bajo.
     const floorTile = makeCheckerTexture('#3a3046', '#1c1624', 2, 8);
     floorTile.wrapS = floorTile.wrapT = THREE.RepeatWrapping;
@@ -653,7 +675,8 @@ export function buildClub(): Club {
     // Tapas de discos pegadas en el pasillo, torcidas.
     covers.slice(0, 3).forEach(([bg, label], i) => {
       const p = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7), makePSXMaterial({ map: makeRecordTexture(bg, label), lit: false }));
-      const e = i % 2 ? 1 : -1;
+      // (Todas del lado izquierdo: en el derecho está la puerta del sótano.)
+      const e = -1;
       p.position.set(px + e * (hw - 0.02), floorY + 1.7 + (i % 2) * 0.3, backZ - 1.2 - i * 1.5);
       p.rotation.set(0, -e * (Math.PI / 2), 0.15 * e);
       deco.add(p);
