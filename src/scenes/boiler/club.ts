@@ -131,23 +131,24 @@ function glow(color: THREE.ColorRepresentation, opacity: number) {
   return m;
 }
 
-/** Junta las mallas quietas que comparten material en una sola: muchas menos llamadas de dibujo (importa en el celu). */
-function bake(src: THREE.Group) {
-  const out = new THREE.Group();
+/**
+ * Junta las mallas quietas de `parent` que comparten material en una sola: muchas menos llamadas
+ * de dibujo (importa en el celu). Los colores que laten siguen andando: van en el material.
+ * Quedan como están las de `keep` (las que se mueven o se prenden y apagan), los grupos, las de
+ * varios materiales y los resplandores, que se dibujan en su orden.
+ */
+function bake(parent: THREE.Object3D, keep: THREE.Object3D[] = []) {
   const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
-  for (const o of [...src.children]) {
+  for (const o of [...parent.children]) {
     const m = o as THREE.Mesh;
-    // (Los grupos, los de varios materiales y los resplandores, que se dibujan en su orden, quedan como están.)
-    if (!m.isMesh || Array.isArray(m.material) || m.renderOrder) {
-      out.add(o);
-      continue;
-    }
+    if (!m.isMesh || Array.isArray(m.material) || m.renderOrder || keep.includes(m)) continue;
     m.updateMatrix();
     const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
     byMat.set(m.material, [...(byMat.get(m.material) ?? []), g.applyMatrix4(m.matrix)]);
+    parent.remove(m);
   }
-  for (const [mat, geos] of byMat) out.add(new THREE.Mesh(mergeGeometries(geos)!, mat));
-  return out;
+  for (const [mat, geos] of byMat) parent.add(new THREE.Mesh(mergeGeometries(geos)!, mat));
+  return parent;
 }
 
 export function buildClub(): Club {
@@ -213,11 +214,13 @@ export function buildClub(): Club {
 
   // --- Paredes y techo ---------------------------------------------------------------
   const wallTex = makeWallTexture();
+  /** Un solo material para todas las paredes de ladrillo: así se juntan en una sola malla (ver `bake`). */
+  const wallMat = makePSXMaterial({ map: wallTex });
   const wall = (w: number, h: number, repeatX: number, repeatY: number) => {
     const geo = new THREE.PlaneGeometry(w, h, Math.ceil(w / 2), Math.ceil(h / 2));
     const uv = geo.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * repeatX, uv.getY(i) * repeatY);
-    return new THREE.Mesh(geo, makePSXMaterial({ map: wallTex }));
+    return new THREE.Mesh(geo, wallMat);
   };
   /** Cuántas veces se repite el ladrillo por metro de pared (a lo ancho y a lo largo). */
   const perW = 12 / 23, perD = 7 / 18;
@@ -227,14 +230,15 @@ export function buildClub(): Club {
     geo.translate((x0 + x1) / 2, (y0 + y1) / 2, 0);
     const p = geo.attributes.position, uv = geo.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, (p.getX(i) + halfW) * perW, (p.getY(i) / ceilY) * 4);
-    const m = new THREE.Mesh(geo, makePSXMaterial({ map: wallTex }));
+    const m = new THREE.Mesh(geo, wallMat);
     m.position.z = backZ;
     return m;
   };
   // Con el hueco de la puerta del pasillo (que arranca a la altura del palco).
   const doorL = PASILLO.x - PASILLO.halfW, doorR = PASILLO.x + PASILLO.halfW;
   const back = new THREE.Group();
-  back.add(backPart(-halfW, doorL, 0, ceilY), backPart(doorR, halfW, 0, ceilY), backPart(doorL, doorR, PASILLO.ceil, ceilY), backPart(doorL, doorR, 0, PALCO.h));
+  for (const part of [backPart(-halfW, doorL, 0, ceilY), backPart(doorR, halfW, 0, ceilY), backPart(doorL, doorR, PASILLO.ceil, ceilY), backPart(doorL, doorR, 0, PALCO.h)]) back.add(part);
+  bake(back);
   const left = wall(depth, ceilY, perD * depth, 4);
   left.rotation.y = Math.PI / 2;
   left.position.set(-halfW, ceilY / 2, (frontZ + backZ) / 2);
@@ -984,6 +988,10 @@ export function buildClub(): Club {
       m.visible = true;
     }
   });
+
+  // Todo lo quieto del salón y de la cabina, junto por material.
+  bake(group, [floor, screen, teleLogo, ball]);
+  bake(booth, [...discs, ...pumping, boothLogo]);
 
   return {
     group,

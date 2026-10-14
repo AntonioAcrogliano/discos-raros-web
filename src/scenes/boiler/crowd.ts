@@ -1014,7 +1014,14 @@ export class Crowd {
 
   /** Manda a un bailarín a un punto, pasando por donde haga falta (la escalera, la esquina del palco). */
   private send(d: Dancer, to: Spot) {
-    d.path = route(d, to);
+    // Al sillón se llega por adelante (si no, pegado a la pared, se choca con los otros sillones).
+    // Y si ya anda contra la pared de ese lado, primero se despega.
+    const p = d.place;
+    if (p?.sit && to === p) {
+      const front = { x: p.x - Math.sign(p.x) * 1.15, z: p.z };
+      const out = Math.sign(d.x) === Math.sign(p.x) && Math.abs(d.x) > Math.abs(front.x) && upper(d) ? [{ x: front.x, z: d.z }] : [];
+      d.path = [...out, ...route(out[0] ?? d, front), p];
+    } else d.path = route(d, to);
     const next = d.path.shift()!;
     d.tx = next.x;
     d.tz = next.z;
@@ -1033,6 +1040,12 @@ export class Crowd {
   /** ¿El raro del visitante está sentado (o yendo a sentarse)? */
   get sitting() {
     return Boolean(this.mine && this.dancers[0]?.place);
+  }
+
+  /** Para dónde mira el raro del visitante si ya está sentado (null = no está sentado). */
+  get seatYaw() {
+    const d = this.dancers[0];
+    return this.mine && d && this.seated(d) ? d.place!.yaw : null;
   }
 
   /**
@@ -1709,7 +1722,11 @@ export class Crowd {
         }
       }
     });
-    for (const m of this.all) if (m.count) m.instanceMatrix.needsUpdate = true;
+    for (const m of this.all) {
+      if (m.count) m.instanceMatrix.needsUpdate = true;
+      // Las prendas que no lleva nadie no se dibujan (vacías, igual costaban una llamada cada una).
+      m.visible = m.count > 0;
+    }
   }
 
   /** Posición de arriba de la cabeza del bailarín `i` (para colgarle el nombre). */

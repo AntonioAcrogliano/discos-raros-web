@@ -193,6 +193,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let eyeY = 1.3;
   /** Lo viene llevando con las teclas (para frenarlo cuando las suelta). */
   let steering = false;
+  /** Si estaba sentado en el frame anterior, y cuánto le falta a la cámara para ponerse de frente. */
+  let wasSeated = false, faceSeat = 0;
   const fingers = new Map<number, { x: number; y: number; sx: number; sy: number; t0: number }>();
   const walk = new Set<string>();
   /** La palanca del celu (ver `steer`). */
@@ -545,6 +547,18 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         if (me) look.at = me;
         else follow = false;
         if (crowd.walking) look.idle = 0;
+        // Recién sentado: la cámara se da vuelta y lo mira de frente, desde la pista (si no, queda
+        // contra la pared, atrás de los que pasan). Si el visitante la gira, manda él.
+        const seat = crowd.seatYaw;
+        if (seat !== null && !wasSeated) faceSeat = 1.6;
+        wasSeated = seat !== null;
+        if (seat !== null && faceSeat > 0 && !fingers.size) {
+          faceSeat -= dt;
+          look.yaw += Math.atan2(Math.sin(seat - look.yaw), Math.cos(seat - look.yaw)) * Math.min(1, dt * 4);
+          look.pitch += (0.2 - look.pitch) * Math.min(1, dt * 4);
+          look.zoom += (0.3 - look.zoom) * Math.min(1, dt * 4);
+          look.idle = 0;
+        }
       }
       if (look.idle > IDLE_SECONDS && !fingers.size) {
         if (look.at) {
