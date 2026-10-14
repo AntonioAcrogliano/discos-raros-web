@@ -26,6 +26,8 @@ const ACTIONS: ActionButton[] = [
   { kind: 3, label: 'HOLA', icon: ['..X.X.X..', '..X.X.X.X', '..X.X.X.X', 'X.XXXXXXX', 'X.XXXXXXX', 'XXXXXXXXX', '.XXXXXXX.', '..XXXXX..', '..XXXXX..'] },
   { kind: 4, label: 'SALTO', icon: ['....X....', '...XXX...', '..XXXXX..', '.XXXXXXX.', '...XXX...', '...XXX...', '...XXX...', '.........', 'XXXXXXXXX'] },
   { kind: 5, label: 'PASTI', icon: ['.........', '.....XXX.', '....XXXXX', '...X.XXXX', '..X...XXX', '.X...X.X.', 'X...X....', 'X..X.....', '.XX......'] },
+  // (No es un paso: va al sillón libre más cercano y se sienta; otra vez, se para.)
+  { kind: 6, label: 'SENTARSE', icon: ['.X.......', '.X.......', '.X.......', '.X.......', '.XXXXXXX.', '.XXXXXXX.', '.X.....X.', '.X.....X.', '.X.....X.'] },
 ];
 
 async function main() {

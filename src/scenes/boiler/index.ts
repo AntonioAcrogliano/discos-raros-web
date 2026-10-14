@@ -5,7 +5,7 @@ import { DR, FONT, type PSXStage, audioLive, outlined, psxUniforms, street, titl
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
 import { BARRA, CLUB, PALCO, PISO2, buildClub, floorAt, roomAt } from './club';
-import { BARMAN, PASTI } from './dances';
+import { BARMAN, PASTI, SENTARSE } from './dances';
 import { Crowd, MAX_DANCERS } from './crowd';
 import { loadGlbRig } from '../../characters/glbRig';
 import { buildPlaceholderDjs, makeDjs } from './djs';
@@ -826,7 +826,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     },
     act(kind) {
       if (mode !== 'pista' || !hasFirst) return;
-      crowd.act(0, kind);
+      if (kind === SENTARSE) crowd.sit();
+      else crowd.act(0, kind);
       // La pasti tarda un cachito en pegar.
       if (kind === PASTI) tripAt = clock + 1.3;
       // Que se vea: la cámara va con él.

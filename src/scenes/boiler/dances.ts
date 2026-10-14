@@ -47,6 +47,8 @@ const TAU = Math.PI * 2;
 export const PUCHO = 1, AGUA = 2, SALUDO = 3, SALTO = 4, PASTI = 5;
 /** Cuánto dura cada una (segundos). */
 export const ACTION_SECONDS = [0, 5.2, 4.4, 2.4, 1.5, 1.7];
+/** El botón de sentarse va con las acciones, pero no es un paso: lo maneja `Crowd.sit` (va al sillón más cercano, o se para). */
+export const SENTARSE = 6;
 
 /**
  * Achica un giro que puede dar la vuelta entera (el helicóptero, los brazos del molino) sin que

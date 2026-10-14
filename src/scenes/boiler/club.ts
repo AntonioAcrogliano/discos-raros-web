@@ -593,7 +593,8 @@ export function buildClub(): Club {
     const len = backZ - end;
     /** Una pared que mira hacia adentro, con la textura repetida cada `tile` metros. */
     const side = (w: number, mat: PSXMaterial, x: number, z: number, rotY: number, h = tall, y = floorY + h / 2) => {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h, Math.ceil(w / 2), 2), mat);
+      // (En pedazos de un metro: entero, la textura se tuerce con el bamboleo de la Play.)
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h, Math.ceil(w), Math.ceil(h)), mat);
       const uv = m.geometry.attributes.uv;
       for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w * 0.5, uv.getY(i) * h * 0.5);
       m.position.set(x, y, z);
@@ -620,7 +621,7 @@ export function buildClub(): Club {
       }
       ctx.font = `8px ${FONT}`;
       ctx.textBaseline = 'top';
-      const words: [string, string][] = [['DR', DR.rojo], ['RAROS', DR.amarillo], ['<3', DR.rosa], ['TECHNO', DR.verdeClaro], ['PUM PUM', DR.crema]];
+      const words: [string, string][] = [['DR', DR.rojo], ['RAROS', DR.amarillo], ['<3', DR.rosa], ['DnB', DR.verdeClaro], ['PUM PUM', DR.crema]];
       words.forEach(([w, c], i) => {
         ctx.fillStyle = c;
         ctx.fillText(w, 2 + Math.floor(r() * 30), 4 + i * 12);
@@ -637,7 +638,7 @@ export function buildClub(): Club {
     floorTile.wrapS = floorTile.wrapT = THREE.RepeatWrapping;
     const floorMat = makePSXMaterial({ map: floorTile });
     const plane = (w: number, d: number, mat: PSXMaterial, x: number, y: number, z: number, up: boolean, rep = 1) => {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d, Math.ceil(w), Math.ceil(d)), mat);
       const uv = m.geometry.attributes.uv;
       for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w * rep, uv.getY(i) * d * rep);
       m.rotation.x = up ? -Math.PI / 2 : Math.PI / 2;

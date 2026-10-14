@@ -583,6 +583,13 @@ const BLOCKS: [number, number, number, number][] = [
   [BANO.sinks.x0, BANO.sinks.x1, BANO.back, BANO.back + BANO.sinks.deep],
   ...LOUNGE.tables.flatMap((z) => [-1, 1].map((s): [number, number, number, number] => [s * LOUNGE.tableX - LOUNGE.tableR, s * LOUNGE.tableX + LOUNGE.tableR, z - LOUNGE.tableR, z + LOUNGE.tableR])),
 ];
+/** Los sillones: macizos para los que pasan, no para el que va a sentarse. */
+const SOFAS: [number, number, number, number][] = LOUNGE.sofas.flatMap((z) =>
+  [-1, 1].map((s): [number, number, number, number] => {
+    const a = s * (CLUB.halfW - 1.1), b = s * CLUB.halfW;
+    return [Math.min(a, b), Math.max(a, b), z - LOUNGE.sofaLen / 2, z + LOUNGE.sofaLen / 2];
+  }),
+);
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Del pasillo y el baño no se sale por las paredes: se queda en el lugar permitido más cercano. */
 function inWalls(p: Spot) {
@@ -602,9 +609,9 @@ function inWalls(p: Spot) {
   p.x = clamp(p.x, bx0, bx1);
   p.z = Math.max(p.z, BANO.back + BODY);
 }
-/** Saca un punto de adentro de un mueble, al borde que tenga más cerca. */
-function offBlocks(p: Spot) {
-  for (const [x0, x1, z0, z1] of BLOCKS) {
+/** Saca un punto de adentro de un mueble, al borde que tenga más cerca (`seat`: el que va a sentarse pasa por los sillones). */
+function offBlocks(p: Spot, seat = false) {
+  for (const [x0, x1, z0, z1] of seat ? BLOCKS : [...BLOCKS, ...SOFAS]) {
     if (p.x <= x0 - BODY * 0.7 || p.x >= x1 + BODY * 0.7 || p.z <= z0 - BODY * 0.7 || p.z >= z1 + BODY * 0.7) continue;
     const l = p.x - (x0 - BODY * 0.7), r = x1 + BODY * 0.7 - p.x, b = p.z - (z0 - BODY * 0.7), f = z1 + BODY * 0.7 - p.z;
     const m = Math.min(l, r, b, f);
@@ -615,11 +622,11 @@ function offBlocks(p: Spot) {
   }
 }
 /** Saca un punto de adentro de la cabina (al borde que tenga más cerca), de los muebles y de afuera del boliche. */
-function offBooth(p: Spot) {
+function offBooth(p: Spot, seat = false) {
   p.x = Math.max(-FLOOR.halfW, Math.min(FLOOR.halfW, p.x));
   p.z = Math.max(BANO.back + BODY, Math.min(FLOOR.far, p.z));
   inWalls(p);
-  offBlocks(p);
+  offBlocks(p, seat);
   inWalls(p);
   if (p.z <= BOOTH_BACK || p.z >= FLOOR.boothFront || Math.abs(p.x) >= FLOOR.aisle) return;
   const toBack = p.z - BOOTH_BACK, toFront = FLOOR.boothFront - p.z, toSide = FLOOR.aisle - Math.abs(p.x);
@@ -974,7 +981,11 @@ export class Crowd {
       this.dancers.forEach((d, i) => {
         if (i === 0) {
           // El del visitante sigue parado donde lo dejó (aunque le hayan cambiado la ropa).
-          if (first && this.mine && this.hadMine) Object.assign(d, { x: first.x, z: first.z, tx: first.x, tz: first.z, yaw: first.yaw });
+          if (first && this.mine && this.hadMine) {
+            Object.assign(d, { x: first.x, z: first.z, tx: first.x, tz: first.z, yaw: first.yaw, path: first.path });
+            // (Si estaba sentado, sigue sentado.)
+            if (first.place && !first.place.who) (d.place = first.place).who = d;
+          }
           return;
         }
         const was = before.get(d.id);
@@ -1014,8 +1025,39 @@ export class Crowd {
     const d = this.dancers[0];
     if (!d || !this.mine) return;
     const p = { x, z };
+    this.release(d);
     offBooth(p);
     this.send(d, p);
+  }
+
+  /** ¿El raro del visitante está sentado (o yendo a sentarse)? */
+  get sitting() {
+    return Boolean(this.mine && this.dancers[0]?.place);
+  }
+
+  /**
+   * Sentarse o pararse: si está sentado (o yendo), se para ahí nomás; si no, va al sillón libre
+   * que tenga más cerca (aunque quede en el segundo piso: sube solo) y se sienta.
+   */
+  sit() {
+    const d = this.dancers[0];
+    if (!d || !this.mine) return;
+    if (d.place) {
+      this.release(d);
+      d.path = [];
+      // Un paso para adelante, afuera del sillón.
+      d.tx = d.x - Math.sign(d.x) * 0.9;
+      d.tz = d.z;
+      return;
+    }
+    let best: Place | null = null;
+    for (const p of this.places) {
+      if (p.sit && !p.who && (!best || Math.hypot(p.x - d.x, p.z - d.z) < Math.hypot(best.x - d.x, best.z - d.z))) best = p;
+    }
+    if (!best) return;
+    best.who = d;
+    d.place = best;
+    this.send(d, best);
   }
 
   /**
@@ -1030,6 +1072,8 @@ export class Crowd {
     // el destino queda más cerca, y como al llegar afloja, va más lento.
     const ahead = power > 0.95 ? 1.6 : 0.55 * Math.max(0.35, power);
     const p = { x: d.x + (dx / len) * ahead, z: d.z + (dz / len) * ahead };
+    // Caminar lo levanta del sillón.
+    this.release(d);
     offBooth(p);
     d.path = [];
     d.tx = p.x;
@@ -1147,6 +1191,11 @@ export class Crowd {
     d.place = null;
     d.then = 0;
   }
+  /** ¿Va a sentarse y ya está llegando? (Puede pasar por el sillón.) */
+  private toSeat(d: Dancer) {
+    const p = d.place;
+    return Boolean(p?.sit && Math.hypot(p.x - d.x, p.z - d.z) < 1.3);
+  }
   /** ¿Está sentado en un sillón? (Ya llegó: no se lo empuja.) */
   private seated(d: Dancer) {
     const p = d.place;
@@ -1256,7 +1305,7 @@ export class Crowd {
           b.z += (uz * push + ux * around) * kb;
         }
       }
-      for (let i = 1; i < ds.length; i++) offBooth(ds[i]);
+      for (let i = 1; i < ds.length; i++) offBooth(ds[i], this.toSeat(ds[i]));
     }
   }
 
@@ -1353,11 +1402,13 @@ export class Crowd {
         const step = speed * dt, x0 = me.x, z0 = me.z;
         me.x += v.x * dt;
         me.z += v.z * dt;
-        offBooth(me);
+        offBooth(me, this.toSeat(me));
         // Trabado contra la cabina: la rodea por el costado que tiene más cerca.
         if (far > 0.3 && Math.hypot(me.x - x0, me.z - z0) < step * 0.3) me.x += Math.sign(me.x || me.tx || 1) * step;
         // Mira para donde va (cuando ya casi frenó, se queda como estaba).
         if (speed > 0.35) me.yaw += turnTo(me.yaw, Math.atan2(v.x, v.z)) * Math.min(1, dt * 11);
+        // Llegando al sillón, se da vuelta para sentarse.
+        if (me.place && far < 0.6) me.yaw += turnTo(me.yaw, me.place.yaw) * Math.min(1, dt * 8);
         me.stride += (step * Math.PI) / MY_STEP;
         this.walking = moving[0] = speed > 0.25;
       } else v.x = v.z = 0;
