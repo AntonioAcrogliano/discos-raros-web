@@ -26,6 +26,8 @@ export const LOOK = {
   mano: ['NADA', 'PALITOS DE LUZ', 'ABANICO', 'AGUA', 'PULSERAS', 'GUANTES'],
   calzado: ['ZAPAS', 'PLATAFORMAS', 'BOTAS', 'DESCALZO'],
   neon: ['#ff004a', '#ffe600', '#b6ff00', '#00e5ff', '#ff5ad0', '#9a4dff', '#ff8a00', '#f9f2e8', '#0f1217', '#016239'],
+  // Color de las alas de ángel (las de hada van con el color de los accesorios). La primera: blancas, como eran.
+  alas: ['#f9f2e8', '#0f1217', '#ff004a', '#ffe600', '#ff5ad0', '#00e5ff', '#b6ff00', '#9a4dff', '#ff8a00', '#c8c8d0'],
 } as const;
 
 export type LookKey = keyof typeof LOOK;
@@ -33,7 +35,13 @@ export type Look = Record<LookKey, number>;
 export const LOOK_KEYS = Object.keys(LOOK) as LookKey[];
 
 /** Campos nuevos: un guardado viejo que no los trae vale igual (queda en la primera opción). */
-const OPTIONAL: ReadonlySet<LookKey> = new Set<LookKey>(['anteojos', 'boca', 'encima', 'mano', 'calzado', 'neon']);
+const OPTIONAL: ReadonlySet<LookKey> = new Set<LookKey>(['anteojos', 'boca', 'encima', 'mano', 'calzado', 'neon', 'alas']);
+
+/** Campos que solo se ofrecen en el menú con cierta opción de otro campo puesta: [campo, opción]. */
+export const LOOK_NEEDS: Partial<Record<LookKey, readonly [LookKey, number]>> = {
+  // El color de las alas, solo con las ALAS DE ANGEL.
+  alas: ['encima', 6],
+};
 
 /** Opciones que ya no se ofrecen en el menú (se siguen dibujando para quien las tenga guardadas). */
 export const LOOK_HIDDEN: Partial<Record<LookKey, readonly number[]>> = {
@@ -62,6 +70,7 @@ export const LOOK_LABELS: Record<LookKey, string> = {
   mano: 'EN LAS MANOS',
   calzado: 'CALZADO',
   neon: 'COLOR DE LOS ACCESORIOS',
+  alas: 'COLOR DE LAS ALAS',
 };
 
 export type LookView = 'todo' | 'cabeza' | 'piernas';
@@ -72,7 +81,7 @@ export const LOOK_GROUPS: { name: string; view: LookView; keys: LookKey[] }[] = 
   { name: 'CABEZA', view: 'cabeza', keys: ['pelo', 'peloColor', 'accesorio', 'anteojos', 'boca'] },
   { name: 'ARRIBA', view: 'todo', keys: ['arriba', 'remera', 'estampa'] },
   { name: 'ABAJO', view: 'piernas', keys: ['abajo', 'pantalon', 'calzado', 'zapas'] },
-  { name: 'EXTRAS', view: 'todo', keys: ['encima', 'mano', 'neon'] },
+  { name: 'EXTRAS', view: 'todo', keys: ['encima', 'alas', 'mano', 'neon'] },
   { name: 'BAILE', view: 'todo', keys: ['baile'] },
 ];
 
@@ -101,6 +110,7 @@ export function randomLook(rnd: () => number = Math.random): Look {
   if (rnd() < 0.7) out.encima = 0;
   if (rnd() < 0.65) out.mano = 0;
   if (rnd() < 0.6) out.calzado = 0;
+  if (rnd() < 0.5) out.alas = 0;
   if (rnd() < 0.85) out.piel = Math.floor(rnd() * 5);
   if (rnd() < 0.8) out.cuerpo = Math.floor(rnd() * 5);
   return out;

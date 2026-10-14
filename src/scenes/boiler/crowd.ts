@@ -368,10 +368,11 @@ const OVER_GEOS: (THREE.BufferGeometry | null)[] = [
   merge(...fairyWing(1), ...fairyWing(-1)),
   // CAPA: con cuello levantado, ruedo más oscuro y broche.
   merge(bx(0.44, 0.8, 0.02, 0, HIP_Y + 0.14, -0.135), bx(0.46, 0.06, 0.025, 0, HIP_Y - 0.23, -0.137, T1), bx(0.44, 0.04, 0.26, 0, NECK_Y - 0.02, 0), bx(0.3, 0.1, 0.03, 0, NECK_Y + 0.04, -0.13, T1), bx(0.05, 0.05, 0.02, 0, NECK_Y - 0.03, 0.135, Y)),
-  // ALAS DE ANGEL (blancas)
+  // ALAS DE ANGEL (del color de LOOK.alas)
   merge(...angelWing(1), ...angelWing(-1)),
 ];
-const OVER_COLOR: Record<number, string> = { 1: '#ffe600', 6: '#f9f2e8' };
+const OVER_COLOR: Record<number, string> = { 1: '#ffe600' };
+const ALAS_ANGEL = 6;
 
 /** Lo que va arriba del torso según LOOK.arriba (el resto de las prendas son solo colores). */
 const TOP_GEOS: (THREE.BufferGeometry | null)[] = LOOK.arriba.map((_, i) =>
@@ -1190,7 +1191,7 @@ export class Crowd {
       this.torsos.color(l.estampa, c.set(bare ? skin : shirt));
       this.tops.color(l.arriba, c.set(l.arriba === TOP ? skin : l.arriba === VESTIDO ? shirt : neon));
       this.skirts.color(l.abajo, c.set(pants));
-      this.over.color(l.encima, c.set(OVER_COLOR[l.encima] ?? neon));
+      this.over.color(l.encima, c.set(l.encima === ALAS_ANGEL ? LOOK.alas[l.alas] : (OVER_COLOR[l.encima] ?? neon)));
       this.heads.color(l.cara, c.set(skin));
       const hair = hairIndex(l);
       if (hair >= 0) this.hair.color(hair, c.set(LOOK.peloColor[l.peloColor]));

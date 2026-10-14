@@ -1,4 +1,4 @@
-import { LOOK, LOOK_GROUPS, LOOK_HIDDEN, LOOK_LABELS, type Look, type LookKey, NAME_MAX, type Raro, cleanName, randomLook, validLook, PHRASE_MAX, cleanPhrase } from '../../shared/look';
+import { LOOK, LOOK_GROUPS, LOOK_HIDDEN, LOOK_LABELS, LOOK_NEEDS, type Look, type LookKey, NAME_MAX, type Raro, cleanName, randomLook, validLook, PHRASE_MAX, cleanPhrase } from '../../shared/look';
 import { saveRaro } from '../api';
 import type { BoilerRoom } from '../scenes/boiler';
 import { makeFaceTexture, makePrintTexture, sfx } from '../style-kit';
@@ -167,7 +167,10 @@ export function openCreador(o: CreadorOptions) {
     });
     body.append(...buttons);
 
+    const needs = LOOK_NEEDS[key];
     painters.push(() => {
+      // Hay filas que solo van con otra cosa puesta (el color de las alas, con las alas de ángel).
+      if (needs) r.hidden = look[needs[0]] !== needs[1];
       buttons.forEach((b, j) => {
         const on = shown[j] === look[key];
         b.classList.toggle('on', on);
