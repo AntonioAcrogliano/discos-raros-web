@@ -155,6 +155,26 @@ export function cleanPhrase(raw: unknown): string | null {
   return blocked(s, false) ? null : s;
 }
 
+/** Lo más largo que puede ser un mensaje del chat. */
+export const CHAT_MAX = 120;
+
+/**
+ * Un mensaje del chat: como la frase (mayúsculas, sin símbolos raros: así tampoco entran links),
+ * pero más largo. Devuelve null si queda vacío o es un insulto.
+ */
+export function cleanChat(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw
+    .toLocaleUpperCase('es')
+    .replace(/[^A-Z0-9ÑÁÉÍÓÚÜ _\-!?.,¿¡]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, CHAT_MAX)
+    .trim();
+  if (!s) return null;
+  return blocked(s, false) ? null : s;
+}
+
 /** Nombre visible: mayúsculas, sin símbolos raros. Devuelve null si queda vacío o es un insulto. */
 export function cleanName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;

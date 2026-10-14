@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { cleanName, cleanPhrase, validLook } from '../shared/look.js';
+import { cleanChat, cleanName, cleanPhrase, validLook } from '../shared/look.js';
 import { getSets } from './sets.js';
-import { getStore, usingSupabase } from './store.js';
+import { type ChatRow, getStore, usingSupabase } from './store.js';
 
 /**
  * Toda la API del sitio. La usan las funciones de Vercel (carpeta /api) y el servidor de
@@ -55,6 +55,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Cuántos personajes se mandan a la pista: los más nuevos + una muestra al azar. */
 const RECENT = 60;
 const RANDOM = 200;
+/** Cuántos mensajes del chat se mandan al abrirlo, y cuánto duran guardados. */
+const CHAT_LAST = 50;
+const CHAT_KEEP = 7 * DAY;
+/** Lo que sale del servidor de un mensaje del chat (sin la IP). */
+const chatPub = ({ id, raro_id, name, text, created_at }: ChatRow) => ({ id, raro: raro_id, name, text, at: created_at });
 
 export async function handleApi(req: Request, ip = clientIp(req)): Promise<Response> {
   const url = new URL(req.url);
@@ -99,6 +104,35 @@ export async function handleApi(req: Request, ip = clientIp(req)): Promise<Respo
       return json({ raro, total: await store.count() });
     }
 
+    // --- Chat ----------------------------------------------------------------------
+    if (path === '/api/chat' && req.method === 'GET') {
+      // `after`: solo los que llegaron después de ese momento (lo que pide el que ya tiene el chat abierto).
+      const after = url.searchParams.get('after') ?? '';
+      const since = after && !Number.isNaN(Date.parse(after)) ? after : undefined;
+      const list = await store.listChat(CHAT_LAST, since);
+      return json({ messages: list.map(chatPub) }, 200, { 'cache-control': 'no-store' });
+    }
+
+    if (path === '/api/chat' && req.method === 'POST') {
+      const b = await body(req);
+      if (!b) return fail(400, 'Pedido inválido.');
+      const device = b.device;
+      if (typeof device !== 'string' || !UUID.test(device)) return fail(400, 'Pedido inválido.');
+      // Para escribir hay que tener raro: el nombre del chat es el suyo.
+      const raro = await store.byDevice(device);
+      if (!raro) return fail(403, 'Armate un raro para escribir.');
+      const text = cleanChat(b.text);
+      if (text === null) return fail(422, typeof b.text === 'string' && b.text.trim() ? 'Eso no va. Probá con otra cosa.' : 'Escribí algo.');
+      const ipHash = hashIp(ip);
+      const now = Date.now();
+      if ((await store.chatSince(ipHash, new Date(now - 60_000).toISOString())) >= 6) return fail(429, 'Pará un poco: esperá un minuto.');
+      if ((await store.chatSince(ipHash, new Date(now - DAY).toISOString())) >= 300) return fail(429, 'Ya escribiste mucho hoy. Volvé mañana.');
+      const row = await store.addChat({ raro_id: raro.id, name: raro.name, text, ip_hash: ipHash });
+      // De vez en cuando se borra lo de hace más de una semana (así la tabla no crece).
+      if (Math.random() < 0.05) await store.pruneChat(new Date(now - CHAT_KEEP).toISOString());
+      return json({ message: chatPub(row) });
+    }
+
     // --- Contacto ------------------------------------------------------------------
     if (path === '/api/contact' && req.method === 'POST') {
       const b = await body(req);
@@ -124,13 +158,15 @@ export async function handleApi(req: Request, ip = clientIp(req)): Promise<Respo
       if (!isAdmin(req)) return fail(401, 'Clave incorrecta.');
       if (req.method === 'GET') {
         const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
-        const [total, raros, mensajes] = await Promise.all([store.count(), store.list(100, offset), store.listMessages(100)]);
-        return json({ total, raros, mensajes, supabase: usingSupabase() }, 200, { 'cache-control': 'no-store' });
+        const [total, raros, mensajes, chat] = await Promise.all([store.count(), store.list(100, offset), store.listMessages(100), store.listChat(200)]);
+        return json({ total, raros, mensajes, chat: chat.reverse(), supabase: usingSupabase() }, 200, { 'cache-control': 'no-store' });
       }
       if (req.method === 'DELETE') {
         const id = url.searchParams.get('id') ?? '';
         if (!UUID.test(id)) return fail(400, 'Pedido inválido.');
-        if (url.searchParams.get('tipo') === 'mensaje') await store.removeMessage(id);
+        const tipo = url.searchParams.get('tipo');
+        if (tipo === 'mensaje') await store.removeMessage(id);
+        else if (tipo === 'chat') await store.removeChat(id);
         else await store.remove(id);
         return json({ ok: true });
       }

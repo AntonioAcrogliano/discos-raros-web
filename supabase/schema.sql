@@ -23,10 +23,23 @@ create table if not exists mensajes (
 );
 create index if not exists mensajes_created_at on mensajes (created_at desc);
 
+-- El chat de la pista: lo que escribe cada raro. Se guardan los de la última semana.
+create table if not exists chat (
+  id uuid primary key default gen_random_uuid(),
+  raro_id uuid not null,                   -- quién lo escribió (su globito sale en la pista)
+  name text not null,
+  text text not null check (char_length(text) between 1 and 120),
+  ip_hash text not null,                   -- para el límite de mensajes por minuto
+  created_at timestamptz not null default now()
+);
+create index if not exists chat_created_at on chat (created_at desc);
+create index if not exists chat_ip on chat (ip_hash, created_at);
+
 -- RLS prendido y sin políticas: desde el navegador (anon key) no se puede leer ni escribir.
 -- Solo entran las funciones del sitio, que usan la service key.
 alter table raros enable row level security;
 alter table mensajes enable row level security;
+alter table chat enable row level security;
 
 -- La pista: los n_recent más nuevos + n_random al azar del resto.
 create or replace function raros_sample(n_recent int, n_random int)

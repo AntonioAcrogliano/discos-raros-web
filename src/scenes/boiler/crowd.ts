@@ -1753,6 +1753,11 @@ export class Crowd {
     return out.set(d.x, d.headY + extra * (BUILDS[l.cuerpo] ?? BUILDS[0]).head, d.z);
   }
 
+  /** En qué lugar de la pista está el raro con ese id (-1 = no está entre los que se ven). */
+  indexOf(id: string) {
+    return this.dancers.findIndex((d) => d.id === id);
+  }
+
   nameOf(i: number) {
     return this.dancers[i]?.name ?? '';
   }

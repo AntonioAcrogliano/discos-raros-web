@@ -58,6 +58,8 @@ export interface BoilerRoom {
   unlockSound(): void;
   /** El raro del visitante hace algo en la pista (1 pucho, 2 agua, 3 saludo, 4 salto, 5 pasti). */
   act(kind: number): void;
+  /** Un mensaje del chat: sale en el globito arriba de quien lo escribió, si está en la pista. */
+  say(raroId: string, text: string): void;
   /** La palanca del celu: para dónde se la lleva (x a la derecha, y hacia abajo, -1 a 1) y cuánto. 0, 0 = suelta. */
   steer(x: number, y: number): void;
   /** Volumen del set que eligió el visitante (0–1). En iPhone no se puede manejar: `canVolume` es false. */
@@ -133,8 +135,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let draft: Raro | null = null;
   /** ¿El primer lugar de la pista es el del visitante? */
   let hasFirst = false;
-  /** El raro que está diciendo su frase (lo tocaron) y hasta cuándo se ve el globito. */
-  const talk = { i: -1, until: 0 };
+  /** El raro que está hablando (lo tocaron, o escribió en el chat), hasta cuándo se ve el globito y qué dice ('' = su frase). */
+  const talk = { i: -1, until: 0, text: '' };
   const TALK_SECONDS = 4.5;
   /**
    * El viaje de la pasti: cuándo pega (-1 = nada), en segundos del reloj de la escena. Sube en
@@ -254,8 +256,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (i >= 0 && crowd.headTop(i, v)) {
       // Tocó a un raro: dice su frase (el propio también, para ver cómo queda)...
       if (crowd.phraseOf(i)) {
-        talk.i = i;
-        talk.until = performance.now() + TALK_SECONDS * 1000;
+        Object.assign(talk, { i, until: performance.now() + TALK_SECONDS * 1000, text: '' });
         sfx.select();
       }
       // ...y el del visitante se le para al lado (en el celu no: ahí se camina con la palanca).
@@ -412,10 +413,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         if (p && Math.hypot(p.x - here.x, p.z - here.z) < 7.5) near.push(i);
       }
       chat = near.length ? 7 + Math.random() * 9 : 4;
-      if (near.length) {
-        talk.i = near[Math.floor(Math.random() * near.length)];
-        talk.until = performance.now() + TALK_SECONDS * 1000;
-      }
+      if (near.length) Object.assign(talk, { i: near[Math.floor(Math.random() * near.length)], until: performance.now() + TALK_SECONDS * 1000, text: '' });
     }
 
     if (mode === 'pelea') return room.takeover?.update(t, dt);
@@ -694,7 +692,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   };
   /** Globito con la frase, arriba de la cabeza del raro que habla: letras negras sobre crema, con su piquito. */
   const bubble = (ctx: CanvasRenderingContext2D, w: number, h: number, i: number) => {
-    const says = sinTildes(crowd.phraseOf(i));
+    const says = sinTildes(i === talk.i && talk.text ? talk.text : crowd.phraseOf(i));
     if (!says || !crowd.headTop(i, v)) return false;
     v.project(stage.camera);
     if (v.z > 1 || v.z < -1) return false;
@@ -853,6 +851,15 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     steer(x, y) {
       pad.x = x;
       pad.y = y;
+    },
+    say(raroId, text) {
+      const i = crowd.indexOf(raroId);
+      if (i < 0) return;
+      // Lo largo se corta (el globito no puede tapar media pista); se lee entero en el chat.
+      const says = text.length > 64 ? `${text.slice(0, 61).trimEnd()}...` : text;
+      // Más tiempo cuanto más largo, y la charla de fondo espera.
+      Object.assign(talk, { i, until: performance.now() + (4 + says.length * 0.06) * 1000, text: says });
+      chat = Math.max(chat, 8);
     },
     act(kind) {
       if (mode !== 'pista' || !hasFirst) return;

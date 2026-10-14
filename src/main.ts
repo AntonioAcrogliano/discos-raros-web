@@ -2,6 +2,8 @@ import type { Raro, SetInfo } from '../shared/look';
 import { type PistaData, fetchPista, fetchSets } from './api';
 import { createBoilerRoom } from './scenes/boiler';
 import { openContacto } from './sections/contacto';
+import { openChat } from './sections/chat';
+import { chat } from './chat';
 import { openCreador } from './sections/creador';
 import { openJugar } from './sections/jugar';
 import { askAtDoor } from './sections/puerta';
@@ -17,6 +19,7 @@ const ICONS = {
   raro: ['...XXX...', '..XXXXX..', '..XXXXX..', '...XXX...', '.XXXXXXX.', 'XXXXXXXXX', 'X.XXXXX.X', '..XX.XX..', '..XX.XX..'],
   juegos: ['.........', '.XXXXXXX.', 'XXXXXXXXX', 'XX.XXX.XX', 'X...X.X.X', 'XX.XXX.XX', 'XXXXXXXXX', 'XXX...XXX', '.X.....X.'],
   sobre: ['.........', 'XXXXXXXXX', 'XX.....XX', 'X.X...X.X', 'X..X.X..X', 'X...X...X', 'X.......X', 'XXXXXXXXX', '.........'],
+  globo: ['.........', 'XXXXXXXXX', 'X.......X', 'X.X.X.X.X', 'X.......X', 'XXXXXXXXX', '..XX.....', '.X.......', '.........'],
 };
 
 /** Lo que puede hacer tu raro en la pista. `kind` es el de `action` en dances.ts. */
@@ -157,6 +160,7 @@ async function main() {
       icon: ICONS.raro,
       open: () => openCreador({ room, mine: () => data.mine, onSaved }),
     },
+    { path: 'chat', label: 'CHAT', icon: ICONS.globo, open: () => openChat({ mine: () => data.mine }) },
     { path: 'jugar', label: 'PATIO DE JUEGOS', icon: ICONS.juegos, open: () => openJugar(room) },
     { path: 'contacto', label: 'CONTACTO', icon: ICONS.sobre, open: openContacto },
     // Los juegos se abren desde JUGAR (teclado o joystick en la compu; controles táctiles en el celular).
@@ -165,6 +169,9 @@ async function main() {
     // La foto del raro se arma recién cuando se pide (trae su propio dibujante).
     { path: 'compartir', label: 'COMPARTIR', nav: false, open: () => void import('./sections/compartir').then((m) => m.openCompartir(data.mine)) },
   ]);
+  // El chat se conecta recién adentro: los mensajes nuevos salen en un globito arriba de quien los escribió.
+  chat.onArrive((list) => list.forEach((m) => room.say(m.raro, m.text)));
+  chat.start();
   // En el celu se camina con la palanca.
   if (isTouch()) mountStick((x, y) => room.steer(x, y));
   mounted = true;

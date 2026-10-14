@@ -44,5 +44,19 @@ export const fetchPista = () => api<PistaData>(`/api/raros?device=${deviceId()}`
 export const saveRaro = (name: string, look: Look, phrase: string, token?: string) =>
   api<{ raro: Raro; total: number }>('/api/raros', { method: 'POST', body: JSON.stringify({ device: deviceId(), name, look, phrase, token }) });
 
+/** Un mensaje del chat, como viene del servidor (`raro` es el id de quien lo escribió). */
+export interface ChatMsg {
+  id: string;
+  raro: string;
+  name: string;
+  text: string;
+  at: string;
+}
+/** Los últimos mensajes del chat, o los que llegaron después de `after`. */
+export const fetchChat = (after?: string) =>
+  api<{ messages: ChatMsg[] }>(`/api/chat${after ? `?after=${encodeURIComponent(after)}` : ''}`).then((r) => r.messages);
+export const sendChat = (text: string) =>
+  api<{ message: ChatMsg }>('/api/chat', { method: 'POST', body: JSON.stringify({ device: deviceId(), text }) }).then((r) => r.message);
+
 export const sendContact = (data: Record<string, string | undefined>) =>
   api<{ ok: true }>('/api/contact', { method: 'POST', body: JSON.stringify(data) });

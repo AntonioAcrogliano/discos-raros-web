@@ -6,7 +6,7 @@ import './admin.css';
 import { el } from './ui/dom';
 
 /**
- * Panel de moderación: lista los personajes y los mensajes de contacto, y deja borrarlos.
+ * Panel de moderación: lista los personajes, el chat y los mensajes de contacto, y deja borrarlos.
  * También exporta a cada personaje bailando (PNG con transparencia) para el videoclip.
  * La clave se manda en cada pedido y la valida el servidor (ADMIN_PASSWORD); acá no se guarda
  * más que en la pestaña abierta.
@@ -17,6 +17,8 @@ interface AdminData {
   supabase: boolean;
   raros: { id: string; name: string; look: Look; phrase?: string; created_at: string }[];
   mensajes: { id: string; name: string; email: string; kind: string; message: string; created_at: string }[];
+  /** Lo último del chat, del más nuevo al más viejo. */
+  chat: { id: string; raro_id: string; name: string; text: string; created_at: string }[];
 }
 
 const root = document.querySelector<HTMLElement>('#admin')!;
@@ -99,6 +101,16 @@ async function load() {
     mensajes.append(row);
   }
 
+  // El chat de la pista: lo último que se escribió, para borrar lo que no va.
+  const chat = el('div', 'admin-lista');
+  for (const m of data.chat ?? []) {
+    const row = el('div', 'admin-fila');
+    const texto = el('span');
+    texto.textContent = m.text;
+    row.append(el('b', '', m.name), texto, el('span', 'aviso', fecha(m.created_at)), borrar(`/api/admin?tipo=chat&id=${m.id}`, row));
+    chat.append(row);
+  }
+
   // El exportador trae Three.js: se baja recién acá, después de entrar con la clave.
   const exportBody = el('div', 'panel-body');
   const todos = async () => {
@@ -120,6 +132,10 @@ async function load() {
         el('p', data.supabase ? 'ok' : 'error', data.supabase ? 'GUARDANDO EN SUPABASE' : 'MODO LOCAL: SE GUARDA EN .data/db.json (FALTA CONFIGURAR SUPABASE)'),
         data.raros.length ? raros : el('p', 'aviso', 'TODAVÍA NO HAY NADIE EN LA PISTA.'),
       ]),
+    ]),
+    el('section', 'panel', [
+      el('header', 'panel-title', `CHAT (ULTIMOS ${(data.chat ?? []).length})`),
+      el('div', 'panel-body', [(data.chat ?? []).length ? chat : el('p', 'aviso', 'NADIE ESCRIBIO TODAVIA.')]),
     ]),
     el('section', 'panel', [el('header', 'panel-title', 'VIDEOCLIP'), exportBody]),
     el('section', 'panel', [

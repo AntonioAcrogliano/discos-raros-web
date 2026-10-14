@@ -17,6 +17,16 @@ export interface MessageRow {
   created_at: string;
 }
 
+/** Un mensaje del chat, como se guarda. */
+export interface ChatRow {
+  id: string;
+  raro_id: string;
+  name: string;
+  text: string;
+  ip_hash: string;
+  created_at: string;
+}
+
 export interface Store {
   count(): Promise<number>;
   /** Los `recent` más nuevos + `random` al azar (sin repetir). */
@@ -31,6 +41,13 @@ export interface Store {
   messagesSince(ipHash: string, sinceIso: string): Promise<number>;
   listMessages(limit: number): Promise<MessageRow[]>;
   removeMessage(id: string): Promise<void>;
+  addChat(m: Omit<ChatRow, 'id' | 'created_at'>): Promise<ChatRow>;
+  /** Los últimos `limit` mensajes del chat (o los de después de `afterIso`), del más viejo al más nuevo. */
+  listChat(limit: number, afterIso?: string): Promise<ChatRow[]>;
+  chatSince(ipHash: string, sinceIso: string): Promise<number>;
+  removeChat(id: string): Promise<void>;
+  /** Borra los mensajes del chat de antes de `beforeIso`. */
+  pruneChat(beforeIso: string): Promise<void>;
 }
 
 export interface NewRaro {
@@ -136,6 +153,29 @@ class SupabaseStore implements Store {
   async removeMessage(id: string) {
     await this.call(`mensajes?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
+
+  async addChat(m: Omit<ChatRow, 'id' | 'created_at'>) {
+    const res = await this.call('chat', { method: 'POST', prefer: 'return=representation', body: JSON.stringify(m) });
+    return ((await res.json()) as ChatRow[])[0];
+  }
+
+  async listChat(limit: number, afterIso?: string) {
+    const after = afterIso ? `&created_at=gt.${encodeURIComponent(afterIso)}` : '';
+    const res = await this.call(`chat?order=created_at.desc&limit=${limit}${after}`);
+    return ((await res.json()) as ChatRow[]).reverse();
+  }
+
+  chatSince(ipHash: string, sinceIso: string) {
+    return this.countOf(`chat?select=id&ip_hash=eq.${ipHash}&created_at=gte.${encodeURIComponent(sinceIso)}`);
+  }
+
+  async removeChat(id: string) {
+    await this.call(`chat?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  async pruneChat(beforeIso: string) {
+    await this.call(`chat?created_at=lt.${encodeURIComponent(beforeIso)}`, { method: 'DELETE' });
+  }
 }
 
 // --- Archivo local (desarrollo) -----------------------------------------------------
@@ -143,7 +183,7 @@ class SupabaseStore implements Store {
 
 class FileStore implements Store {
   private file = '.data/db.json';
-  private db: { raros: RaroRow[]; mensajes: MessageRow[] } | null = null;
+  private db: { raros: RaroRow[]; mensajes: MessageRow[]; chat?: ChatRow[] } | null = null;
 
   private async load() {
     if (this.db) return this.db;
@@ -227,6 +267,35 @@ class FileStore implements Store {
   async removeMessage(id: string) {
     const db = await this.load();
     db.mensajes = db.mensajes.filter((m) => m.id !== id);
+    await this.save();
+  }
+
+  async addChat(m: Omit<ChatRow, 'id' | 'created_at'>) {
+    const db = await this.load();
+    const row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), ...m };
+    (db.chat ??= []).push(row);
+    await this.save();
+    return row;
+  }
+
+  async listChat(limit: number, afterIso?: string) {
+    const all = [...((await this.load()).chat ?? [])].filter((m) => !afterIso || m.created_at > afterIso);
+    return all.sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(-limit);
+  }
+
+  async chatSince(ipHash: string, sinceIso: string) {
+    return ((await this.load()).chat ?? []).filter((m) => m.ip_hash === ipHash && m.created_at >= sinceIso).length;
+  }
+
+  async removeChat(id: string) {
+    const db = await this.load();
+    db.chat = (db.chat ?? []).filter((m) => m.id !== id);
+    await this.save();
+  }
+
+  async pruneChat(beforeIso: string) {
+    const db = await this.load();
+    db.chat = (db.chat ?? []).filter((m) => m.created_at >= beforeIso);
     await this.save();
   }
 }
