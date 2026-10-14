@@ -572,6 +572,11 @@ const REAR_HALF = CLUB.halfW - 1.0;
 const PIT = { halfW: SIDE - 0.5, back: REAR + 0.5 };
 /** El escalón más alto que se sube caminando: del piso al palco solo se pasa por la escalera. */
 const STEP_UP = 0.3;
+/** Cuánto se queda uno antes de un borde (el del palco, con su baranda, o la pared del palco desde abajo): así no lo atraviesa. */
+const EDGE = 0.3;
+/** ¿Entra parado ahí sin que nada de su cuerpo quede a otra altura que `h`? */
+const fits = (x: number, z: number, h: number) =>
+  [[0, 0], [EDGE, 0], [-EDGE, 0], [0, EDGE], [0, -EDGE]].every(([dx, dz]) => Math.abs(floorAt(x + dx, z + dz) - h) <= STEP_UP);
 /** Aire que se dejan entre ellos, además del ancho de cada uno: no se pisan ni con los brazos. */
 const GAP = 0.2;
 /** Lo que ocupa medio cuerpo, para no meterse en las paredes ni en los muebles. */
@@ -1156,7 +1161,7 @@ export class Crowd {
       to.z = FLOOR.back + Math.random() * (PALCO.deep - 1.1);
     } else if (where < 0.88) {
       // Arriba, en uno de los brazos (del lado de la baranda: contra la pared están los sillones).
-      to.x = Math.sign(Math.random() - 0.5) * (SIDE + 0.5 + Math.random() * 1.0);
+      to.x = Math.sign(Math.random() - 0.5) * (SIDE + 0.5 + Math.random() * (ARM - 2.2));
       to.z = REAR + Math.random() * (ARM_STAY - REAR);
     } else if (where < 0.95) {
       to.x = Math.sign(Math.random() - 0.5) * (FLOOR.aisle + 0.2 + Math.random() * (PIT.halfW - FLOOR.aisle - 0.2));
@@ -1308,9 +1313,12 @@ export class Crowd {
     const ds = this.dancers, prev = this.prev;
     ds.forEach((d, i) => {
       const x0 = prev[i * 2], z0 = prev[i * 2 + 1], h0 = floorAt(x0, z0);
-      if (Math.abs(floorAt(d.x, d.z) - h0) > STEP_UP) {
-        if (Math.abs(floorAt(d.x, z0) - h0) <= STEP_UP) d.z = z0;
-        else if (Math.abs(floorAt(x0, d.z) - h0) <= STEP_UP) d.x = x0;
+      // (El que ya estaba arrimado a un borde puede moverse igual, mientras no cambie de nivel: si no, quedaría clavado.)
+      const loose = !fits(x0, z0, h0);
+      const ok = (x: number, z: number) => (loose ? Math.abs(floorAt(x, z) - h0) <= STEP_UP : fits(x, z, h0));
+      if (!ok(d.x, d.z)) {
+        if (ok(d.x, z0)) d.z = z0;
+        else if (ok(x0, d.z)) d.x = x0;
         else {
           d.x = x0;
           d.z = z0;

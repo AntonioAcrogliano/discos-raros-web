@@ -41,7 +41,7 @@ export const PALCO = {
   /** Altura del piso de arriba. */
   h: 1.5,
   /** Cuánto se meten hacia adentro desde la pared (el del fondo y los de los costados). */
-  deep: 3.0,
+  deep: 4.2,
   /** Hasta dónde llegan los brazos (z); de ahí baja la escalera, hacia la entrada. */
   frontZ: 3.0,
   stairs: 2.8,
