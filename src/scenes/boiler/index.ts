@@ -4,7 +4,7 @@ import type { PistaData } from '../../api';
 import { DR, FONT, type PSXStage, audioLive, outlined, psxUniforms, street, titleUnit, sfx } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
-import { CLUB, PALCO, buildClub, floorAt } from './club';
+import { CLUB, PALCO, PISO2, buildClub, floorAt } from './club';
 import { PASTI } from './dances';
 import { Crowd, MAX_DANCERS } from './crowd';
 import { loadGlbRig } from '../../characters/glbRig';
@@ -79,8 +79,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   const touch = isTouch();
   const scene = new THREE.Scene();
   psxUniforms.uFog.value = 1;
-  psxUniforms.uFogNear.value = 9;
-  psxUniforms.uFogFar.value = 31;
+  psxUniforms.uFogNear.value = 10;
+  psxUniforms.uFogFar.value = 37;
   psxUniforms.uLightDir.value.set(0.25, 0.8, 0.9).normalize();
   /** Cuánto de la luz es la del boliche (1) y cuánto la de la calle (0): se cruzan al pasar la puerta. */
   let inClub = 0;
@@ -257,9 +257,11 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     v.set((e.clientX / window.innerWidth) * 2 - 1, 1 - (e.clientY / window.innerHeight) * 2, 0.5).unproject(stage.camera).sub(stage.camera.position);
     if (v.y > -0.02) return;
     const cam = stage.camera.position;
-    // Primero se prueba con el piso de los palcos: si el toque cae arriba, es ahí adonde se va.
-    const up = (PALCO.h - cam.y) / v.y;
-    if (up > 0 && floorAt(cam.x + v.x * up, cam.z + v.z * up) > PALCO.h - 0.01) return goTo(cam.x + v.x * up, cam.z + v.z * up);
+    // Primero se prueba con los pisos de arriba (el segundo y los palcos): si el toque cae ahí, es adonde se va.
+    for (const h of [PISO2.h, PALCO.h]) {
+      const up = (h - cam.y) / v.y;
+      if (up > 0 && Math.abs(floorAt(cam.x + v.x * up, cam.z + v.z * up) - h) < 0.01) return goTo(cam.x + v.x * up, cam.z + v.z * up);
+    }
     const k = -cam.y / v.y;
     goTo(cam.x + v.x * k, cam.z + v.z * k);
   });

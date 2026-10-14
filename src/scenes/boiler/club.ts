@@ -20,18 +20,18 @@ import {
 
 /** Medidas del club (metros). La cámara mira hacia -z: cabina adelante, pista atrás, tele al fondo. */
 export const CLUB = {
-  halfW: 11.5,
-  backZ: -8.5,
+  halfW: 16,
+  backZ: -12.5,
   frontZ: 9.6,
-  ceilY: 7.2,
+  ceilY: 7.8,
   boothZ: 2.5,
   boothH: 1.0,
   djZ: 1.86,
-  tele: { x: 0, y: 5.2, z: -8.32, w: 6.2, h: 3.49 },
+  tele: { x: 0, y: 5.5, z: -12.32, w: 7.2, h: 4.05 },
 };
 
 /**
- * Los palcos: un segundo nivel en U, contra la pared del fondo y las dos de los costados, al
+ * Los palcos: un nivel levantado en U, contra la pared del fondo y las dos de los costados, al
  * que se sube por una escalera en la punta de cada brazo (del lado de la entrada). Son macizos:
  * abajo no se camina, así que la altura del piso depende solo de dónde se está parado.
  */
@@ -45,10 +45,30 @@ export const PALCO = {
   stairs: 2.8,
 };
 
-/** Altura del piso en un punto del boliche: 0 en la pista, `PALCO.h` arriba, y lo que toque en la escalera. */
+/**
+ * El segundo piso: una franja más alta contra cada pared de costado, por afuera del palco, que
+ * llega hasta el fondo. Se sube desde el palco, por una escalera que baja hacia la entrada y
+ * termina en un descanso a la altura del palco. Al fondo no hay: ahí está la tele.
+ */
+export const PISO2 = {
+  h: 3.0,
+  deep: 2.6,
+  /** Hasta dónde llega (z); de ahí baja la escalera al palco. */
+  frontZ: -1.4,
+  stairs: 2.8,
+};
+
+/** Ancho total de cada costado levantado: el palco más el segundo piso. */
+export const ARM = PALCO.deep + PISO2.deep;
+
+/** Altura del piso en un punto del boliche: 0 en la pista, `PALCO.h` o `PISO2.h` arriba, y lo que toque en las escaleras. */
 export function floorAt(x: number, z: number) {
+  if (Math.abs(x) >= CLUB.halfW - PISO2.deep && z < PISO2.frontZ + PISO2.stairs) {
+    if (z <= PISO2.frontZ) return PISO2.h;
+    return PALCO.h + (PISO2.h - PALCO.h) * (1 - (z - PISO2.frontZ) / PISO2.stairs);
+  }
   if (z <= CLUB.backZ + PALCO.deep) return PALCO.h;
-  if (Math.abs(x) >= CLUB.halfW - PALCO.deep) {
+  if (Math.abs(x) >= CLUB.halfW - ARM) {
     if (z <= PALCO.frontZ) return PALCO.h;
     if (z < PALCO.frontZ + PALCO.stairs) return PALCO.h * (1 - (z - PALCO.frontZ) / PALCO.stairs);
   }
@@ -111,7 +131,7 @@ export function buildClub(): Club {
 
   // --- Pista: baldosas que cambian de color con el beat ------------------------------
   // Una sola textura con 4×4 píxeles por baldosa, que se redibuja en cada beat.
-  const TX = 23, TZ = 18, PX = 4;
+  const TX = Math.round(halfW * 2), TZ = Math.round(depth), PX = 4;
   const floorCv = makeCanvas(TX * PX, TZ * PX);
   const floorTex = toPSXTexture(floorCv.canvas);
   const floorGeo = new THREE.PlaneGeometry(halfW * 2, depth, TX, TZ);
@@ -148,16 +168,18 @@ export function buildClub(): Club {
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * repeatX, uv.getY(i) * repeatY);
     return new THREE.Mesh(geo, makePSXMaterial({ map: wallTex }));
   };
-  const back = wall(halfW * 2, ceilY, 12, 4);
+  /** Cuántas veces se repite el ladrillo por metro de pared (a lo ancho y a lo largo). */
+  const perW = 12 / 23, perD = 7 / 18;
+  const back = wall(halfW * 2, ceilY, perW * halfW * 2, 4);
   back.position.set(0, ceilY / 2, backZ);
-  const left = wall(depth, ceilY, 7, 4);
+  const left = wall(depth, ceilY, perD * depth, 4);
   left.rotation.y = Math.PI / 2;
   left.position.set(-halfW, ceilY / 2, (frontZ + backZ) / 2);
-  const right = wall(depth, ceilY, 7, 4);
+  const right = wall(depth, ceilY, perD * depth, 4);
   right.rotation.y = -Math.PI / 2;
   right.position.set(halfW, ceilY / 2, (frontZ + backZ) / 2);
   // Techo (antes se veía el vacío al mirar para arriba) con sus vigas.
-  const ceiling = new THREE.Mesh(wall(halfW * 2, depth, 12, 10).geometry, makePSXMaterial({ map: wallTex, color: '#9a90b0' }));
+  const ceiling = new THREE.Mesh(wall(halfW * 2, depth, perW * halfW * 2, (10 / 18) * depth).geometry, makePSXMaterial({ map: wallTex, color: '#9a90b0' }));
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(0, ceilY, (frontZ + backZ) / 2);
   group.add(back, left, right, ceiling);
@@ -165,22 +187,23 @@ export function buildClub(): Club {
   // Pilastras entre tapa y tapa de disco, cada una con su tubo de neón que late con el bombo.
   const pilar = makePSXMaterial({ color: '#241a33' });
   const tubes: { tube: PSXMaterial; halo: PSXMaterial; color: THREE.Color }[] = [];
-  [0, 1, 2, 3].forEach((i) => {
+  // (Los tubos van altos: abajo, contra la pared, está el segundo piso.)
+  for (let i = 0; backZ + 1.8 + i * 3.2 < frontZ - 3; i++) {
     const z = backZ + 1.8 + i * 3.2;
     group.add(box(halfW * 2, 0.26, 0.22, pilar, 0, ceilY - 0.13, z));
     for (const s of [-1, 1]) {
       const color = new THREE.Color(DR_CYCLE[(i * 2 + (s > 0 ? 1 : 0)) % 4]);
       const tube = makePSXMaterial({ color, lit: false });
       const halo = glow(color, 0.1);
-      group.add(box(0.3, ceilY, 0.55, pilar, s * (halfW - 0.15), ceilY / 2, z), box(0.06, 1.7, 0.06, tube, s * (halfW - 0.34), 2.75, z));
+      group.add(box(0.3, ceilY, 0.55, pilar, s * (halfW - 0.15), ceilY / 2, z), box(0.06, 1.7, 0.06, tube, s * (halfW - 0.34), 5.2, z));
       const h = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 2.2), halo);
       h.rotation.y = -s * (Math.PI / 2);
-      h.position.set(s * (halfW - 0.31), 2.75, z);
+      h.position.set(s * (halfW - 0.31), 5.2, z);
       h.renderOrder = 1;
       group.add(h);
       tubes.push({ tube, halo, color });
     }
-  });
+  }
   updaters.push((beats, energy) => {
     // Los de un lado laten con el bombo y los del otro a contratiempo (con los platillos, si se sabe qué suena).
     const off = music ? music.high : Math.max(0, 1 - (beats + 0.5 - Math.floor(beats + 0.5)) * 2.5) * energy;
@@ -204,8 +227,8 @@ export function buildClub(): Club {
   };
   const flat = (w: number, h: number, mat: THREE.Material, x: number, y: number, off: number) => inward(new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat), x, y, off);
   const sideW = halfW - doorW;
-  for (const s of [-1, 1]) inward(wall(sideW, ceilY, (12 * sideW) / (halfW * 2), 4), s * (doorW + sideW / 2), ceilY / 2);
-  inward(wall(doorW * 2, ceilY - doorH, (12 * doorW) / halfW, (4 * (ceilY - doorH)) / ceilY), 0, doorH + (ceilY - doorH) / 2);
+  for (const s of [-1, 1]) inward(wall(sideW, ceilY, perW * sideW, 4), s * (doorW + sideW / 2), ceilY / 2);
+  inward(wall(doorW * 2, ceilY - doorH, perW * doorW * 2, (4 * (ceilY - doorH)) / ceilY), 0, doorH + (ceilY - doorH) / 2);
   const doorFrame = makePSXMaterial({ color: '#0a0a0e' });
   const doorMat = makePSXMaterial({ color: DR.rojoOscuro });
   const doorTrim = makePSXMaterial({ color: DR.amarillo });
@@ -245,18 +268,20 @@ export function buildClub(): Club {
     const mat = makePSXMaterial({ map: makeRecordTexture(bg, label), lit: false });
     for (const side of [-1, 1]) {
       const p = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), mat);
-      p.position.set(side * (halfW - 0.02), 2.4 + ((i + (side > 0 ? 1 : 0)) % 2) * 1.1, backZ + 1 + i * 1.6);
+      p.position.set(side * (halfW - 0.02), 4.4 + ((i + (side > 0 ? 1 : 0)) % 2) * 1.15, backZ + 1 + i * 1.6);
       p.rotation.y = -side * (Math.PI / 2);
       group.add(p);
     }
   });
 
-  // --- Palcos: el segundo nivel, en U, con sus escaleras y barandas ---------------------
-  const sideX = halfW - PALCO.deep, rearZ = backZ + PALCO.deep, armLen = PALCO.frontZ - rearZ;
+  // --- Palcos y segundo piso: en U, con sus escaleras y barandas -------------------------
+  const sideX = halfW - ARM, rearZ = backZ + PALCO.deep, armLen = PALCO.frontZ - rearZ;
+  /** Dónde arranca el segundo piso (x) y el centro de esa franja. */
+  const upX = halfW - PISO2.deep, upMid = halfW - PISO2.deep / 2;
   const palcoTop = makePSXMaterial({ color: '#2a2038' });
   const palcoFront = makePSXMaterial({ map: wallTex, color: '#c9bfe0' });
   const palcoMat = [palcoFront, palcoFront, palcoTop, palcoFront, palcoFront, palcoFront];
-  group.add(box(halfW * 2, PALCO.h, PALCO.deep, palcoMat, 0, PALCO.h / 2, backZ + PALCO.deep / 2));
+  group.add(box(upX * 2, PALCO.h, PALCO.deep, palcoMat, 0, PALCO.h / 2, backZ + PALCO.deep / 2));
   const rail = makePSXMaterial({ color: DR.amarillo });
   const post = makePSXMaterial({ color: '#0a0a0e' });
   const edge = makeCanvas(32, 2);
@@ -276,36 +301,48 @@ export function buildClub(): Club {
   const stepTex = toPSXTexture(step.canvas);
   stepTex.wrapS = THREE.RepeatWrapping;
   const stepMat = makePSXMaterial({ map: stepTex });
-  /** Franja de la marca en el canto de arriba (como la de la cabina) y baranda con postes. */
-  const trim = (len: number, x: number, z: number, turned: boolean) => {
+  /** Franja de la marca en el canto de arriba (como la de la cabina) y baranda con postes, a la altura `h`. */
+  const trim = (len: number, x: number, z: number, turned: boolean, h = PALCO.h) => {
     const geo = new THREE.PlaneGeometry(len, 0.09, Math.ceil(len / 2), 1);
     const uv = geo.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * len * 0.9);
     const s = new THREE.Mesh(geo, edgeMat);
-    s.position.set(x, PALCO.h - 0.06, z);
+    s.position.set(x, h - 0.06, z);
     if (turned) s.rotation.y = x > 0 ? -Math.PI / 2 : Math.PI / 2;
     group.add(s);
-    const bar = turned ? box(0.06, 0.06, len, rail, x, PALCO.h + 0.95, z) : box(len, 0.06, 0.06, rail, x, PALCO.h + 0.95, z);
+    const bar = turned ? box(0.06, 0.06, len, rail, x, h + 0.95, z) : box(len, 0.06, 0.06, rail, x, h + 0.95, z);
     group.add(bar);
     for (let k = 0; k <= Math.round(len / 2.2); k++) {
       const at = -len / 2 + (k * len) / Math.round(len / 2.2);
-      group.add(box(0.07, 0.95, 0.07, post, turned ? x : x + at, PALCO.h + 0.475, turned ? z + at : z));
+      group.add(box(0.07, 0.95, 0.07, post, turned ? x : x + at, h + 0.475, turned ? z + at : z));
     }
   };
-  trim(sideX * 2, 0, rearZ + 0.012, false);
-  for (const s of [-1, 1]) {
-    group.add(box(PALCO.deep, PALCO.h, armLen, palcoMat, s * (halfW - PALCO.deep / 2), PALCO.h / 2, rearZ + armLen / 2));
-    trim(armLen, s * (sideX - 0.012), rearZ + armLen / 2, true);
-    // La escalera: una cuña que baja hacia la entrada, con los escalones pintados.
-    const wedge = new THREE.BoxGeometry(PALCO.deep, PALCO.h, PALCO.stairs);
+  /** Escalera: una cuña de `w` de ancho que baja `rise` hacia la entrada desde `z0`, apoyada a la altura `base`, con los escalones pintados. */
+  const stairs = (w: number, rise: number, run: number, x: number, base: number, z0: number) => {
+    const wedge = new THREE.BoxGeometry(w, rise, run);
     const pos = wedge.attributes.position;
-    for (let i = 0; i < pos.count; i++) if (pos.getY(i) > 0 && pos.getZ(i) > 0) pos.setY(i, -PALCO.h / 2 + 0.02);
-    const stairs = new THREE.Mesh(wedge, [palcoFront, palcoFront, stepMat, palcoFront, palcoFront, palcoFront]);
+    for (let i = 0; i < pos.count; i++) if (pos.getY(i) > 0 && pos.getZ(i) > 0) pos.setY(i, -rise / 2 + 0.02);
     const suv = wedge.attributes.uv;
     // La cara de arriba (la rampa) lleva una raya por escalón.
     for (let i = 8; i < 12; i++) suv.setXY(i, suv.getY(i) * 9, 0.5);
-    stairs.position.set(s * (halfW - PALCO.deep / 2), PALCO.h / 2, PALCO.frontZ + PALCO.stairs / 2);
-    group.add(stairs);
+    const m = new THREE.Mesh(wedge, [palcoFront, palcoFront, stepMat, palcoFront, palcoFront, palcoFront]);
+    m.position.set(x, base + rise / 2, z0 + run / 2);
+    group.add(m);
+  };
+  trim(sideX * 2, 0, rearZ + 0.012, false);
+  const up2 = PISO2.frontZ - backZ, landing = PALCO.frontZ - PISO2.frontZ;
+  for (const s of [-1, 1]) {
+    // El palco de ese lado y su escalera a la pista, que ocupa todo el ancho del brazo.
+    group.add(box(PALCO.deep, PALCO.h, armLen, palcoMat, s * (sideX + PALCO.deep / 2), PALCO.h / 2, rearZ + armLen / 2));
+    trim(armLen, s * (sideX - 0.012), rearZ + armLen / 2, true);
+    stairs(ARM, PALCO.h, PALCO.stairs, s * (halfW - ARM / 2), 0, PALCO.frontZ);
+    // El segundo piso, contra la pared: llega hasta el fondo y baja al palco por su escalera.
+    group.add(box(PISO2.deep, PISO2.h, up2, palcoMat, s * upMid, PISO2.h / 2, backZ + up2 / 2));
+    trim(up2, s * (upX - 0.012), backZ + up2 / 2, true, PISO2.h);
+    group.add(box(PISO2.deep, PALCO.h, landing, palcoMat, s * upMid, PALCO.h / 2, PISO2.frontZ + landing / 2));
+    stairs(PISO2.deep, PISO2.h - PALCO.h, PISO2.stairs, s * upMid, PALCO.h, PISO2.frontZ);
+    // Baranda del descanso, del lado de la entrada (ahí hay un escalón de un piso).
+    group.add(box(PISO2.deep, 0.06, 0.06, rail, s * upMid, PISO2.h + 0.95, PISO2.frontZ - 0.02));
   }
 
   // --- Tele del fondo: el marco y la pantalla "apagada" con el logo --------------------
@@ -324,17 +361,19 @@ export function buildClub(): Club {
 
   // --- Luces: truss, haces que barren la pista y bola de espejos -----------------------
   const metal = makePSXMaterial({ color: '#3a3a44' });
-  for (const z of [-2.2, 1.2]) group.add(box(halfW * 2, 0.12, 0.12, metal, 0, ceilY - 0.3, z));
-  for (const x of [-4, 0, 4]) group.add(box(0.12, 0.12, 3.6, metal, x, ceilY - 0.3, -0.5));
+  const TRUSS = [1.2, -2.2, -6.5];
+  for (const z of TRUSS) group.add(box(halfW * 2, 0.12, 0.12, metal, 0, ceilY - 0.3, z));
+  for (const x of [-4, 0, 4]) group.add(box(0.12, 0.12, 7.9, metal, x, ceilY - 0.3, -2.65));
   // Haces que barren la pista: llegan justo hasta el piso y dejan su charco de luz.
   const beams: { beam: THREE.Mesh; pool: THREE.Mesh; mat: PSXMaterial; poolMat: PSXMaterial }[] = [];
   const beamColors = [DR.rojo, DR.amarillo, DR.verdeClaro, DR.rosa, DR.amarillo, DR.rojo];
-  beamColors.forEach((color, i) => {
+  for (let i = 0; i < 9; i++) {
+    const color = beamColors[i % beamColors.length];
     const geo = new THREE.CylinderGeometry(0.03, 0.5, 1, 6, 1, true);
     geo.translate(0, -0.5, 0);
     const mat = glow(color, 0.1), poolMat = glow(color, 0.1);
     const beam = new THREE.Mesh(geo, mat);
-    beam.position.set(-5 + i * 2, ceilY - 0.35, i % 2 ? 1.2 : -2.2);
+    beam.position.set(-8 + i * 2, ceilY - 0.35, TRUSS[i % 3]);
     beam.renderOrder = 2;
     const pool = new THREE.Mesh(new THREE.CircleGeometry(0.7, 8), poolMat);
     pool.rotation.x = -Math.PI / 2;
@@ -342,7 +381,7 @@ export function buildClub(): Club {
     fx.add(beam, pool);
     group.add(box(0.3, 0.3, 0.3, metal, beam.position.x, ceilY - 0.45, beam.position.z));
     beams.push({ beam, pool, mat, poolMat });
-  });
+  }
   updaters.push((beats, energy) => {
     const pulse = music ? music.kick : 1 - (beats - Math.floor(beats));
     const bar = Math.floor(beats / 4);
@@ -358,7 +397,7 @@ export function buildClub(): Club {
       const len = Math.min(11, o.y / (Math.cos(rz) * Math.cos(rx)));
       beam.scale.y = len;
       const px = o.x + Math.sin(rz) * len, pz = o.z - Math.cos(rz) * Math.sin(rx) * len;
-      // Si cae en un palco, el charco queda arriba, no enterrado.
+      // Si cae en un palco o en el segundo piso, el charco queda arriba, no enterrado.
       pool.position.set(px, floorAt(px, pz) + 0.03, pz);
       const a = 0.03 + (0.07 + 0.2 * pulse) * energy;
       mat.uniforms.uOpacity.value = a;
@@ -429,15 +468,15 @@ export function buildClub(): Club {
 
   // Barras de led en el techo: una ola de colores que viene del fondo hacia la cabina en cada beat.
   const bars: PSXMaterial[] = [];
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 9; i++) {
     const m = makePSXMaterial({ color: '#000', lit: false });
     bars.push(m);
-    group.add(box(halfW * 1.3, 0.06, 0.08, m, 0, ceilY - 0.62, backZ + 0.4 + i * 1.1));
+    group.add(box(halfW * 1.3, 0.06, 0.08, m, 0, ceilY - 0.62, backZ + 0.4 + i * 1.3));
   }
   updaters.push((beats, energy) => {
     const beat = Math.floor(beats);
     bars.forEach((m, i) => {
-      const ph = beats - i / 6;
+      const ph = beats - i / bars.length;
       const b = 0.08 + 0.92 * Math.pow(1 - (ph - Math.floor(ph)), 4) * energy;
       m.uniforms.uColor.value.set(DR_CYCLE[(beat + i) % 4]).multiplyScalar(b);
     });
@@ -536,9 +575,9 @@ export function buildClub(): Club {
   // Y dos más colgados en las esquinas del fondo, apuntando a la pista.
   for (const s of [-1, 1]) {
     const hung = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.3, 0.7), [cab, cab, cab, cab, front, cab]);
-    hung.position.set(s * (halfW - 1.25), 3.95, backZ + 0.95);
+    hung.position.set(s * (halfW - 1.25), 6.3, backZ + 0.95);
     hung.rotation.set(0.22, -s * 0.5, 0);
-    group.add(hung, box(0.04, ceilY - 4.55, 0.04, metal, s * (halfW - 1.25), (ceilY + 4.55) / 2, backZ + 0.85));
+    group.add(hung, box(0.04, ceilY - 6.9, 0.04, metal, s * (halfW - 1.25), (ceilY + 6.9) / 2, backZ + 0.85));
   }
 
   // El logo se carga aparte: cuando llega, se prende en la cabina y en la tele.

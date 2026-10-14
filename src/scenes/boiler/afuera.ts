@@ -56,7 +56,8 @@ export interface Afuera {
 export function buildAfuera(): Afuera {
   const group = new THREE.Group();
   const { halfW, h, z } = PUERTA;
-  const W = 13, H = 7.2;
+  // La fachada tapa todo el boliche, que es más ancho que antes.
+  const W = CLUB.halfW + 1.5, H = CLUB.ceilY;
   const updaters: ((beats: number, energy: number, t: number) => void)[] = [];
 
   // --- Fachada: pared de ladrillo con el hueco de la puerta ---------------------------------

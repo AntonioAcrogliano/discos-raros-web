@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LOOK, type Look, type Raro } from '../../../shared/look';
 import { DETAIL, type DetailCell, detailUv, make3DGlassesTexture, makeDetailTexture, makeFaceTexture, makeHeartGlassesTexture, makePSXMaterial, makePrintTexture } from '../../style-kit';
-import { CLUB, PALCO, floorAt } from './club';
+import { ARM, CLUB, PALCO, PISO2, floorAt } from './club';
 import { ACTION_SECONDS, AGUA, EN_LA_FILA, PUCHO as FUMAR, SALTO, SALUDO, action, dance, hype, makePose, sipReach, sipTip, stride } from './dances';
 
 /**
@@ -524,7 +524,8 @@ const turnTo = (from: number, to: number) => Math.atan2(Math.sin(to - from), Mat
 
 /**
  * Por dónde se puede andar: todo el boliche menos la cabina (con sus parlantes). Abajo queda la
- * pista de atrás, los dos pasillos de los costados y el frente de la cabina; arriba, los palcos.
+ * pista de atrás, los dos pasillos de los costados y el frente de la cabina; arriba, los palcos
+ * y, más arriba, el segundo piso.
  * `end` es hasta dónde llegan solos hacia la entrada, y `far` hasta dónde se puede ir (ahí
  * arrancan las escaleras).
  */
@@ -532,7 +533,9 @@ const FLOOR = { halfW: CLUB.halfW - 0.55, back: CLUB.backZ + 0.45, front: -0.45,
 /** Hasta dónde se puede arrimar uno a la cabina desde la pista: justo atrás de los DJs, con lugar para que bailen. */
 const BOOTH_BACK = CLUB.djZ - 0.75;
 /** Bordes de los palcos: de `SIDE` para afuera y de `REAR` para atrás, el piso está arriba. */
-const SIDE = CLUB.halfW - PALCO.deep, REAR = CLUB.backZ + PALCO.deep;
+const SIDE = CLUB.halfW - ARM, REAR = CLUB.backZ + PALCO.deep;
+/** El segundo piso: de `UP` para afuera (hasta `PISO2.frontZ`), más alto todavía. Y hasta dónde llega a lo ancho el palco del fondo. */
+const UP = CLUB.halfW - PISO2.deep, REAR_HALF = UP - 0.5;
 /** La pista de abajo, entre los palcos. */
 const PIT = { halfW: SIDE - 0.5, back: REAR + 0.5 };
 /** El escalón más alto que se sube caminando: del piso al palco solo se pasa por la escalera. */
@@ -557,12 +560,37 @@ const arm = (p: Spot) => (p.z <= REAR ? 0 : Math.sign(p.x));
 const stairTop = (s: number): Spot => ({ x: s * (SIDE + PALCO.deep / 2), z: PALCO.frontZ - 0.5 });
 const stairFoot = (s: number): Spot => ({ x: s * (SIDE + PALCO.deep / 2), z: PALCO.frontZ + PALCO.stairs + 0.5 });
 const corner = (s: number): Spot => ({ x: s * (SIDE + PALCO.deep / 2), z: REAR - PALCO.deep / 2 });
-/** El pasillo de al lado de la cabina, a la altura de la escalera y a la altura de la pista. */
-const aisleFront = (s: number): Spot => ({ x: s * 6.6, z: 4.4 });
+/** El pasillo de al lado de la cabina: frente al pie de la escalera (se la encara de frente, no por el costado) y a la altura de la pista. */
+const aisleFront = (s: number): Spot => ({ x: s * (SIDE - 1.4), z: PALCO.frontZ + PALCO.stairs + 0.2 });
 const aisleBack = (s: number): Spot => ({ x: s * 6.6, z: -0.3 });
+
+/** ¿Está en el segundo piso? (En su escalera cuenta desde la mitad para arriba.) */
+const upper = (p: Spot) => floorAt(p.x, p.z) > (PALCO.h + PISO2.h) / 2;
+/** La escalera del segundo piso: arriba, abajo (en el descanso) y el palco de al lado del descanso. */
+const stair2Top = (s: number): Spot => ({ x: s * (UP + PISO2.deep / 2), z: PISO2.frontZ - 0.4 });
+const stair2Foot = (s: number): Spot => ({ x: s * (UP + PISO2.deep / 2), z: PISO2.frontZ + PISO2.stairs + 0.6 });
+/** Hasta dónde se queda parada la gente en los palcos de los costados: de ahí a la escalera es lugar de paso. */
+const ARM_STAY = PISO2.frontZ + PISO2.stairs - 0.6;
+const onStair2 = (p: Spot) => Math.abs(p.x) >= UP && p.z > PISO2.frontZ && p.z < PISO2.frontZ + PISO2.stairs;
+const landing = (s: number): Spot => ({ x: s * (SIDE + PALCO.deep / 2), z: PISO2.frontZ + PISO2.stairs + 0.6 });
+
+/**
+ * ¿Está `p` al lado de la cabina o adelante, del lado contrario a `s`? De un costado al otro se
+ * cruza por atrás de la cabina, no por adelante: ahí está la cámara y le pasarían por la cara.
+ */
+const across = (s: number, p: Spot) => p.z >= FLOOR.front && p.x * s < -1;
 
 /** Los puntos por los que hay que pasar para ir de `from` a `to` (el último es `to`). */
 function route(from: Spot, to: Spot): Spot[] {
+  // Al segundo piso se llega por el palco de ese lado: se arma el camino hasta ahí (o desde ahí) y se le suma la escalera.
+  const fs = Math.sign(from.x), ts = Math.sign(to.x);
+  // El que quedó en la escalera (lo frenaron, cambió de idea) sale por la punta que le sirve, no por el costado.
+  if (onStair2(from)) return upper(to) && !onStair2(to) && ts === fs ? [stair2Top(fs), to] : [stair2Foot(fs), landing(fs), ...route(landing(fs), to)];
+  if (upper(from)) {
+    if (upper(to) && ts === fs) return [to];
+    return [stair2Top(fs), stair2Foot(fs), landing(fs), ...route(landing(fs), to)];
+  }
+  if (upper(to) || onStair2(to)) return [...route(from, landing(ts)), stair2Foot(ts), ...(onStair2(to) ? [] : [stair2Top(ts)]), to];
   const up = high(from), goesUp = high(to);
   const out: Spot[] = [];
   if (up && goesUp) {
@@ -578,11 +606,15 @@ function route(from: Spot, to: Spot): Spot[] {
     if (!arm(from)) out.push(corner(s));
     out.push(stairTop(s), stairFoot(s), aisleFront(s));
     if (to.z < FLOOR.front) out.push(aisleBack(s));
+    else if (across(s, to)) out.push(aisleBack(s), aisleBack(-s));
   } else if (goesUp) {
     const s = arm(to) || Math.sign(from.x || to.x || 1);
-    if (from.z < FLOOR.front) out.push(aisleBack(s));
+    if (across(s, from)) out.push(aisleBack(-s), aisleBack(s));
+    else if (from.z < FLOOR.front) out.push(aisleBack(s));
     out.push(aisleFront(s), stairFoot(s), stairTop(s));
     if (!arm(to)) out.push(corner(s));
+  } else if (from.z >= FLOOR.front && across(Math.sign(from.x), to)) {
+    out.push(aisleBack(Math.sign(from.x)), aisleBack(Math.sign(to.x)));
   }
   out.push(to);
   return out;
@@ -608,17 +640,23 @@ function makeSlots(): Spot[] {
   }
   // A los costados de la cabina.
   for (const z of [0.35, 1.2, 2.05, 2.9]) {
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       for (const side of [1, -1]) slots.push({ x: side * (4.55 + i * SLOT_X + (r() - 0.5) * 0.1), z: z + (r() - 0.5) * 0.1, score: 3 + i * 0.6 + z * 0.3 });
     }
   }
   // Arriba: el fondo y los dos brazos.
   for (let row = 0; row < 3; row++) {
-    for (let x = -FLOOR.halfW + 0.3; x <= FLOOR.halfW - 0.3; x += 0.92) slots.push({ x: x + (r() - 0.5) * 0.1, z: FLOOR.back + 0.2 + row * 0.8, score: 9 + row * 0.3 + Math.abs(x) * 0.1 });
+    for (let x = -REAR_HALF; x <= REAR_HALF; x += 0.92) slots.push({ x: x + (r() - 0.5) * 0.1, z: FLOOR.back + 0.2 + row * 0.8, score: 9 + row * 0.3 + Math.abs(x) * 0.1 });
   }
   for (let col = 0; col < 3; col++) {
-    for (let z = REAR + 0.5; z <= PALCO.frontZ - 0.5; z += 0.85) {
+    for (let z = REAR + 0.5; z <= ARM_STAY; z += 0.85) {
       for (const side of [1, -1]) slots.push({ x: side * (SIDE + 0.6 + col * 0.85), z: z + (r() - 0.5) * 0.1, score: 11 + col * 0.3 + z * 0.1 });
+    }
+  }
+  // Y el segundo piso, contra las paredes.
+  for (let col = 0; col < 2; col++) {
+    for (let z = FLOOR.back + 0.3; z <= PISO2.frontZ - 0.6; z += 0.85) {
+      for (const side of [1, -1]) slots.push({ x: side * (UP + 0.7 + col * 0.95), z: z + (r() - 0.5) * 0.1, score: 13 + col * 0.3 + (z - FLOOR.back) * 0.1 });
     }
   }
   return slots.sort((a, b) => a.score - b.score);
@@ -918,7 +956,7 @@ export class Crowd {
     const ds = this.dancers;
     // Con poca gente no se desparraman por todo el boliche (quedaría desierto): se quedan en
     // la pista, cerca de la cabina, y recién cuando se va llenando ocupan el fondo y los palcos.
-    const fill = Math.min(1, ds.length / 110), upstairs = 0.32 * fill * fill;
+    const fill = Math.min(1, ds.length / 120), upstairs = 0.45 * fill * fill;
     const where = Math.random();
     const to = { x: 0, z: 0 };
     d.buddy = -1;
@@ -933,14 +971,18 @@ export class Crowd {
     } else if (where < 0.88 - upstairs) {
       to.x = (Math.random() * 2 - 1) * PIT.halfW * (0.38 + 0.62 * fill);
       to.z = FLOOR.front - Math.random() * (FLOOR.front - PIT.back) * (0.5 + 0.5 * fill);
-    } else if (where < 0.88 - upstairs * 0.375) {
+    } else if (where < 0.88 - upstairs * 0.6) {
       // Arriba, al fondo: la tribuna de abajo de la tele.
-      to.x = (Math.random() * 2 - 1) * FLOOR.halfW;
+      to.x = (Math.random() * 2 - 1) * REAR_HALF;
       to.z = FLOOR.back + Math.random() * (PALCO.deep - 1.1);
+    } else if (where < 0.88 - upstairs * 0.3) {
+      // En el segundo piso, mirando todo desde arriba.
+      to.x = Math.sign(Math.random() - 0.5) * (UP + 0.6 + Math.random() * (PISO2.deep - 1.2));
+      to.z = FLOOR.back + Math.random() * (PISO2.frontZ - 0.6 - FLOOR.back);
     } else if (where < 0.88) {
       // Arriba, en uno de los brazos.
       to.x = Math.sign(Math.random() - 0.5) * (SIDE + 0.55 + Math.random() * (PALCO.deep - 1.2));
-      to.z = REAR + Math.random() * (PALCO.frontZ - 0.6 - REAR);
+      to.z = REAR + Math.random() * (ARM_STAY - REAR);
     } else if (where < 0.95) {
       to.x = Math.sign(Math.random() - 0.5) * (FLOOR.aisle + 0.2 + Math.random() * (PIT.halfW - FLOOR.aisle - 0.2));
       to.z = FLOOR.front + Math.random() * (FLOOR.boothFront - FLOOR.front);
@@ -1015,8 +1057,13 @@ export class Crowd {
       if (i === 0 && this.mine) return;
       const want = this.wanted[i] ?? 0;
       d.stall = want > 0 && Math.hypot(d.x - x0, d.z - z0) < want * 0.3 ? d.stall + dt : 0;
-      if (d.stall > 2.5) {
+      // (El que va de viaje, con escaleras por delante, aguanta más antes de cambiar de idea.)
+      if (d.stall > (d.path.length ? 6 : 2.5)) {
         d.stall = 0;
+        // Trabado cerca de un punto de paso (hay gente parada justo ahí): lo da por pasado y sigue viaje.
+        // (En una escalera no: ahí el punto que sigue puede quedar del otro lado de un escalón.)
+        const next = Math.hypot(d.tx - d.x, d.tz - d.z) < 1.5 && Math.abs(floorAt(d.tx, d.tz) - floorAt(d.x, d.z)) < 0.4 ? d.path.shift() : undefined;
+        if (next) return void Object.assign(d, { tx: next.x, tz: next.z });
         d.path = [];
         d.tx = d.x;
         d.tz = d.z;
@@ -1090,7 +1137,8 @@ export class Crowd {
     for (let i = 1; i < ds.length; i++) {
       const d = ds[i];
       let dx = d.tx - d.x, dz = d.tz - d.z, far = Math.hypot(dx, dz);
-      if (far < 0.3 && d.path.length) {
+      // (Los puntos de paso no hace falta pisarlos justo: con pasar cerca alcanza.)
+      if (far < 0.6 && d.path.length) {
         const next = d.path.shift()!;
         d.tx = next.x;
         d.tz = next.z;
@@ -1101,8 +1149,9 @@ export class Crowd {
       // El rato que se queda bailando en un lugar corre recién cuando llega (subir a un palco lleva lo suyo).
       if (far <= 0.15 && !d.path.length) d.wait -= dt;
       if (d.wait <= 0) {
-        this.pick(d, i);
-        d.wait = (7 + Math.random() * 14) / d.pace;
+        // El que sube se queda un buen rato arriba: el viaje es largo, y si no los palcos quedan vacíos.
+        const up = high(this.pick(d, i));
+        d.wait = ((7 + Math.random() * 14) / d.pace) * (up ? 2.5 : 1);
         this.wanted[i] = 0;
         continue;
       }
