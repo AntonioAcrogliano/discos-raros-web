@@ -574,9 +574,16 @@ const PIT = { halfW: SIDE - 0.5, back: REAR + 0.5 };
 const STEP_UP = 0.3;
 /** Cuánto se queda uno antes de un borde (el del palco, con su baranda, o la pared del palco desde abajo): así no lo atraviesa. */
 const EDGE = 0.3;
-/** ¿Entra parado ahí sin que nada de su cuerpo quede a otra altura que `h`? */
-const fits = (x: number, z: number, h: number) =>
-  [[0, 0], [EDGE, 0], [-EDGE, 0], [0, EDGE], [0, -EDGE]].every(([dx, dz]) => Math.abs(floorAt(x + dx, z + dz) - h) <= STEP_UP);
+/**
+ * ¿Puede pararse ahí viniendo de la altura `h`? El paso no puede ser más alto que un escalón, y
+ * el cuerpo entero tiene que quedar sobre el mismo piso (sin colgar de un borde). Lo del cuerpo
+ * se mide contra el piso de ahí, no contra el de antes: en una escalera, con un cuadro lento (un
+ * celu), el paso sale largo y si no lo tomaría por un borde.
+ */
+const fits = (x: number, z: number, h: number) => {
+  const here = floorAt(x, z);
+  return Math.abs(here - h) <= STEP_UP && [[EDGE, 0], [-EDGE, 0], [0, EDGE], [0, -EDGE]].every(([dx, dz]) => Math.abs(floorAt(x + dx, z + dz) - here) <= STEP_UP);
+};
 /** Aire que se dejan entre ellos, además del ancho de cada uno: no se pisan ni con los brazos. */
 const GAP = 0.2;
 /** Lo que ocupa medio cuerpo, para no meterse en las paredes ni en los muebles. */

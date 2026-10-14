@@ -70,7 +70,26 @@ function webTexture(base: string) {
   return tex;
 }
 
-/** Bailarín armado con cajas: grupos anidados (cadera, torso, cabeza, hombros y codos, piernas y rodillas). Mira a +z; el brazo izquierdo está en +x. */
+/** Lados de los cilindros y las esferas: redondeados, pero de pocos polígonos (como en la Play). */
+const SEG = 8;
+const cyl = (rt: number, rb: number, h: number, mat: PSXMaterial, x: number, y: number, z: number, sz = 1) => {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, SEG), mat);
+  m.position.set(x, y, z);
+  m.scale.z = sz;
+  return m;
+};
+const ball = (r: number, mat: PSXMaterial, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, SEG, 6), mat);
+  m.position.set(x, y, z);
+  m.scale.set(sx, sy, sz);
+  return m;
+};
+
+/**
+ * Bailarín de cilindros y esferas: grupos anidados (cadera, torso, cabeza, hombros y codos,
+ * piernas y rodillas). Mira a +z; el brazo izquierdo está en +x. Las piezas de cada grupo se
+ * juntan por material (`bake`): son muchas y si no, cada una costaría una llamada de dibujo.
+ */
 interface PoleDancer {
   root: THREE.Group;
   hips: THREE.Group;
@@ -99,43 +118,52 @@ function buildDancer(o: Outfit): PoleDancer {
   const hips = new THREE.Group();
   hips.position.y = 0.92;
   root.add(hips);
-  hips.add(box(0.37, 0.19, 0.23, o.under, 0, -0.02, 0));
+  // La sunga (o el calzón), con la cola redonda.
+  hips.add(cyl(0.185, 0.165, 0.2, o.under, 0, -0.02, 0, 0.68));
+  for (const s of [1, -1]) hips.add(ball(0.1, o.under, s * 0.08, -0.06, -0.05, 1, 1, 0.85));
   const torso = new THREE.Group();
   torso.position.y = 0.06;
   hips.add(torso);
-  torso.add(box(0.38, 0.52, 0.22, o.skin, 0, 0.28, 0));
+  torso.add(cyl(0.2, 0.155, 0.5, o.skin, 0, 0.29, 0, 0.62), ball(0.2, o.skin, 0, 0.45, 0, 1.05, 0.5, 0.64));
+  for (const s of [1, -1]) torso.add(ball(0.075, o.skin, s * 0.235, 0.49, 0));
+  torso.add(cyl(0.055, 0.062, 0.1, o.skin, 0, 0.58, 0));
   let belly: THREE.Mesh | null = null;
-  if (o.belly) {
-    belly = box(0.42, 0.32, 0.18, o.skin, 0, 0.16, 0.1);
-    torso.add(belly);
-  }
+  if (o.belly) belly = ball(0.235, o.skin, 0, 0.16, 0.06, 1, 0.9, 0.95);
   const head = new THREE.Group();
-  head.position.y = 0.56;
+  head.position.y = 0.6;
   torso.add(head);
-  head.add(box(0.1, 0.08, 0.1, o.skin, 0, 0.02, 0));
   o.head(head);
   const arms: [THREE.Group, THREE.Group][] = [1, -1].map((s) => {
     const sh = new THREE.Group();
     sh.position.set(s * 0.245, 0.5, 0);
     torso.add(sh);
-    sh.add(box(0.11, 0.3, 0.11, o.skin, 0, -0.15, 0));
+    sh.add(cyl(0.055, 0.045, 0.3, o.skin, 0, -0.15, 0), ball(0.047, o.skin, 0, -0.3, 0));
     const el = new THREE.Group();
     el.position.y = -0.3;
     sh.add(el);
-    el.add(box(0.1, 0.27, 0.1, o.skin, 0, -0.135, 0), box(0.11, 0.1, 0.11, o.hands ?? o.skin, 0, -0.31, 0));
+    el.add(cyl(0.046, 0.038, 0.27, o.skin, 0, -0.135, 0), ball(0.058, o.hands ?? o.skin, 0, -0.3, 0, 0.9, 1.25, 0.75));
+    bake(sh);
+    bake(el);
     return [sh, el];
   });
   const legs: [THREE.Group, THREE.Group][] = [1, -1].map((s) => {
     const hip = new THREE.Group();
-    hip.position.set(s * 0.1, 0, 0);
+    hip.position.set(s * 0.095, 0, 0);
     hips.add(hip);
-    hip.add(box(0.15, 0.44, 0.15, o.skin, 0, -0.22, 0));
+    hip.add(cyl(0.088, 0.066, 0.44, o.skin, 0, -0.22, 0), ball(0.066, o.skin, 0, -0.44, 0));
     const knee = new THREE.Group();
     knee.position.y = -0.44;
     hip.add(knee);
-    knee.add(box(0.13, 0.42, 0.13, o.shins ?? o.skin, 0, -0.21, 0), box(0.13, 0.08, 0.24, o.feet ?? o.skin, 0, -0.44, 0.05));
+    knee.add(cyl(0.064, 0.048, 0.42, o.shins ?? o.skin, 0, -0.21, 0), ball(0.07, o.feet ?? o.skin, 0, -0.44, 0.05, 0.9, 0.6, 1.9));
+    bake(hip);
+    bake(knee);
     return [hip, knee];
   });
+  bake(hips);
+  bake(torso);
+  bake(head);
+  // (La panza rebota: va aparte, sin juntar.)
+  if (belly) torso.add(belly);
   return { root, hips, torso, head, arms, legs, belly };
 }
 
@@ -153,13 +181,17 @@ function spiderGuy() {
     shins: red,
     feet: blue,
     head(g) {
-      g.add(box(0.27, 0.32, 0.28, red, 0, 0.2, 0));
-      // Los ojos: blancos, grandes y achinados hacia afuera, con su borde negro.
+      g.add(ball(0.14, red, 0, 0.17, 0, 0.95, 1.2, 1.02));
+      // Los ojos: blancos, grandes y achinados hacia afuera, con su borde negro, pegados a la máscara.
       for (const s of [1, -1]) {
         const eye = new THREE.Group();
-        eye.position.set(s * 0.068, 0.24, 0.141);
-        eye.rotation.z = s * 0.45;
-        eye.add(box(0.11, 0.075, 0.012, black, 0, 0, 0), box(0.09, 0.055, 0.016, white, 0, 0, 0.004));
+        eye.position.set(s * 0.058, 0.2, 0.128);
+        eye.rotation.set(0, s * 0.42, s * 0.45);
+        const rim = new THREE.Mesh(new THREE.CircleGeometry(0.056, 10), black);
+        const lens = new THREE.Mesh(new THREE.CircleGeometry(0.046, 10), white);
+        rim.scale.y = lens.scale.y = 0.62;
+        lens.position.z = 0.003;
+        eye.add(rim, lens);
         g.add(eye);
       }
     },
@@ -168,27 +200,38 @@ function spiderGuy() {
 
 /** El pelado amarillo: panzón, en calzones blancos y medias, con dos pelos, ojos saltones y la barba de dos días. */
 function yellowGuy() {
-  // (Sin luz: con la violeta del boliche el amarillo se ponía marrón. Es un dibujito: va plano.)
-  const yellow = makePSXMaterial({ color: '#ffd90f', lit: false });
-  const white = makePSXMaterial({ color: '#e8e4dc', lit: false });
+  // (Con la luz violeta del boliche el amarillo se ponía marrón: se lo pasa de vueltas para que llegue amarillo.)
+  const yellow = makePSXMaterial({ color: new THREE.Color(1.75, 1.45, 0.12) });
+  const white = makePSXMaterial({ color: new THREE.Color(1.55, 1.55, 1.5) });
   const eyeWhite = makePSXMaterial({ color: '#ffffff', lit: false });
   const black = makePSXMaterial({ color: '#0a0a0e' });
-  const stubble = makePSXMaterial({ color: '#b8925a' });
+  const stubble = makePSXMaterial({ color: new THREE.Color(1.15, 0.85, 0.45) });
   return buildDancer({
     skin: yellow,
     under: white,
     feet: white,
     belly: true,
     head(g) {
-      g.add(box(0.28, 0.36, 0.27, yellow, 0, 0.22, 0));
-      // Dos pelos arriba, y el zigzag del costado.
-      g.add(box(0.012, 0.09, 0.012, black, -0.03, 0.44, -0.02), box(0.012, 0.09, 0.012, black, 0.03, 0.44, -0.04));
-      for (const s of [1, -1]) g.add(box(0.012, 0.05, 0.08, black, s * 0.142, 0.27, -0.04));
-      // Ojos saltones con el punto negro, nariz larga y la barba.
-      for (const s of [1, -1]) g.add(box(0.1, 0.1, 0.06, eyeWhite, s * 0.062, 0.25, 0.15), box(0.025, 0.025, 0.01, black, s * 0.062, 0.25, 0.185));
-      g.add(box(0.05, 0.05, 0.1, yellow, 0, 0.17, 0.17));
-      g.add(box(0.22, 0.13, 0.07, stubble, 0, 0.08, 0.13));
-      for (const s of [1, -1]) g.add(box(0.03, 0.07, 0.05, yellow, s * 0.15, 0.2, 0));
+      // La cabeza es una lata con la tapa redonda.
+      g.add(cyl(0.135, 0.13, 0.24, yellow, 0, 0.14, 0, 0.95));
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.135, SEG, 4, 0, TAU, 0, Math.PI / 2), yellow);
+      dome.position.y = 0.26;
+      dome.scale.z = 0.95;
+      g.add(dome);
+      // Dos pelos arriba (dos arquitos) y el zigzag del costado.
+      for (const [x, z] of [[-0.025, 0.01], [0.025, -0.03]]) {
+        const hair = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.005, 3, 6, Math.PI), black);
+        hair.position.set(x, 0.385, z);
+        hair.rotation.y = 0.3;
+        g.add(hair);
+      }
+      for (const s of [1, -1]) for (const k of [0, 1, 2]) g.add(box(0.01, 0.035, 0.022, black, s * 0.132, 0.22 + (k % 2) * 0.02, -0.07 + k * 0.022));
+      // Ojos saltones con el punto negro, la nariz larga, la barba y las orejas.
+      for (const s of [1, -1]) g.add(ball(0.052, eyeWhite, s * 0.055, 0.21, 0.115), ball(0.012, black, s * 0.055, 0.21, 0.166));
+      const nose = cyl(0.024, 0.026, 0.09, yellow, 0, 0.15, 0.16);
+      nose.rotation.x = Math.PI / 2;
+      g.add(nose, ball(0.1, stubble, 0, 0.06, 0.065, 1.15, 0.78, 0.9));
+      for (const s of [1, -1]) g.add(ball(0.035, yellow, s * 0.135, 0.15, -0.01, 0.5, 1, 0.8));
     },
   });
 }

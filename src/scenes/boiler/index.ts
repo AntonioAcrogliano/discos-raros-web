@@ -4,7 +4,7 @@ import type { PistaData } from '../../api';
 import { DR, FONT, type PSXStage, audioLive, outlined, psxUniforms, street, titleUnit, sfx } from '../../style-kit';
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
-import { BARRA, CLUB, PALCO, buildClub, floorAt, roomAt } from './club';
+import { BARRA, CLUB, PALCO, PASILLO, SOTANO, buildClub, floorAt, inBack, inCellar, roomAt } from './club';
 import { BARMAN, PASTI, SENTARSE } from './dances';
 import { Crowd, MAX_DANCERS } from './crowd';
 import { buildSotano } from './sotano';
@@ -124,7 +124,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   barra.setDancers([0, 1].map((i) => ({ id: `barman${i}`, name: '', look: { ...randomLook(br), encima: 0, mano: 0, baile: BARMAN } })));
   [BARRA.x0 + 1.6, BARRA.x1 - 1.9].forEach((x, i) => barra.place(i, x, BARRA.barmanZ, 0));
   barra.group.position.y = PALCO.h;
-  if (import.meta.env.DEV) (window as unknown as { drPista: unknown }).drPista = { crowd, barra };
+  if (import.meta.env.DEV) (window as unknown as { drPista: unknown }).drPista = { crowd, barra, tele: () => tele };
   const sotano = buildSotano();
   scene.add(club.group, crowd.group, barra.group, sotano.group, djGroup, tele.object, afuera.group, patio.group);
 
@@ -335,6 +335,13 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   const OUTSIDE = 0.12;
   /** Volumen del set al que hay que llegar (0–1). */
   let wantVolume = OUTSIDE;
+  /** Cuánto llega la música adonde está parado el raro del visitante (1 = en el salón). */
+  const muffle = () => {
+    const me = hasFirst ? crowd.spot() : null;
+    if (!me || !inBack(me.z)) return 1;
+    if (inCellar(me.x, me.z)) return me.x < SOTANO.x0 ? 0.6 : 0.4;
+    return me.z < PASILLO.end ? 0.35 : 0.75;
+  };
 
   tele.volume = fixedVolume ? 1 : OUTSIDE;
   const ease = (x: number) => {
@@ -370,7 +377,9 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     crowd.hype = music && mode === 'pista' ? music.drop : 0;
     crowd.update(beats, energy, t);
     barra.update(t * 1.3, 1, t);
-    sotano.update(beats, energy, t);
+    // El sótano se ve recién desde el fondo (el pasillo, la escalera, adentro): desde el salón lo tapan las paredes.
+    sotano.group.visible = stage.camera.position.z < CLUB.backZ + 1.5;
+    if (sotano.group.visible) sotano.update(beats, energy, t);
     const drop = music && mode === 'pista' ? music.drop : 0;
     djs.update(beats, energy, drop);
     // Cuando cae el drop, la pista grita (no más de una vez cada tanto).
@@ -382,6 +391,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (afuera.group.visible) afuera.update(beats, energy, t);
     if (patio.group.visible) patio.update(beats, energy, t);
     // El volumen del set va llegando de a poco a donde tiene que estar.
+    // En la pista, del otro lado de una pared la música llega más baja: un poco en el pasillo,
+    // bastante en el baño y en el sótano. (Ahogada de verdad, sin agudos, no se puede: el audio
+    // es del player de YouTube y el navegador no deja tocarlo. Se baja el volumen y listo.)
+    if (mode === 'pista') wantVolume = muffle();
     if (!fixedVolume) tele.volume = tele.volume + Math.sign(wantVolume - tele.volume) * Math.min(Math.abs(wantVolume - tele.volume), dt * 1.2);
     stage.post.pulse = music ? music.kick * energy : Math.max(0, 1 - (beats - Math.floor(beats)) * 2) * energy;
 
