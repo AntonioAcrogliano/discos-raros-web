@@ -104,9 +104,6 @@
 .hud-izq { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
 .hud .contador { padding: 6px 8px 5px; background: #0f1217; border: 2px solid var(--dr-crema); box-shadow: 3px 3px 0 #000; color: var(--dr-amarillo); max-width: 100%; }
 .hud .contador:empty { display: none; }
-.hud .contador.discos { color: var(--dr-crema); border-color: var(--dr-amarillo); }
-.hud .contador.discos b { color: var(--dr-amarillo); font-weight: normal; }
-.ayuda.aviso-disco { color: var(--dr-amarillo); border-color: var(--dr-amarillo); }
 /* Reproductor: arriba qué suena (con su vúmetro), abajo los botones pegados como en un equipo. */
 .suena { width: min(400px, 100%); background: var(--dr-negro); border: 2px solid var(--dr-crema); box-shadow: 3px 3px 0 #000; }
 .suena-cab { display: flex; align-items: center; gap: 8px; padding: 7px 8px 6px; font-size: 8px; }

@@ -11,8 +11,6 @@ import './ui.css';
 export const ui = el('div', 'ui');
 const hud = el('div', 'hud');
 export const hudContador = el('div', 'contador');
-/** Cuántos discos juntó el visitante en la pista y qué rango tiene (ver `main.ts`). */
-export const hudDiscos = el('div', 'contador discos');
 /** Reproductor: qué set suena, con anterior / pausa / siguiente y el link a YouTube. */
 const suena = el('div', 'suena');
 suena.hidden = true;
@@ -86,7 +84,7 @@ function marquee() {
   titulo.classList.add('corre');
 }
 window.addEventListener('resize', marquee);
-hud.append(el('div', 'hud-izq', [hudContador, hudDiscos, suena]), redesLinks());
+hud.append(el('div', 'hud-izq', [hudContador, suena]), redesLinks());
 
 export const player = {
   /** Muestra qué set suena. */
@@ -263,13 +261,6 @@ export function showHint(keys: [string, string][], seconds = 12) {
   window.addEventListener('pointerdown', onMove);
   window.addEventListener('keydown', onMove);
   setTimeout(() => leave(0), seconds * 1000);
-}
-
-/** Cartelito de una línea arriba de la barra, que se va solo (apareció un disco, subiste de rango). */
-export function showToast(text: string, seconds = 6) {
-  const box = el('div', 'ayuda aviso-disco', text);
-  avisos.prepend(box);
-  setTimeout(() => box.isConnected && dismiss(box), seconds * 1000);
 }
 
 /** Aviso con un botón que lleva a una sección (por ejemplo: recién armaste tu raro, compartilo). Se va solo. */
