@@ -329,6 +329,22 @@ export function buildClub(): Club {
     m.position.set(x, base + rise / 2, z0 + run / 2);
     group.add(m);
   };
+  /**
+   * Pasamanos del costado abierto de una escalera: baja con los escalones, de `top` a `bottom`,
+   * y llega hasta `upTo` (0 a 1) del largo, que es donde el escalón de costado se puede bajar.
+   */
+  const handrail = (x: number, z0: number, run: number, top: number, bottom: number, upTo: number) => {
+    const len = run * upTo, drop = (top - bottom) * upTo;
+    const bar = box(0.06, 0.06, Math.hypot(len, drop), rail, x, (top + top - drop) / 2 + 0.95, z0 + len / 2);
+    bar.rotation.x = Math.atan2(drop, len);
+    group.add(bar);
+    for (const t of [0.5, 1]) {
+      const y = top - drop * t;
+      group.add(box(0.07, 0.95, 0.07, post, x, y + 0.475, z0 + len * t));
+    }
+  };
+  /** Hasta dónde va el pasamanos: mientras el costado de la escalera sea más alto que un escalón. */
+  const railTo = (rise: number) => 1 - 0.3 / rise;
   trim(sideX * 2, 0, rearZ + 0.012, false);
   const up2 = PISO2.frontZ - backZ, landing = PALCO.frontZ - PISO2.frontZ;
   for (const s of [-1, 1]) {
@@ -336,13 +352,14 @@ export function buildClub(): Club {
     group.add(box(PALCO.deep, PALCO.h, armLen, palcoMat, s * (sideX + PALCO.deep / 2), PALCO.h / 2, rearZ + armLen / 2));
     trim(armLen, s * (sideX - 0.012), rearZ + armLen / 2, true);
     stairs(ARM, PALCO.h, PALCO.stairs, s * (halfW - ARM / 2), 0, PALCO.frontZ);
+    handrail(s * (sideX - 0.012), PALCO.frontZ, PALCO.stairs, PALCO.h, 0, railTo(PALCO.h));
     // El segundo piso, contra la pared: llega hasta el fondo y baja al palco por su escalera.
     group.add(box(PISO2.deep, PISO2.h, up2, palcoMat, s * upMid, PISO2.h / 2, backZ + up2 / 2));
     trim(up2, s * (upX - 0.012), backZ + up2 / 2, true, PISO2.h);
     group.add(box(PISO2.deep, PALCO.h, landing, palcoMat, s * upMid, PALCO.h / 2, PISO2.frontZ + landing / 2));
     stairs(PISO2.deep, PISO2.h - PALCO.h, PISO2.stairs, s * upMid, PALCO.h, PISO2.frontZ);
-    // Baranda del descanso, del lado de la entrada (ahí hay un escalón de un piso).
-    group.add(box(PISO2.deep, 0.06, 0.06, rail, s * upMid, PISO2.h + 0.95, PISO2.frontZ - 0.02));
+    // Del lado del palco la escalera queda en el aire: pasamanos que sigue a la baranda de arriba.
+    handrail(s * (upX - 0.012), PISO2.frontZ, PISO2.stairs, PISO2.h, PALCO.h, railTo(PISO2.h - PALCO.h));
   }
 
   // --- Tele del fondo: el marco y la pantalla "apagada" con el logo --------------------
