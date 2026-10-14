@@ -6,9 +6,9 @@ import { openCreador } from './sections/creador';
 import { openJugar } from './sections/jugar';
 import { askAtDoor } from './sections/puerta';
 import { openSets } from './sections/sets';
-import { PSXStage, fontsReady, makeLogoCanvas, setLogoSprite } from './style-kit';
-import { isTouch, sinTildes } from './ui/dom';
-import { type ActionButton, go, hudContador, mountStick, mountUi, pistaHint, player, setActions, setChrome, setRouteLabel, showCall, showHint } from './ui/shell';
+import { PSXStage, fontsReady, makeLogoCanvas, setLogoSprite, sfx } from './style-kit';
+import { el, isTouch, sinTildes } from './ui/dom';
+import { type ActionButton, go, hudContador, hudDiscos, mountStick, mountUi, pistaHint, player, setActions, setChrome, setRouteLabel, showCall, showHint, showToast } from './ui/shell';
 import { showStartScreen } from './ui/startScreen';
 
 /** Dibujitos de la barra: un disco, un raro, un joystick y un sobre. */
@@ -27,6 +27,11 @@ const ACTIONS: ActionButton[] = [
   { kind: 4, label: 'SALTO', icon: ['....X....', '...XXX...', '..XXXXX..', '.XXXXXXX.', '...XXX...', '...XXX...', '...XXX...', '.........', 'XXXXXXXXX'] },
   { kind: 5, label: 'PASTI', icon: ['.........', '.....XXX.', '....XXXXX', '...X.XXXX', '..X...XXX', '.X...X.X.', 'X...X....', 'X..X.....', '.XX......'] },
 ];
+
+/** Rangos según los discos juntados en la pista: [desde cuántos, nombre]. */
+const RANGOS: [number, string][] = [[0, 'RECIEN LLEGADO'], [3, 'CURIOSO'], [8, 'HABITUE'], [15, 'COLECCIONISTA'], [30, 'MELOMANO'], [50, 'DUEÑO DE LA PISTA'], [100, 'LEYENDA DEL BOLICHE']];
+const rango = (n: number) => RANGOS.filter(([from]) => n >= from).pop()![1];
+const DISCOS_KEY = 'dr-discos';
 
 async function main() {
   const stage = new PSXStage(document.querySelector<HTMLCanvasElement>('#stage')!);
@@ -108,6 +113,38 @@ async function main() {
     setRouteLabel('crear', d.mine ? 'TU RARO' : d.total ? 'CREA TU RARO' : 'ENTRA A LA PISTA', !d.mine && d.total === 0);
     // Las acciones son del que tiene raro.
     setActions(d.mine ? ACTIONS : null, (kind) => room.act(kind));
+    // Y los discos también: los junta él.
+    hudDiscos.hidden = !d.mine;
+  };
+  // Discos juntados en la pista: se cuentan en este aparato, y con ellos se sube de rango.
+  let discos = 0;
+  try {
+    discos = Math.max(0, Math.floor(Number(localStorage.getItem(DISCOS_KEY)) || 0));
+  } catch {
+    /* sin almacenamiento */
+  }
+  const paintDiscos = () => hudDiscos.replaceChildren(el('b', '', `${discos} ${discos === 1 ? 'DISCO' : 'DISCOS'}`), ` · ${rango(discos)}`);
+  paintDiscos();
+  hudDiscos.hidden = true;
+  hudDiscos.title = 'Con el set sonando aparecen discos en la pista: andá a buscarlos con tu raro.';
+  room.onDisco = (worth) => {
+    const before = rango(discos);
+    discos += worth;
+    paintDiscos();
+    try {
+      localStorage.setItem(DISCOS_KEY, String(discos));
+    } catch {
+      /* sin almacenamiento */
+    }
+    if (rango(discos) === before) return;
+    sfx.start();
+    showToast(`SUBISTE DE RANGO: ${rango(discos)}`, 8);
+  };
+  // Los primeros se anuncian con todas las letras; después alcanza con el cartel sobre la pista.
+  let announced = 0;
+  room.onDiscoSpawn = (gold) => {
+    if (gold) showToast('CAYO UN DISCO DE ORO! VALE 5. APURATE.', 6);
+    else if (announced++ < 2) showToast('APARECIO UN DISCO EN EL BOLICHE. ANDA A BUSCARLO.', 7);
   };
   void pista.then((d) => d && setPista(d));
   // Raro recién armado (en la puerta o en el creador): se invita a compartirlo, una vez adentro.

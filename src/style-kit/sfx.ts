@@ -386,6 +386,15 @@ export const sfx = {
   select: () => blip(880, 0.08),
   /** Volver / cancelar. */
   back: () => blip(440, 0.08),
+  /** Juntar un disco en la pista (el de oro, con arpegio). */
+  coin: (gold = false) => {
+    blip(988, 0.07);
+    blip(1319, 0.25, 'square', 0.05, 0.07);
+    if (gold) {
+      blip(1568, 0.1, 'square', 0.05, 0.2);
+      blip(1976, 0.3, 'square', 0.05, 0.3);
+    }
+  },
   /** No se puede. */
   error: () => blip(220, 0.12, 'sawtooth', 0.04),
   /** PRESS START: arpegio que sube. */

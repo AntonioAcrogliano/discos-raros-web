@@ -549,6 +549,15 @@ function offBooth(p: Spot) {
   else p.z = toBack < toFront ? BOOTH_BACK : FLOOR.boothFront;
 }
 
+/** Un lugar cualquiera donde puede pararse alguien: la pista, los costados de la cabina o los palcos. */
+export function anywhere(): Spot {
+  const where = Math.random(), side = Math.sign(Math.random() - 0.5);
+  if (where < 0.5) return { x: (Math.random() * 2 - 1) * PIT.halfW, z: FLOOR.front - Math.random() * (FLOOR.front - PIT.back) };
+  if (where < 0.68) return { x: (Math.random() * 2 - 1) * FLOOR.halfW, z: FLOOR.back + Math.random() * (PALCO.deep - 1.1) };
+  if (where < 0.86) return { x: side * (SIDE + 0.55 + Math.random() * (PALCO.deep - 1.2)), z: REAR + Math.random() * (PALCO.frontZ - 0.6 - REAR) };
+  return { x: side * (FLOOR.aisle + 0.2 + Math.random() * (PIT.halfW - FLOOR.aisle - 0.2)), z: FLOOR.front + Math.random() * (FLOOR.end - FLOOR.front) };
+}
+
 // --- Caminos: cómo se llega de un lugar a otro cuando hay que subir o bajar ---------------
 /** ¿Está arriba, en un palco? (En la escalera cuenta desde la mitad para arriba.) */
 const high = (p: Spot) => floorAt(p.x, p.z) > PALCO.h / 2;

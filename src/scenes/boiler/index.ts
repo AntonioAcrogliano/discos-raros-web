@@ -5,7 +5,8 @@ import { DR, FONT, type PSXStage, audioLive, outlined, psxUniforms, street, titl
 import { isTouch, sinTildes } from '../../ui/dom';
 import { PATIO, PUERTA, buildAfuera, buildPatio } from './afuera';
 import { CLUB, PALCO, buildClub, floorAt } from './club';
-import { PASTI } from './dances';
+import { PASTI, SALTO } from './dances';
+import { ORO, makeDiscos } from './discos';
 import { Crowd, MAX_DANCERS } from './crowd';
 import { loadGlbRig } from '../../characters/glbRig';
 import { buildPlaceholderDjs, makeDjs } from './djs';
@@ -72,6 +73,10 @@ export interface BoilerRoom {
   /** Avisa cuando el set empieza a sonar o se pausa. */
   onPlayState: ((playing: boolean) => void) | null;
   onNowPlaying: ((set: SetInfo) => void) | null;
+  /** El raro del visitante juntó un disco en la pista (`worth`: cuánto vale; el de oro, más). */
+  onDisco: ((worth: number) => void) | null;
+  /** Apareció un disco para ir a buscar. */
+  onDiscoSpawn: ((gold: boolean) => void) | null;
   drawOverlay(ctx: CanvasRenderingContext2D, w: number, h: number, t: number): void;
 }
 
@@ -116,7 +121,10 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   const afuera = buildAfuera();
   const patio = buildPatio();
   patio.group.visible = false;
-  scene.add(club.group, crowd.group, djGroup, tele.object, afuera.group, patio.group);
+  // Los discos que aparecen en la pista para ir a buscar, y los "+1" que suben al agarrarlos.
+  const discos = makeDiscos();
+  const pops: { x: number; y: number; z: number; text: string; t0: number }[] = [];
+  scene.add(club.group, crowd.group, djGroup, tele.object, afuera.group, patio.group, discos.group);
 
   // --- Quién baila ---------------------------------------------------------------------
   let pista: PistaData = { total: 0, raros: [], mine: null };
@@ -357,6 +365,18 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     crowd.update(beats, energy, t);
     const drop = music && mode === 'pista' ? music.drop : 0;
     djs.update(beats, energy, drop);
+    discos.group.visible = mode === 'pista';
+    if (mode === 'pista') {
+      // Solo aparecen con el set sonando (si YouTube no cargó, igual: que no se quede sin juego).
+      const ev = discos.update(dt, t, hasFirst ? crowd.spot() : null, tele.playing || !tele.videoId, drop);
+      if (ev.spawned) room.onDiscoSpawn?.(ev.spawned === 2);
+      if (ev.got && ev.at) {
+        sfx.coin(ev.got >= ORO);
+        crowd.act(0, SALTO);
+        pops.push({ x: ev.at.x, y: ev.at.y + 2, z: ev.at.z, text: `+${ev.got}`, t0: t });
+        room.onDisco?.(ev.got);
+      }
+    }
     // Cuando cae el drop, la pista grita (no más de una vez cada tanto).
     if (drop > 0.6 && wasDrop <= 0.6 && t - cheerAt > 8) {
       cheerAt = t;
@@ -684,6 +704,39 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     if (name) outlined(ctx, name, x + Math.round(bw / 2), y - unit, unit, i === 0 && hasFirst ? DR.amarillo : DR.crema);
     return true;
   };
+  /** Dónde está cada disco para juntar: un cartel arriba si se ve, o una flecha en el borde hacia donde hay que ir. */
+  const discoSigns = (ctx: CanvasRenderingContext2D, w: number, h: number, t: number) => {
+    const unit = Math.max(6, Math.round(titleUnit(w, h) * 0.6));
+    for (const d of discos.list()) {
+      const name = d.gold ? 'DISCO DE ORO' : 'DISCO', color = d.gold && Math.floor(t * 6) % 2 ? DR.crema : DR.amarillo;
+      v.set(d.x, d.y + 1.55, d.z).project(stage.camera);
+      const behind = v.z > 1 || v.z < -1;
+      if (!behind && Math.abs(v.x) < 0.9 && Math.abs(v.y) < 0.85) {
+        const x = Math.round((v.x * 0.5 + 0.5) * w), y = Math.round((-v.y * 0.5 + 0.5) * h) - Math.round(Math.abs(Math.sin(t * 5)) * 3);
+        outlined(ctx, name, x, fit(x, y + Math.ceil(unit / 2) + 1, name.length * unit, unit + 2) - Math.ceil(unit / 2) - 1, unit, color);
+        continue;
+      }
+      // Fuera de cuadro: contra el borde del lado para el que hay que girar o caminar.
+      const right = (behind ? -v.x : v.x) > 0, nudge = Math.round(Math.abs(Math.sin(t * 5)) * 3);
+      const y = Math.round(h * (behind ? 0.62 : Math.max(0.3, Math.min(0.7, -v.y * 0.5 + 0.5))));
+      ctx.textAlign = right ? 'right' : 'left';
+      outlined(ctx, right ? `${name} >` : `< ${name}`, right ? w - 6 - nudge : 6 + nudge, y, unit, color);
+      ctx.textAlign = 'center';
+    }
+    // Lo que se acaba de juntar: el "+1" sube y se apaga.
+    for (let i = pops.length - 1; i >= 0; i--) {
+      const p = pops[i], age = t - p.t0;
+      if (age > 1.3) {
+        pops.splice(i, 1);
+        continue;
+      }
+      v.set(p.x, p.y + age * 0.8, p.z).project(stage.camera);
+      if (v.z > 1 || v.z < -1) continue;
+      ctx.globalAlpha = Math.min(1, (1.3 - age) * 3);
+      outlined(ctx, p.text, Math.round((v.x * 0.5 + 0.5) * w), Math.round((-v.y * 0.5 + 0.5) * h), unit * 2, DR.amarillo, DR.rojo);
+      ctx.globalAlpha = 1;
+    }
+  };
   /** El raro que está abajo del puntero (el de más adelante, si se tapan), o -1. */
   const feet = new THREE.Vector3();
   const pointed = () => {
@@ -707,6 +760,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     scene,
     takeover: null,
     onNowPlaying: null,
+    onDisco: null,
+    onDiscoSpawn: null,
     onPlayState: null,
     toggle: () => tele.toggle(),
     skip(d) {
@@ -842,6 +897,7 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
         outlined(ctx, says, w / 2, Math.round(Math.max(h * 0.12, Math.min(h * 0.8, y))), Math.min(titleUnit(w, h), Math.floor((w * 0.92) / says.length)), DR.amarillo);
       }
       placed.length = 0;
+      discoSigns(ctx, w, h, t);
       // Primero el globito y el propio (que se quedan con su lugar); los demás se acomodan.
       const talking = performance.now() < talk.until && bubble(ctx, w, h, talk.i) ? talk.i : -1;
       if (namesLeft > 0) {
