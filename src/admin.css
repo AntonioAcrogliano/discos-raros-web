@@ -1,4 +1,5 @@
-body.admin { overflow: auto; height: auto; min-height: 100%; }
+/* El sitio traba el scroll (en la pista arrastrar mueve la cámara); el admin es una página común que se scrollea. */
+html.admin, body.admin { overflow: auto; height: auto; min-height: 100%; touch-action: auto; overscroll-behavior: auto; }
 .admin-ui { position: static; pointer-events: auto; display: grid; gap: 20px; justify-items: center; padding: 20px 12px 40px; }
 .admin-ui .panel { max-height: none; }
 .admin-lista { display: grid; gap: 8px; }

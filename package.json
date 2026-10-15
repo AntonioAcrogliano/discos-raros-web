@@ -12,6 +12,9 @@
   "dependencies": {
     "@fontsource/press-start-2p": "^5.3.0",
     "@supabase/supabase-js": "^2.117.3",
+    "fflate": "^0.8.3",
+    "gifenc": "^1.0.3",
+    "mp4-muxer": "^5.2.2",
     "three": "^0.186.0"
   },
   "devDependencies": {
