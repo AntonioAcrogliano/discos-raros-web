@@ -42,6 +42,59 @@ export interface ExportOptions {
 const TAU = Math.PI * 2;
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
+/** Como en la Play: cada píxel opaco o transparente, color de 15 bits con tramado. */
+export function psxLook(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let y = 0, i = 0; y < h; y++) {
+    for (let x = 0; x < w; x++, i += 4) {
+      if (d[i + 3] < 128) {
+        d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0;
+        continue;
+      }
+      const t = (BAYER[(x & 3) + (y & 3) * 4] + 0.5) / 16;
+      for (let c = 0; c < 3; c++) d[i + c] = Math.round((Math.min(31, Math.floor((d[i + c] / 255) * 31 + t)) / 31) * 255);
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/**
+ * El globito con la frase (letras negras sobre crema, con su piquito hacia la cabeza, que está en
+ * `hx`, `hy`) y el nombre arriba, como en la pista. Sin frase, solo el nombre arriba de la cabeza.
+ * `left` y `right` son los bordes entre los que tiene que entrar.
+ */
+export function drawBubble(ctx: CanvasRenderingContext2D, name: string, phrase: string, hx: number, hy: number, unit: number, left: number, right: number) {
+  const w = right - left;
+  if (!phrase) {
+    if (name) outlined(ctx, sinTildes(name), Math.max(left + unit * 3, Math.min(right - unit * 3, hx)), hy - unit, fitSize(name, unit, w), DR.amarillo);
+    return;
+  }
+  const lines: string[] = [];
+  for (const word of sinTildes(phrase).split(' ')) {
+    const last = lines[lines.length - 1];
+    if (last !== undefined && last.length + 1 + word.length <= 14) lines[lines.length - 1] = `${last} ${word}`;
+    else lines.push(word);
+  }
+  ctx.font = `${unit}px ${FONT}`;
+  const pad = Math.round(unit * 0.6), gap = Math.round(unit * 0.4);
+  const bw = Math.min(w - 4, Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2), bh = lines.length * unit + (lines.length - 1) * gap + pad * 2;
+  const x = Math.max(left + 2, Math.min(right - bw - 2, hx - Math.round(bw / 2))), y = Math.max(unit * 2 + 2, hy - unit - bh);
+  ctx.fillStyle = DR.negro;
+  ctx.fillRect(x - 1, y - 1, bw + 2, bh + 2);
+  const tip = Math.max(x + 2, Math.min(x + bw - 8, hx - 3));
+  for (let k = 0; k < 4; k++) ctx.fillRect(tip + k, y + bh + 1 + k, Math.max(1, 7 - k * 2), 1);
+  ctx.fillStyle = DR.crema;
+  ctx.fillRect(x, y, bw, bh);
+  for (let k = 0; k < 3; k++) ctx.fillRect(tip + 1 + k, y + bh + k, 5 - k * 2, 1);
+  ctx.fillStyle = DR.negro;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  lines.forEach((l, n) => ctx.fillText(l, x + Math.round(bw / 2), y + pad + Math.round(unit / 2) + n * (unit + gap)));
+  if (name) outlined(ctx, sinTildes(name), x + Math.round(bw / 2), y - unit, fitSize(name, unit, w), DR.amarillo);
+}
+
 /** Dibuja un raro por vez en un canvas chico con fondo transparente. */
 class RaroStudio {
   /** El cuadro terminado, ya agrandado. */
@@ -102,34 +155,11 @@ class RaroStudio {
     this.camera.updateProjectionMatrix();
   }
 
-  /** El globito con la frase (letras negras sobre crema, con su piquito hacia la cabeza) y el nombre arriba. */
+  /** El globito con la frase y el nombre, arriba de la cabeza. */
   private bubble(w: number, h: number, unit: number) {
-    const ctx = this.ctx;
     if (!this.crowd.headTop(0, this.head)) return;
     this.head.project(this.camera);
-    const hx = Math.round((this.head.x * 0.5 + 0.5) * w), hy = Math.round((-this.head.y * 0.5 + 0.5) * h);
-    const lines: string[] = [];
-    for (const word of sinTildes(this.phrase).split(' ')) {
-      const last = lines[lines.length - 1];
-      if (last !== undefined && last.length + 1 + word.length <= 14) lines[lines.length - 1] = `${last} ${word}`;
-      else lines.push(word);
-    }
-    ctx.font = `${unit}px ${FONT}`;
-    const pad = Math.round(unit * 0.6), gap = Math.round(unit * 0.4);
-    const bw = Math.min(w - 4, Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2), bh = lines.length * unit + (lines.length - 1) * gap + pad * 2;
-    const x = Math.max(2, Math.min(w - bw - 2, hx - Math.round(bw / 2))), y = Math.max(unit * 2 + 2, hy - unit - bh);
-    ctx.fillStyle = DR.negro;
-    ctx.fillRect(x - 1, y - 1, bw + 2, bh + 2);
-    const tip = Math.max(x + 2, Math.min(x + bw - 8, hx - 3));
-    for (let k = 0; k < 4; k++) ctx.fillRect(tip + k, y + bh + 1 + k, Math.max(1, 7 - k * 2), 1);
-    ctx.fillStyle = DR.crema;
-    ctx.fillRect(x, y, bw, bh);
-    for (let k = 0; k < 3; k++) ctx.fillRect(tip + 1 + k, y + bh + k, 5 - k * 2, 1);
-    ctx.fillStyle = DR.negro;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    lines.forEach((l, n) => ctx.fillText(l, x + Math.round(bw / 2), y + pad + Math.round(unit / 2) + n * (unit + gap)));
-    if (this.name) outlined(ctx, sinTildes(this.name), x + Math.round(bw / 2), y - unit, fitSize(this.name, unit, w), DR.amarillo);
+    drawBubble(this.ctx, this.name, this.phrase, Math.round((this.head.x * 0.5 + 0.5) * w), Math.round((-this.head.y * 0.5 + 0.5) * h), unit, 0, w);
   }
 
   /** Dibuja el cuadro `f` de `frames` (el último empalma con el primero). */
@@ -138,6 +168,8 @@ class RaroStudio {
     const k = f / frames;
     this.crowd.spin = o.view === 'gira' ? TAU * k : o.view === 'perfil' ? 0.6 : 0;
     this.crowd.update(k * o.beats, 1, 0);
+    // (La resolución del "snap" de la Play es de todos: el desfile, en la misma página, usa otra.)
+    psxUniforms.uResolution.value.set(o.width, o.height);
     this.renderer.render(this.scene, this.camera);
 
     const { width: w, height: h } = o;
@@ -151,21 +183,7 @@ class RaroStudio {
       this.ctx.textBaseline = 'middle';
       outlined(this.ctx, sinTildes(this.name), w / 2, Math.round(unit * 1.6), fitSize(this.name, unit, w), DR.amarillo);
     }
-    // Como en la Play: cada píxel opaco o transparente, color de 15 bits con tramado.
-    const img = this.ctx.getImageData(0, 0, w, h);
-    const d = img.data;
-    for (let y = 0, i = 0; y < h; y++) {
-      for (let x = 0; x < w; x++, i += 4) {
-        if (d[i + 3] < 128) {
-          d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0;
-          continue;
-        }
-        const t = (BAYER[(x & 3) + (y & 3) * 4] + 0.5) / 16;
-        for (let c = 0; c < 3; c++) d[i + c] = Math.round((Math.min(31, Math.floor((d[i + c] / 255) * 31 + t)) / 31) * 255);
-        d[i + 3] = 255;
-      }
-    }
-    this.ctx.putImageData(img, 0, 0);
+    psxLook(this.ctx, w, h);
     this.out.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.out.drawImage(this.small, 0, 0, this.canvas.width, this.canvas.height);
   }
@@ -357,6 +375,7 @@ export function mountExportador(root: HTMLElement, load: () => Promise<ExportRar
     go.hidden = true;
     stop.hidden = false;
     status.className = 'aviso';
+    status.textContent = 'ARRANCANDO...';
     const frames = frameCount(o);
     const rows = ['numero;archivo;nombre;frase;baile;fecha'];
     const zip = new ZipBatch(`raros_${o.formato}_${pad(from, 4)}-${pad(from + list.length - 1, 4)}`);

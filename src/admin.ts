@@ -124,6 +124,9 @@ async function load() {
     return all.reverse();
   };
   void import('./exportar').then((m) => m.mountExportador(exportBody, async () => m.cleanRaros(await todos())));
+  // El desfile: todos pasando en un solo video (también se baja recién acá).
+  const desfileBody = el('div', 'panel-body');
+  void Promise.all([import('./exportar'), import('./exportar-desfile')]).then(([m, d]) => d.mountDesfile(desfileBody, async () => m.cleanRaros(await todos())));
 
   root.replaceChildren(
     el('section', 'panel', [
@@ -138,6 +141,7 @@ async function load() {
       el('div', 'panel-body', [(data.chat ?? []).length ? chat : el('p', 'aviso', 'NADIE ESCRIBIO TODAVIA.')]),
     ]),
     el('section', 'panel', [el('header', 'panel-title', 'VIDEOCLIP'), exportBody]),
+    el('section', 'panel', [el('header', 'panel-title', 'DESFILE'), desfileBody]),
     el('section', 'panel', [
       el('header', 'panel-title', `MENSAJES (${data.mensajes.length})`),
       el('div', 'panel-body', [data.mensajes.length ? mensajes : el('p', 'aviso', 'SIN MENSAJES.')]),

@@ -71,11 +71,14 @@ const raw = (fill: (b: Bytes) => void) => {
 const identity = (b: Bytes) => [0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000].forEach((v) => b.u32(v));
 
 /** Arma un MOV con transparencia a partir de los PNG de cada cuadro. */
-export function buildMov(frames: Uint8Array[], width: number, height: number, fps: number): Blob {
+/** Cuánto pesa un cuadro (un Blob no se lee: así un video largo no tiene que estar entero en memoria). */
+const sizeOf = (f: Blob | Uint8Array) => (f instanceof Blob ? f.size : f.length);
+
+export function buildMov(frames: (Blob | Uint8Array)[], width: number, height: number, fps: number): Blob {
   const delta = Math.round(TIMESCALE / fps);
   const duration = delta * frames.length;
   const ftyp = atom('ftyp', raw((b) => (b.str('qt  '), b.u32(0x20050300), b.str('qt  '))));
-  const mdatHeader = raw((b) => (b.u32(8 + frames.reduce((n, f) => n + f.length, 0)), b.str('mdat')));
+  const mdatHeader = raw((b) => (b.u32(8 + frames.reduce((n, f) => n + sizeOf(f), 0)), b.str('mdat')));
   const dataStart = ftyp.length + mdatHeader.length;
 
   const mvhd = atom('mvhd', raw((b) => {
@@ -155,7 +158,7 @@ export function buildMov(frames: Uint8Array[], width: number, height: number, fp
   const stsd = atom('stsd', raw((b) => (b.u32(0), b.u32(1))), pngEntry);
   const stts = atom('stts', raw((b) => (b.u32(0), b.u32(1), b.u32(frames.length), b.u32(delta))));
   const stsc = atom('stsc', raw((b) => (b.u32(0), b.u32(1), b.u32(1), b.u32(frames.length), b.u32(1))));
-  const stsz = atom('stsz', raw((b) => (b.u32(0), b.u32(0), b.u32(frames.length), frames.forEach((f) => b.u32(f.length)))));
+  const stsz = atom('stsz', raw((b) => (b.u32(0), b.u32(0), b.u32(frames.length), frames.forEach((f) => b.u32(sizeOf(f))))));
   const stco = atom('stco', raw((b) => (b.u32(0), b.u32(1), b.u32(dataStart))));
   const stbl = atom('stbl', stsd, stts, stsc, stsz, stco);
   const minf = atom('minf', vmhd, hdlr('dhlr', 'alis', 'Data Handler'), dinf, stbl);

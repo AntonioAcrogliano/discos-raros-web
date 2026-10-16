@@ -14,6 +14,8 @@ html.admin, body.admin { overflow: auto; height: auto; min-height: 100%; touch-a
 /* Damero de "transparente", como en los programas de dibujo. */
 .export-vista { border: 2px solid var(--dr-crema); background: conic-gradient(#3a3f4a 25%, #262a33 0 50%, #3a3f4a 0 75%, #262a33 0) 0 0 / 16px 16px; line-height: 0; }
 .export-vista canvas { width: 256px; height: auto; image-rendering: pixelated; }
+.desfile-vista { justify-self: center; margin-bottom: 12px; max-width: 100%; }
+.desfile-vista canvas { width: auto; max-width: 100%; max-height: 360px; }
 .export-quien { color: var(--dr-amarillo); font-size: 8px; }
 .export-opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 620px) { .export-cuerpo { grid-template-columns: 1fr; } }

@@ -2,9 +2,10 @@ import type { Raro } from '../../shared/look';
 import { CHAT_MAX } from '../../shared/look';
 import { chat } from '../chat';
 import { el, sinTildes } from '../ui/dom';
+import { openPanel } from '../ui/shell';
 
 /** Un emoji entero (con sus combinados, tonos de piel y banderas), para mostrarlo más grande que la letra. */
-const EMOJI = /\p{Extended_Pictographic}(?:️|⃣|[\u{1F3FB}-\u{1F3FF}]|‍\p{Extended_Pictographic}️?)*|[\u{1F1E6}-\u{1F1FF}]{2}/gu;
+const EMOJI = /\p{Extended_Pictographic}(?:\uFE0F|\u20E3|[\u{1F3FB}-\u{1F3FF}]|\u200D\p{Extended_Pictographic}\uFE0F?)*|[\u{1F1E6}-\u{1F1FF}]{2}/gu;
 
 /** El texto de un mensaje: la letra pixelada (sin tildes) y los emojis aparte, más grandes. */
 function textNodes(text: string): (Node | string)[] {
@@ -22,8 +23,7 @@ function textNodes(text: string): (Node | string)[] {
 }
 
 /** Los emojis del botón (en el celu están en el teclado; esto es más que nada para la compu). */
-const EMOJIS = ['🔥', '🪩', '🎧', '🎶', '💃', '🕺', '🤘', '🙌', '👏', '😂', '😍', '😎', '🥵', '🤯', '🥴', '👀', '💀', '👽', '🍄', '🍻', '❤️', '💜', '✨', '⚡'];
-import { openPanel } from '../ui/shell';
+const EMOJIS = ['🔥', '🪩', '🎧', '🎶', '💃', '🕺', '🤘', '🙌', '👏', '😂', '😍', '😎', '🥵', '🤯', '🥴', '👀', '💀', '👽', '🍄', '🍻', '❤\uFE0F', '💜', '✨', '⚡'];
 
 /**
  * La ventana del chat: acoplada a un costado (abajo en el celu), sin tapar la pista. Arriba los
