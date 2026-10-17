@@ -301,11 +301,21 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
   let wasDrop = 0, cheerAt = -9;
   tele.onState = (p) => room.onPlayState?.(p);
   tele.onLevel = (v) => room.onVolume?.(v);
+  /** Un estreno que todavía no arrancó: la tele no lo puede pasar (YouTube muestra la cuenta regresiva, sin música). */
+  const waiting = (s: SetInfo) => !!s.startsAt && Date.parse(s.startsAt) > Date.now();
+  /** El set que está a `d` lugares de `from` en la lista, salteando los estrenos que no arrancaron. */
+  const step = (from: SetInfo, d: number) => {
+    const ready = playlist.filter((s) => !waiting(s));
+    if (!ready.length) return null;
+    const i = ready.findIndex((s) => s.id === from.id);
+    return ready[i < 0 ? 0 : (i + d + ready.length) % ready.length];
+  };
+  /** Cuando arranca el estreno, la tele se pasa sola a él. */
+  let premiere = 0;
   tele.onEnded = () => {
     // Terminó el set: sigue el anterior de la lista (del más nuevo al más viejo).
-    if (!current || !playlist.length) return;
-    const i = playlist.findIndex((s) => s.id === current!.id);
-    room.play(playlist[(i + 1) % playlist.length], playlist);
+    const next = current && step(current, 1);
+    if (next) room.play(next, playlist);
   };
 
   /** Arriba de 150 BPM (drum and bass) se baila a medio tiempo, si no es un flipper. */
@@ -751,9 +761,8 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     onPlayState: null,
     toggle: () => tele.toggle(),
     skip(d) {
-      if (!current || !playlist.length) return;
-      const i = playlist.findIndex((s) => s.id === current!.id);
-      room.play(playlist[(i + d + playlist.length) % playlist.length]);
+      const next = current && step(current, d);
+      if (next) room.play(next);
     },
     setPista(data) {
       // Un guardado con opciones viejas (de antes de un cambio de menú) no se dibuja.
@@ -837,6 +846,14 @@ export function createBoilerRoom(stage: PSXStage): BoilerRoom {
     },
     play(set, list) {
       if (list) playlist = list;
+      if (waiting(set)) {
+        // Hasta que arranque suena el último que ya se puede ver, y a la hora justa entra el estreno.
+        clearTimeout(premiere);
+        premiere = window.setTimeout(() => room.play(set), Math.min(Date.parse(set.startsAt!) - Date.now() + 1000, 2 ** 31 - 1));
+        const before = playlist.find((s) => !waiting(s));
+        if (before && (!current || waiting(current))) room.play(before);
+        return;
+      }
       current = set;
       bpm = set.bpm;
       luces.load(set.id);

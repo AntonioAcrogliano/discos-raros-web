@@ -217,4 +217,6 @@ export interface SetInfo {
   published: string;
   thumb: string;
   url: string;
+  /** Si es un estreno: cuándo arranca (ISO). Antes de esa hora la tele no lo puede pasar. */
+  startsAt?: string;
 }

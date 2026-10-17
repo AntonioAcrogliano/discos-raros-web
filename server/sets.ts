@@ -6,10 +6,13 @@ import type { SetInfo } from '../shared/look.js';
  *   1. El feed RSS público (últimos 15 videos, con fecha).
  *   2. La página de videos del canal (últimos ~30, sin fecha exacta).
  *   3. Una lista guardada en el código (SNAPSHOT), para que Sets nunca quede vacío.
+ * Los estrenos programados no salen en la página de videos (y el feed falla seguido): se buscan
+ * aparte en la portada del canal, y la página de cada uno dice a qué hora arranca.
  */
 const CHANNEL_ID = 'UCOStJ214QjXlm_XHeqfT2JQ';
 const FEED = `https://www.youtube.com/feeds/videos.xml?channel_id=${CHANNEL_ID}`;
 const CHANNEL_PAGE = 'https://www.youtube.com/@discosraros/videos';
+const CHANNEL_HOME = 'https://www.youtube.com/@discosraros';
 const TTL_MS = 15 * 60 * 1000;
 /** Si se está sirviendo la lista de respaldo, volver a probar YouTube más seguido. */
 const RETRY_MS = 2 * 60 * 1000;
@@ -116,16 +119,55 @@ async function get(url: string, headers: Record<string, string>) {
   return res.text();
 }
 
-const fromFeed = async () => parseFeed(await get(FEED, { 'user-agent': 'discosraros.com.ar' }));
-const fromPage = async () =>
-  parseChannelPage(
-    await get(CHANNEL_PAGE, {
-      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-      'accept-language': 'es-AR,es;q=0.9',
-      // Evita la pantalla de consentimiento de cookies (aparece desde servidores en Europa).
-      cookie: 'SOCS=CAI; CONSENT=YES+1',
+const BROWSER = {
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+  'accept-language': 'es-AR,es;q=0.9',
+  // Evita la pantalla de consentimiento de cookies (aparece desde servidores en Europa).
+  cookie: 'SOCS=CAI; CONSENT=YES+1',
+};
+
+/** Hora de arranque de un estreno que todavía no empezó (ISO), o '' si ya se puede ver. */
+export function parseUpcoming(html: string) {
+  if (!/"isUpcoming":true/.test(html)) return '';
+  const t = Number(/"scheduledStartTime":"(\d+)"/.exec(html)?.[1]);
+  return t ? new Date(t * 1000).toISOString() : '';
+}
+
+/** Los videos que ya se sabe que no son estrenos pendientes (no se vuelven a mirar). */
+const started = new Set<string>();
+
+/** Les pone la hora de arranque a los estrenos que todavía no empezaron (solo se miran los primeros). */
+async function markUpcoming(sets: SetInfo[]) {
+  await Promise.all(
+    sets.slice(0, 3).map(async (s) => {
+      if (started.has(s.id)) return;
+      try {
+        const at = parseUpcoming(await get(`https://www.youtube.com/watch?v=${s.id}`, BROWSER));
+        if (at && Date.parse(at) > Date.now() - 6 * 3600_000) s.startsAt = at;
+        else started.add(s.id);
+      } catch {
+        /* si no contesta, queda como video común */
+      }
     }),
   );
+}
+
+/** Suma adelante los sets de la portada que la lista no tiene y son más nuevos (los estrenos programados). */
+async function addPremieres(sets: SetInfo[]) {
+  try {
+    const top = Math.max(0, ...sets.map((s) => parseFloat(s.number) || 0));
+    const known = new Set(sets.map((s) => s.id));
+    const extra = parseChannelPage(await get(CHANNEL_HOME, BROWSER)).filter((s) => !known.has(s.id) && parseFloat(s.number) > top);
+    extra.sort((a, b) => parseFloat(b.number) - parseFloat(a.number));
+    sets.unshift(...extra);
+  } catch (e) {
+    console.warn('[sets] falló la portada del canal:', (e as Error).message);
+  }
+}
+
+const fromFeed = async () => parseFeed(await get(FEED, { 'user-agent': 'discosraros.com.ar' }));
+const fromPage = async () =>
+  parseChannelPage(await get(CHANNEL_PAGE, BROWSER));
 
 let cache: { at: number; sets: SetInfo[]; live: boolean } | null = null;
 
@@ -139,6 +181,8 @@ export async function getSets(): Promise<SetInfo[]> {
       // La página no trae fechas: se completan con las que ya se conocían.
       const known = new Map([...(cache?.sets ?? []), ...snapshot()].map((s) => [s.id, s.published]));
       for (const s of sets) s.published ||= known.get(s.id) ?? '';
+      await addPremieres(sets);
+      await markUpcoming(sets);
       cache = { at: Date.now(), sets, live: true };
       return sets;
     } catch (e) {

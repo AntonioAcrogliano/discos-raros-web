@@ -194,6 +194,7 @@
 .set .nombre { overflow-wrap: anywhere; }
 .set .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; font-size: 8px; color: var(--dr-rosa); }
 .set .genero { color: var(--dr-negro); background: var(--dr-amarillo); padding: 1px 4px 0; }
+.set .estreno { color: var(--dr-crema); background: var(--dr-rojo); padding: 1px 4px 0; }
 .set.sonando { border-color: var(--dr-rojo); }
 .set.sonando .num::after { content: ' - SONANDO'; color: var(--dr-rojo); }
 .set-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }

@@ -20,6 +20,14 @@ const fecha = (iso: string) => {
   return isNaN(+d) ? '' : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 };
 
+/** "ESTRENO 18/10 20:00" (en la hora del que mira), si todavía no arrancó. */
+const estreno = (s: SetInfo) => {
+  const d = new Date(s.startsAt ?? '');
+  if (isNaN(+d) || +d <= Date.now()) return '';
+  const dd = (n: number) => String(n).padStart(2, '0');
+  return `ESTRENO ${dd(d.getDate())}/${dd(d.getMonth() + 1)} ${dd(d.getHours())}:${dd(d.getMinutes())}`;
+};
+
 export interface SetsOptions {
   /** Qué set está sonando en la tele (para marcarlo). */
   playing: () => string | null;
@@ -49,7 +57,7 @@ export async function openSets(o: SetsOptions) {
       thumb(s),
       el('span', 'num', `#${s.number}`),
       el('span', 'nombre', s.name),
-      el('span', 'meta', [...(s.genre ? [el('span', 'genero', s.genre)] : []), fecha(s.published)]),
+      el('span', 'meta', [...(s.genre ? [el('span', 'genero', s.genre)] : []), estreno(s) ? el('span', 'estreno', estreno(s)) : fecha(s.published)]),
     ]);
     row.addEventListener('focus', () => sfx.move());
     row.addEventListener('click', () => {
